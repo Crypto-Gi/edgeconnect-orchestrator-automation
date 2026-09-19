@@ -107,17 +107,17 @@ Inventory uses root GET `/applicationDefinition` with exact bases `portProtocolC
 
 Compound name plus semantic body is the stable identity; numeric ID is not. Immediately before each compound POST, the tool fingerprints fresh inventory and allocates `max(existing user ID below 50000)+1`. Orchestrator can compact and renumber all compound IDs after deletion, so readback ignores ID while requiring unique name and exact semantic body. Product automation does not implement compound deletes.
 
-Creates are sequential. A failure stops later creates, reports PARTIAL, and never deletes successful definitions.
+Creates are sequential. A failure stops later creates, reports PARTIAL, and never deletes successful definitions. After all definitions verify, the same workflow applies each row's `AppExpressMode`: `MONITOR` ensures a Monitor entry exists and `OFF` ensures the named application has no AppExpress entry. Definition and AppExpress changes appear in one preview and use one approval. AppExpress is not attempted when definition creation fails.
 
 ### AppExpress monitor
 
-OFF means no AppExpress collection entry. MONITOR is a separate workflow after the application exists:
+The standalone workflow remains available for changing Monitor mode on applications that are not managed by an application-definition CSV:
 
 ```text
 PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> appexpress deploy --csv templates/edgeconnect/appexpress_monitor.csv --report reports/appexpress-run.json --dry-run
 ```
 
-The endpoint is `/applicationDefinition/appExpressAppConfig`. Existing mapping insertion order is preserved and new entries append. Orchestrator may reassign numeric IDs according to collection order, so verification compares names and semantic configuration while ignoring server-managed IDs. Existing monitor semantics must remain unchanged.
+The endpoint is `/applicationDefinition/appExpressAppConfig`. Existing unrelated entries and mapping order are preserved. Orchestrator may reassign numeric IDs according to collection order, so verification compares names and semantic configuration while ignoring server-managed IDs. If the collection drifts after approval, the combined application-definition run reports PARTIAL and does not overwrite the changed collection.
 
 ## Advanced read-only and plan-file commands
 

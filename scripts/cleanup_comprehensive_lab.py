@@ -2,6 +2,7 @@ import argparse
 import copy
 import csv
 import json
+import secrets
 import sys
 import time
 from pathlib import Path
@@ -18,6 +19,7 @@ from edgeconnect_automation.workflows import parse_address_groups, parse_applica
 
 PREFIX = "lab25-"
 COMMENT_PREFIX = "LAB25:"
+FINAL_ACKNOWLEDGMENT = "I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION"
 
 
 def parse_args(argv=None):
@@ -27,20 +29,6 @@ def parse_args(argv=None):
     parser.add_argument("--report", default="reports/comprehensive_lab_cleanup.json")
     parser.add_argument("--apply", action="store_true", help="perform deletion after exact confirmation; default is dry-run")
     return parser.parse_args(argv)
-
-
-def read_app_express(path: Path) -> List[str]:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, strict=True)
-        if reader.fieldnames != ["Application", "Mode"]:
-            raise ValidationError("AppExpress CSV headers must be Application,Mode")
-        names = []
-        for number, row in enumerate(reader, 2):
-            name = (row.get("Application") or "").strip()
-            if not name.startswith(PREFIX) or (row.get("Mode") or "").strip().upper() != "MONITOR":
-                raise ValidationError("unsafe AppExpress row {}".format(number))
-            names.append(name)
-        return names
 
 
 def require_prefix(names: Iterable[str], label: str) -> Set[str]:
@@ -58,7 +46,7 @@ def load_suite(directory: Path) -> Dict[str, Any]:
     definitions = parse_application_definitions(str(directory / "application_definitions_valid_40.csv"))
     app_group_rows = parse_application_groups(str(directory / "application_groups_valid.csv"))
     firewall_rules = parse_firewall_csv(str(directory / "firewall_rules_valid_45.csv"))
-    app_express = read_app_express(directory / "appexpress_monitor_valid.csv")
+    app_express = [definition.name for definition in definitions if definition.app_express == "MONITOR"]
     require_prefix((row["Name"] for row in address_rows), "address groups")
     require_prefix((row["Name"] for row in service_rows + service_runtime_rows), "service groups")
     require_prefix((definition.name for definition in definitions), "application definitions")
@@ -188,24 +176,26 @@ def build_plan(gateway: OrchestratorGateway, suite: Mapping[str, Any]) -> Dict[s
             if matches:
                 if not any(all(item.get(key) == value for key, value in definition.payload.items()) for item in matches):
                     raise ValidationError("domain definition changed since suite creation: {}".format(definition.name))
-                definition_plan.append({"type": "DOMAIN", "name": definition.name, "domain": definition.identity})
+                definition_plan.append({"type": "DOMAIN", "name": definition.name, "domain": definition.identity, "expected": definition.payload})
         elif definition.definition_type == "COMPOUND":
             matches = [item for item in compound_inventory.values() if item.get("name") == definition.name]
             if matches:
                 expected = dict(definition.payload)
                 if not any(semantic_equal({key: value for key, value in item.items() if key != "id"}, expected) for item in matches):
                     raise ValidationError("compound definition changed since suite creation: {}".format(definition.name))
-                definition_plan.append({"type": "COMPOUND", "name": definition.name})
+                definition_plan.append({"type": "COMPOUND", "name": definition.name, "expected": definition.payload})
         else:
             port, protocol = definition.identity
             matches = [item for item in port_inventory.get(str(port), []) if int(item.get("protocol", -1)) == protocol and item.get("name") == definition.name]
             if matches:
                 if not any(all(item.get(key) == value for key, value in definition.payload.items()) for item in matches):
                     raise ValidationError("port/protocol definition changed since suite creation: {}".format(definition.name))
-                definition_plan.append({"type": definition.definition_type, "name": definition.name, "port": port, "protocol": protocol})
+                definition_plan.append({"type": definition.definition_type, "name": definition.name, "port": port, "protocol": protocol, "expected": definition.payload})
 
-    address = index_groups(gateway.get_address_groups())
-    service = index_groups(gateway.get_service_groups())
+    address_values = gateway.get_address_groups()
+    service_values = gateway.get_service_groups()
+    address = index_groups(address_values)
+    service = index_groups(service_values)
     address_names = require_prefix((row["Name"] for row in suite["address_rows"]), "address groups") & set(address)
     service_names = require_prefix((row["Name"] for row in suite["service_cleanup_rows"]), "service groups") & set(service)
     expected_address = expected_groups(suite["address_rows"], "address")
@@ -229,17 +219,72 @@ def build_plan(gateway: OrchestratorGateway, suite: Mapping[str, Any]) -> Dict[s
         "application_groups": {"baseline": app_groups, "candidate": app_group_candidate, "fingerprint": fingerprint(app_groups), "remove": sorted(app_group_names & set(app_groups))},
         "appexpress": {"baseline": app_express, "candidate": app_express_candidate, "fingerprint": fingerprint(app_express), "remove": sorted(app_express_names & {str(value.get('name', key)) for key, value in app_express.items()})},
         "application_definitions": definition_plan,
-        "service_groups": {"remove": deletion_order(service_names, service) if service_names else []},
-        "address_groups": {"remove": deletion_order(address_names, address) if address_names else []},
+        "application_definition_fingerprints": {"portProtocolClassification": fingerprint(port_inventory), "dnsClassification": fingerprint(dns_inventory), "compoundClassification": fingerprint(compound_inventory)},
+        "service_groups": {"fingerprint": fingerprint(service_values), "remove": deletion_order(service_names, service) if service_names else []},
+        "address_groups": {"fingerprint": fingerprint(address_values), "remove": deletion_order(address_names, address) if address_names else []},
     }
+
+
+def deletion_rows(plan: Mapping[str, Any]) -> List[Tuple[str, str, str]]:
+    rows: List[Tuple[str, str, str]] = []
+    for item in plan["firewall"]:
+        pair = "{} -> {}".format(*item["pair"])
+        for removed in item["removed"]:
+            identity = "{}; segment {}; zones {}; priority {}".format(pair, item["segment_map"], removed["zone_pair"], removed["priority"])
+            rows.append(("Firewall rule", removed["rule_key"], identity))
+    for name in plan["application_groups"]["remove"]:
+        rows.append(("Application group", name, "user-defined collection"))
+    for name in plan["appexpress"]["remove"]:
+        rows.append(("AppExpress Monitor", name, "user-defined monitor entry"))
+    for item in plan["application_definitions"]:
+        if item["type"] == "DOMAIN":
+            identity = "domain={}".format(item["domain"])
+        elif item["type"] == "COMPOUND":
+            identity = "compound name identity; current ID resolved at deletion"
+        else:
+            identity = "port={}; protocol={}".format(item["port"], item["protocol"])
+        rows.append(("Application definition", item["name"], identity))
+    for name in plan["service_groups"]["remove"]:
+        rows.append(("Service group", name, "dependency-safe deletion order"))
+    for name in plan["address_groups"]["remove"]:
+        rows.append(("Address group", name, "dependency-safe deletion order"))
+    return rows
+
+
+def format_deletion_table(rows: Sequence[Tuple[str, str, str]]) -> str:
+    values = [(str(index), resource, name, identity) for index, (resource, name, identity) in enumerate(rows, 1)]
+    table = [("#", "RESOURCE TYPE", "NAME", "IDENTITY / SCOPE")] + values
+    widths = [max(len(row[column]) for row in table) for column in range(4)]
+    separator = "+-{}-+-{}-+-{}-+-{}-+".format(*(width * "-" for width in widths))
+    lines = [separator]
+    for index, row in enumerate(table):
+        lines.append("| {} | {} | {} | {} |".format(*(value.ljust(widths[column]) for column, value in enumerate(row))))
+        if index == 0:
+            lines.append(separator)
+    lines.append(separator)
+    return "\n".join(lines)
+
+
+def generate_confirmation_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "DELETE-LAB25-{}".format("".join(secrets.choice(alphabet) for _ in range(8)))
 
 
 def confirm(plan: Mapping[str, Any]) -> None:
     if not sys.stdin.isatty():
         raise ApprovalError("non-interactive cleanup is refused")
-    print(json.dumps(plan, indent=2, default=str))
-    if input("Type DELETE LAB25 to remove only the listed test resources: ") != "DELETE LAB25":
-        raise ApprovalError("cleanup confirmation refused")
+    rows = deletion_rows(plan)
+    print("\nCOMPLETE DELETION TABLE — {} resources\n".format(len(rows)))
+    print(format_deletion_table(rows))
+    code = generate_confirmation_code()
+    print("\nFirst confirmation required. Type this system-generated code exactly:\n\n{}\n".format(code))
+    if input("Confirmation code: ") != code:
+        raise ApprovalError("cleanup confirmation code refused")
+    print("\nFINAL WARNING: This is a destructive operation. The listed configuration will be deleted, dependencies may immediately stop working, and this script cannot automatically restore the abyss you are about to open.")
+    print("You are responsible for reviewing the full table, validating the target lab, and accepting this abyss action.")
+    print("\nTo answer 'Are you absolutely sure?' type exactly:\n\n{}\n".format(FINAL_ACKNOWLEDGMENT))
+    if input("Final acknowledgment: ") != FINAL_ACKNOWLEDGMENT:
+        raise ApprovalError("final cleanup acknowledgment refused")
 
 
 def delete(client: ApiClient, path: str, query: Mapping[str, Any]) -> None:
@@ -278,23 +323,38 @@ def apply_plan(gateway: OrchestratorGateway, plan: Mapping[str, Any]) -> Dict[st
         if not verified:
             raise ValidationError("AppExpress cleanup readback failed")
 
+    if plan["application_definitions"]:
+        for base, expected in plan["application_definition_fingerprints"].items():
+            if fingerprint(gateway.get_application_definitions(base)) != expected:
+                raise DriftError("{} application definitions changed".format(base))
     for item in plan["application_definitions"]:
         if item["type"] == "COMPOUND":
             current = gateway.get_application_definitions("compoundClassification")
-            matches = [int(value.get("id", key)) for key, value in current.items() if value.get("name") == item["name"]]
-            if len(matches) > 1:
-                raise ValidationError("compound name is not unique: {}".format(item["name"]))
-            if matches:
-                delete(gateway.client, "/applicationDefinition/compoundClassification", {"id": matches[0]})
+            matches = [(int(value.get("id", key)), value) for key, value in current.items() if value.get("name") == item["name"]]
+            if len(matches) != 1 or not semantic_equal({key: value for key, value in matches[0][1].items() if key != "id"}, item["expected"]):
+                raise DriftError("compound application definition changed: {}".format(item["name"]))
+            delete(gateway.client, "/applicationDefinition/compoundClassification", {"id": matches[0][0]})
         elif item["type"] == "DOMAIN":
+            current = gateway.get_application_definitions("dnsClassification")
+            matches = [value for value in current if value.get("domain") == item["domain"] and value.get("name") == item["name"] and all(value.get(key) == expected for key, expected in item["expected"].items())]
+            if len(matches) != 1:
+                raise DriftError("domain application definition changed: {}".format(item["name"]))
             delete(gateway.client, "/applicationDefinition/dnsClassification", {"domain": item["domain"]})
         else:
+            current = gateway.get_application_definitions("portProtocolClassification")
+            matches = [value for value in current.get(str(item["port"]), []) if int(value.get("protocol", -1)) == item["protocol"] and value.get("name") == item["name"] and all(value.get(key) == expected for key, expected in item["expected"].items())]
+            if len(matches) != 1:
+                raise DriftError("port/protocol application definition changed: {}".format(item["name"]))
             delete(gateway.client, "/applicationDefinition/portProtocolClassification", {"port": item["port"], "protocol": item["protocol"]})
         results.append({"kind": "application_definition", "name": item["name"], "requested": "delete"})
 
+    if plan["service_groups"]["remove"] and fingerprint(gateway.get_service_groups()) != plan["service_groups"]["fingerprint"]:
+        raise DriftError("service group collection changed")
     for name in plan["service_groups"]["remove"]:
         delete(gateway.client, "/ipObjects/serviceGroup", {"name": name})
         results.append({"kind": "service_group", "name": name, "requested": "delete"})
+    if plan["address_groups"]["remove"] and fingerprint(gateway.get_address_groups()) != plan["address_groups"]["fingerprint"]:
+        raise DriftError("address group collection changed")
     for name in plan["address_groups"]["remove"]:
         delete(gateway.client, "/ipObjects/addressGroup", {"name": name})
         results.append({"kind": "address_group", "name": name, "requested": "delete"})

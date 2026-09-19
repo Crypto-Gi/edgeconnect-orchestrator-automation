@@ -72,7 +72,7 @@ Common defaults:
 - Confidence 100
 - AppExpressMode OFF
 
-`MONITOR` is recorded as follow-up intent but is applied using the separate AppExpress workflow.
+`AppExpressMode` is applied by the application-definition workflow after definition creation and verification. `MONITOR` ensures a Monitor entry exists. `OFF` ensures the named application has no AppExpress entry. Both changes are included in the same preview and approval.
 
 Compound supports source/destination/either fields for port, IP, geo, domain, and address map, plus protocol, DSCP, and interface. Either fields are mutually exclusive with source/destination fields of the same family. Simple single-port or single-domain definitions must use the dedicated type.
 

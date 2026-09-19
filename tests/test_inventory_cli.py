@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from edgeconnect_automation.cli import _discover_inventory, main
 from edgeconnect_automation.firewall import parse_firewall_text
+from edgeconnect_automation.workflows import APP_DEF_HEADERS
 
 
 HEADERS = "rule_key,rule_name,description,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,source_address,source_address_group,destination_address,destination_address_group,either_address,either_address_group,application,application_group,protocol,source_port,destination_port,either_port,source_service_group,destination_service_group,either_service_group,action,logging,logging_level,broad_match_ack"
@@ -127,6 +128,28 @@ class BulkDeployGateway:
         return {"success": True}
 
 
+class AppDefinitionDeployGateway:
+    def __init__(self):
+        self.inventories = {"portProtocolClassification": {}, "dnsClassification": [], "compoundClassification": {}}
+        self.appexpress = {}
+        self.definition_posts = 0
+        self.appexpress_posts = 0
+
+    def get_application_definitions(self, base):
+        return copy.deepcopy(self.inventories[base])
+
+    def post_application_definition(self, base, value, identity):
+        self.definition_posts += 1
+        self.inventories[base].append(copy.deepcopy(value))
+
+    def get_appexpress(self):
+        return copy.deepcopy(self.appexpress)
+
+    def post_appexpress(self, value):
+        self.appexpress_posts += 1
+        self.appexpress = copy.deepcopy(value)
+
+
 class DeployCliTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -135,6 +158,13 @@ class DeployCliTests(unittest.TestCase):
         self.csv.write_text(HEADERS + "\n" + ROW + "\n", encoding="utf-8")
         self.address_csv = root / "address.csv"
         self.address_csv.write_text("Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment\nnew,10.0.0.0/24,,,\n", encoding="utf-8")
+        self.application_csv = root / "applications.csv"
+        application = {header: "" for header in APP_DEF_HEADERS}
+        application.update({"DefinitionType": "DOMAIN", "Name": "monitor-app", "Notes": "monitor test", "Enabled": "TRUE", "Confidence": "100", "Domain": "monitor.example.com", "AppExpressMode": "MONITOR"})
+        with self.application_csv.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, APP_DEF_HEADERS)
+            writer.writeheader()
+            writer.writerow(application)
         self.inventory = root / "inventory.json"
         self.inventory.write_text(json.dumps({
             "segments": {"Default": 0},
@@ -179,6 +209,23 @@ class DeployCliTests(unittest.TestCase):
             code = main(["address-groups", "deploy", "--csv", str(self.address_csv)])
         self.assertEqual(code, 0)
         self.assertEqual(apply_gateway.uploads, 1)
+
+    def test_application_definition_deploy_dry_run_and_apply_include_appexpress(self):
+        dry_gateway = AppDefinitionDeployGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway), patch("sys.stdin.isatty", return_value=False):
+            code = main(["app-definitions", "deploy", "--csv", str(self.application_csv), "--dry-run"])
+        self.assertEqual(code, 0)
+        self.assertEqual(dry_gateway.definition_posts, 0)
+        self.assertEqual(dry_gateway.appexpress_posts, 0)
+
+        apply_gateway = AppDefinitionDeployGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=apply_gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="APPLY"):
+            code = main(["app-definitions", "deploy", "--csv", str(self.application_csv)])
+        self.assertEqual(code, 0)
+        self.assertEqual(apply_gateway.definition_posts, 1)
+        self.assertEqual(apply_gateway.appexpress_posts, 1)
+        self.assertTrue(apply_gateway.appexpress["monitor-app"]["monitor"])
+        self.assertFalse(apply_gateway.appexpress["monitor-app"]["appExpressEnabled"])
 
     def test_firewall_deploy_tty_apply_writes(self):
         gateway = DeployGateway(baseline())

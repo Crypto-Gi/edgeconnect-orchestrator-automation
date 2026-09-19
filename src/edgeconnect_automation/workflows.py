@@ -576,24 +576,49 @@ def _definition_present(definition: ApplicationDefinition, inventory: Any) -> bo
     return False
 
 
+def plan_appexpress_modes(modes: Mapping[str, str], current: Mapping[str, Any]) -> Dict[str, Any]:
+    candidate = copy.deepcopy(dict(current))
+    next_id = max((int(value.get("id", -1)) for value in current.values()), default=-1) + 1
+    monitor = []
+    off = []
+    no_ops = []
+    for name, mode in modes.items():
+        normalized_mode = mode.upper()
+        if normalized_mode not in {"OFF", "MONITOR"}:
+            raise ValidationError("AppExpress mode for {} must be OFF or MONITOR".format(name))
+        keys = [key for key, value in candidate.items() if str(value.get("name", key)).lower() == name.lower()]
+        if len(keys) > 1:
+            raise ValidationError("duplicate AppExpress entries for {}".format(name))
+        if normalized_mode == "OFF":
+            if keys:
+                del candidate[keys[0]]
+                off.append(name)
+            else:
+                no_ops.append(name)
+            continue
+        if keys:
+            value = candidate[keys[0]]
+            if value.get("monitor") is True and value.get("appExpressEnabled") is False:
+                no_ops.append(name)
+                continue
+            value["monitor"] = True
+            value["appExpressEnabled"] = False
+            monitor.append(name)
+            continue
+        candidate[name.lower()] = {"id": next_id, "appIndex": None, "name": name, "type": "app", "monitor": True, "appExpressEnabled": False, "useCloudPortalConfig": False, "cloudPortalDataAvailable": None, "satisfiedQoEThreshold": None, "tolerableQoEThreshold": None, "probes": None}
+        next_id += 1
+        monitor.append(name)
+    return {"baseline": dict(current), "candidate": candidate, "fingerprint": fingerprint(current), "monitor": monitor, "off": off, "no_ops": no_ops, "changed": bool(monitor or off)}
+
+
 def plan_appexpress(names: Sequence[str], applications: Set[str], current: Mapping[str, Any]) -> Dict[str, Any]:
     missing = set(names) - applications
     if missing:
         raise ValidationError("AppExpress applications do not exist: {}".format(", ".join(sorted(missing))))
-    candidate = copy.deepcopy(dict(current))
-    next_id = max((int(value.get("id", -1)) for value in current.values()), default=-1) + 1
-    created = []
-    for name in names:
-        key = name.lower()
-        if key in candidate:
-            value = candidate[key]
-            if not value.get("monitor") or value.get("appExpressEnabled"):
-                raise ValidationError("conflicting AppExpress entry {}".format(name))
-            continue
-        candidate[key] = {"id": next_id, "appIndex": None, "name": name, "type": "app", "monitor": True, "appExpressEnabled": False, "useCloudPortalConfig": False, "cloudPortalDataAvailable": None, "satisfiedQoEThreshold": None, "tolerableQoEThreshold": None, "probes": None}
-        next_id += 1
-        created.append(name)
-    return {"baseline": dict(current), "candidate": candidate, "fingerprint": fingerprint(current), "created": created}
+    plan = plan_appexpress_modes({name: "MONITOR" for name in names}, current)
+    existing = {str(value.get("name", key)).lower() for key, value in current.items()}
+    plan["created"] = [name for name in plan["monitor"] if name.lower() not in existing]
+    return plan
 
 
 def _appexpress_semantic(value: Mapping[str, Any]) -> Dict[str, Any]:
@@ -609,9 +634,22 @@ def apply_appexpress(gateway: Any, plan: Mapping[str, Any]) -> Dict[str, Any]:
     current = gateway.get_appexpress()
     if fingerprint(current) != plan["fingerprint"]:
         raise DriftError("AppExpress collection changed before write")
-    if not plan["created"]:
+    changed = plan.get("changed", bool(plan.get("created")))
+    if not changed:
         return {"status": "no_op"}
     gateway.post_appexpress(plan["candidate"])
     readback = gateway.get_appexpress()
     verified = semantic_equal(_appexpress_semantic(readback), _appexpress_semantic(plan["candidate"]))
-    return {"status": "success" if verified else "partial", "created": plan["created"]}
+    return {"status": "success" if verified else "partial", "monitor": plan.get("monitor", plan.get("created", [])), "off": plan.get("off", [])}
+
+
+def execute_application_definitions_with_appexpress(gateway: Any, definitions: Sequence[ApplicationDefinition], inventories: Mapping[str, Any], appexpress_plan: Mapping[str, Any]) -> Dict[str, Any]:
+    definition_result = execute_application_definitions(gateway, definitions, inventories)
+    if definition_result["status"] != "success":
+        return {"status": "partial", "application_definitions": definition_result, "appexpress": {"status": "not_attempted"}}
+    try:
+        appexpress_result = apply_appexpress(gateway, appexpress_plan)
+    except Exception as error:
+        return {"status": "partial", "application_definitions": definition_result, "appexpress": {"status": "failed", "error": str(error)}}
+    status = "success" if appexpress_result["status"] in {"success", "no_op"} else "partial"
+    return {"status": status, "application_definitions": definition_result, "appexpress": appexpress_result}

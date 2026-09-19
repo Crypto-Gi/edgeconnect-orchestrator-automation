@@ -231,8 +231,6 @@ def main():
     write_csv("application_definitions_invalid_10.csv", APP_HEADERS, app_invalid)
     write_csv("application_definitions_all_50.csv", APP_HEADERS, app_valid + app_invalid)
     write_csv("application_groups_valid.csv", APP_GROUP_HEADERS, app_groups)
-    monitor = [{"Application": row["Name"], "Mode": "MONITOR"} for row in app_valid if row["AppExpressMode"] == "MONITOR"]
-    write_csv("appexpress_monitor_valid.csv", ["Application", "Mode"], monitor)
     write_csv("firewall_rules_valid_45.csv", FIREWALL_HEADERS, firewall_valid)
     write_csv("firewall_rules_invalid_12.csv", FIREWALL_HEADERS, firewall_invalid)
     write_csv("firewall_rules_all_57.csv", FIREWALL_HEADERS, firewall_valid + firewall_invalid)

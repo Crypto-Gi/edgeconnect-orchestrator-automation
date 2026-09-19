@@ -15,7 +15,7 @@ from .firewall import FirewallExecutor, build_firewall_plan, parse_firewall_csv,
 from .gateway import OrchestratorGateway
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
 from .util import fingerprint, redact, safe_report
-from .workflows import ApplicationDefinition, BulkPlan, ZonePlan, apply_appexpress, apply_application_groups, apply_native_groups, apply_zones, execute_application_definitions, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
+from .workflows import ApplicationDefinition, BulkPlan, ZonePlan, apply_appexpress, apply_application_groups, apply_native_groups, apply_zones, execute_application_definitions_with_appexpress, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -613,14 +613,28 @@ def _app_groups_deploy(args: argparse.Namespace) -> int:
     return 0 if result["status"] in {"success", "no_op"} else 5
 
 
+def _definition_appexpress_modes(definitions: Sequence[ApplicationDefinition]) -> Dict[str, str]:
+    modes: Dict[str, str] = {}
+    names: Dict[str, str] = {}
+    for definition in definitions:
+        key = definition.name.lower()
+        if key in names and modes[names[key]] != definition.app_express:
+            raise ValidationError("application definition {} has conflicting AppExpressMode values".format(definition.name))
+        if key not in names:
+            names[key] = definition.name
+            modes[definition.name] = definition.app_express
+    return modes
+
+
 def _definitions_plan(args: argparse.Namespace) -> int:
     gateway = _gateway(args)
     definitions = parse_application_definitions(args.csv)
     inventories = {base: gateway.get_application_definitions(base) for base in ("portProtocolClassification", "dnsClassification", "compoundClassification")}
     plan = plan_application_definitions(definitions, inventories)
-    value = {"kind": "app-definitions", "new": [asdict(item) for item in plan.new], "no_ops": plan.no_ops, "conflicts": plan.conflicts, "inventories": inventories, "fingerprints": plan.fingerprints, "monitor_followup": sorted({item.name for item in definitions if item.app_express == "MONITOR"})}
+    appexpress = plan_appexpress_modes(_definition_appexpress_modes(definitions), gateway.get_appexpress())
+    value = {"kind": "app-definitions", "new": [asdict(item) for item in plan.new], "no_ops": plan.no_ops, "conflicts": plan.conflicts, "inventories": inventories, "fingerprints": plan.fingerprints, "appexpress": appexpress}
     _seal_report(value, args.output)
-    _print({"output": args.output, "create": len(plan.new), "no_ops": plan.no_ops, "conflicts": plan.conflicts})
+    _print({"output": args.output, "create": len(plan.new), "no_ops": plan.no_ops, "conflicts": plan.conflicts, "appexpress_monitor": appexpress["monitor"], "appexpress_off": appexpress["off"]})
     return 2 if plan.conflicts else 0
 
 
@@ -632,7 +646,7 @@ def _definitions_apply(args: argparse.Namespace) -> int:
     definitions = [ApplicationDefinition(**item) for item in value["new"]]
     if not _approve(value, args.dry_run):
         return 0
-    result = execute_application_definitions(_gateway(args), definitions, value["inventories"])
+    result = execute_application_definitions_with_appexpress(_gateway(args), definitions, value["inventories"], value["appexpress"])
     _print(result)
     return 0 if result["status"] == "success" else 5
 
@@ -642,13 +656,14 @@ def _definitions_deploy(args: argparse.Namespace) -> int:
     definitions = parse_application_definitions(args.csv)
     inventories = {base: gateway.get_application_definitions(base) for base in ("portProtocolClassification", "dnsClassification", "compoundClassification")}
     plan = plan_application_definitions(definitions, inventories)
-    preview = {"kind": "app-definitions", "new": [asdict(item) for item in plan.new], "no_ops": plan.no_ops, "conflicts": plan.conflicts, "fingerprints": plan.fingerprints, "monitor_followup": sorted({item.name for item in definitions if item.app_express == "MONITOR"})}
+    appexpress = plan_appexpress_modes(_definition_appexpress_modes(definitions), gateway.get_appexpress())
+    preview = {"kind": "app-definitions", "new": [asdict(item) for item in plan.new], "no_ops": plan.no_ops, "conflicts": plan.conflicts, "fingerprints": plan.fingerprints, "appexpress": appexpress}
     if plan.conflicts:
         _print(preview)
         return 2
     if not _approve(preview, args.dry_run):
         return 0
-    result = execute_application_definitions(gateway, plan.new, inventories)
+    result = execute_application_definitions_with_appexpress(gateway, plan.new, inventories, appexpress)
     if args.report:
         safe_report(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
     _print(result)

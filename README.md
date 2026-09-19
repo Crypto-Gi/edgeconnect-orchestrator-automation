@@ -363,6 +363,8 @@ Defaults:
 - Confidence 100
 - AppExpress Off
 
+`AppExpressMode` is authoritative in the application-definition CSV. `MONITOR` ensures a Monitor entry exists, while `OFF` removes an existing AppExpress entry for that named application. Both definition and AppExpress changes are shown in one preview and applied after one approval.
+
 Compound definitions support directional/either port, IP/subnet, geo, domain, address map, DSCP, protocol, and interface selectors. Compound numeric IDs are server ordering indices and are not treated as stable identities.
 
 ### Application groups
@@ -397,7 +399,7 @@ edgeconnect-auto --dotenv .env appexpress deploy \
   --dry-run
 ```
 
-AppExpress Monitor is separate from application-definition creation. Off means no AppExpress entry. Steering is not supported in phase one.
+Application-definition CSVs apply `AppExpressMode` directly. This standalone workflow remains available for Monitor-only changes to other applications. Steering is not supported in phase one.
 
 ## Verbose output
 
@@ -444,7 +446,7 @@ A deterministic test suite with valid and intentionally invalid CSVs is availabl
 examples/comprehensive_lab/
 ```
 
-It includes 25 address groups, 25 service groups, 50 application definitions, application groups, AppExpress Monitor inputs, 57 firewall rules, expected-failure documentation, a generator, and a prefix-guarded cleanup script.
+It includes 25 address groups, 25 service groups, 50 application definitions with integrated AppExpress modes, application groups, 57 firewall rules, expected-failure documentation, a generator, and a prefix-guarded cleanup script.
 
 See [examples/comprehensive_lab/README.md](examples/comprehensive_lab/README.md). Use it only in an isolated lab and always begin with dry-run.
 

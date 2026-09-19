@@ -46,9 +46,8 @@ Covers TCP, UDP, ranges, exclusions, wildcard, nesting, repeated multi-protocol 
 - `application_definitions_valid_40.csv`
 - `application_definitions_invalid_10.csv`
 - `application_definitions_all_50.csv`
-- `appexpress_monitor_valid.csv`
 
-Compound rows exercise directional/either port, IP, geo, domain, address-map, DSCP, interface and protocol fields.
+The `AppExpressMode` column is authoritative. The application-definition workflow creates and verifies definitions, then applies `MONITOR` or `OFF` in the same approved run. Compound rows exercise directional/either port, IP, geo, domain, address-map, DSCP, interface and protocol fields.
 
 ### Application groups
 
@@ -102,7 +101,7 @@ edgeconnect-auto --dotenv .env service-groups deploy \
   --dry-run
 ```
 
-### 4. Application definitions
+### 4. Application definitions and AppExpress Monitor
 
 ```bash
 edgeconnect-auto --dotenv .env app-definitions deploy \
@@ -110,6 +109,8 @@ edgeconnect-auto --dotenv .env app-definitions deploy \
   --report reports/lab25-app-definitions.json \
   --dry-run
 ```
+
+This command also previews and applies the `AppExpressMode` value for every definition. No separate comprehensive-lab AppExpress CSV or command is required.
 
 ### 5. Application groups
 
@@ -120,16 +121,7 @@ edgeconnect-auto --dotenv .env app-groups deploy \
   --dry-run
 ```
 
-### 6. AppExpress Monitor
-
-```bash
-edgeconnect-auto --dotenv .env appexpress deploy \
-  --csv examples/comprehensive_lab/appexpress_monitor_valid.csv \
-  --report reports/lab25-appexpress.json \
-  --dry-run
-```
-
-### 7. Firewall matrix
+### 6. Firewall matrix
 
 ```bash
 edgeconnect-auto --dotenv .env firewall deploy \
@@ -164,11 +156,13 @@ PYTHONPATH=src python3 scripts/cleanup_comprehensive_lab.py \
   --apply
 ```
 
-The script requires typing:
+Before deletion, the script prints a complete table containing every matched resource, name, and identity or scope. It then generates a fresh random code such as `DELETE-LAB25-7KQ9W2XM`; the exact code displayed for that run must be typed. A final destructive-operation warning follows and requires typing this exact responsibility acknowledgment:
 
 ```text
-DELETE LAB25
+I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION
 ```
+
+Both confirmations require an interactive terminal. Any mismatch cancels cleanup before the first write. After confirmation, the script rechecks firewall, application-group, AppExpress, application-definition, service-group, and address-group baselines; any intervening drift aborts before that collection's deletion begins.
 
 Cleanup order:
 

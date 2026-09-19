@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from edgeconnect_automation.errors import DriftError, ValidationError
-from edgeconnect_automation.workflows import ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_zones, execute_application_definitions, native_csv_bytes, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
+from edgeconnect_automation.workflows import ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
 
 
 class TempCsv:
@@ -427,6 +427,76 @@ class ApplicationGroupAndExpressTests(unittest.TestCase):
     def test_appexpress_missing_application_rejected(self):
         with self.assertRaisesRegex(ValidationError, "do not exist"):
             plan_appexpress(["missing"], set(), {})
+
+    def test_appexpress_modes_apply_monitor_and_off_as_desired_state(self):
+        current = {
+            "remove": {"id": 1, "name": "Remove", "monitor": True, "appExpressEnabled": False},
+            "update": {"id": 2, "name": "Update", "monitor": False, "appExpressEnabled": True, "probes": ["preserve"]},
+            "unrelated": {"id": 3, "name": "Unrelated", "monitor": True, "appExpressEnabled": False},
+        }
+        plan = plan_appexpress_modes({"Remove": "OFF", "Update": "MONITOR", "New": "MONITOR", "Absent": "OFF"}, current)
+        self.assertNotIn("remove", plan["candidate"])
+        self.assertTrue(plan["candidate"]["update"]["monitor"])
+        self.assertFalse(plan["candidate"]["update"]["appExpressEnabled"])
+        self.assertEqual(plan["candidate"]["update"]["probes"], ["preserve"])
+        self.assertEqual(plan["candidate"]["unrelated"], current["unrelated"])
+        self.assertIn("new", plan["candidate"])
+        self.assertEqual(plan["monitor"], ["Update", "New"])
+        self.assertEqual(plan["off"], ["Remove"])
+        self.assertIn("Absent", plan["no_ops"])
+
+        class Gateway:
+            def __init__(self):
+                self.value = copy.deepcopy(current)
+
+            def get_appexpress(self):
+                return copy.deepcopy(self.value)
+
+            def post_appexpress(self, value):
+                self.value = copy.deepcopy(value)
+
+        gateway = Gateway()
+        self.assertEqual(apply_appexpress(gateway, plan)["status"], "success")
+        self.assertFalse(any(value.get("name") == "Remove" for value in gateway.value.values()))
+        self.assertEqual(gateway.value["unrelated"], current["unrelated"])
+
+    def test_combined_definition_workflow_reports_appexpress_drift_as_partial(self):
+        plan = plan_appexpress_modes({"App": "MONITOR"}, {})
+
+        class Gateway:
+            def get_appexpress(self):
+                return {"other": {"name": "Other", "monitor": True, "appExpressEnabled": False}}
+
+        result = execute_application_definitions_with_appexpress(Gateway(), [], {}, plan)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["application_definitions"]["status"], "success")
+        self.assertEqual(result["appexpress"]["status"], "failed")
+        self.assertIn("changed before write", result["appexpress"]["error"])
+
+    def test_combined_definition_failure_does_not_write_appexpress(self):
+        definition = ApplicationDefinition(2, "DOMAIN", "broken", {"domain": "broken.example", "name": "broken", "description": "", "priority": 100, "disabled": False}, "broken.example", "MONITOR")
+
+        class Gateway:
+            def __init__(self):
+                self.appexpress_posts = 0
+
+            def get_application_definitions(self, base):
+                return []
+
+            def post_application_definition(self, base, value, identity=None):
+                raise RuntimeError("definition failure")
+
+            def get_appexpress(self):
+                return {}
+
+            def post_appexpress(self, value):
+                self.appexpress_posts += 1
+
+        gateway = Gateway()
+        result = execute_application_definitions_with_appexpress(gateway, [definition], {"dnsClassification": []}, plan_appexpress_modes({"broken": "MONITOR"}, {}))
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["appexpress"]["status"], "not_attempted")
+        self.assertEqual(gateway.appexpress_posts, 0)
 
 
 if __name__ == "__main__":

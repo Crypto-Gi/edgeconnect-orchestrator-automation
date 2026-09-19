@@ -7,8 +7,10 @@
 - Added missing-zone creation workflow.
 - Added native address/service-group bulk import workflows.
 - Added application-group, application-definition, compound, and AppExpress Monitor workflows.
+- Integrated `AppExpressMode` desired state into application-definition plan, deploy, verification, and cleanup workflows.
 - Added CSV templates, operator documentation, redacted reports, dry-run, drift protection, and exact write confirmation.
 - Added comprehensive standard-library unit, contract, and safety tests.
 - Added BSD 3-Clause licensing and standalone quick-start documentation.
 - Added comprehensive valid/invalid lab datasets and guarded CSV-driven cleanup tooling.
+- Hardened cleanup approval with a complete deletion table, per-run random confirmation code, and final responsibility acknowledgment.
 - Hardened native service-group validation for protocol-specific fields, wildcard ports, ICMP types/codes, and nesting.
