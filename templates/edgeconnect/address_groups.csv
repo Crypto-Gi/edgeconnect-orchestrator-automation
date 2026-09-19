@@ -1,0 +1,3 @@
+"Name","IncludedIPs","ExcludedIPs","IncludedGroups","Comment"
+"example-address-group","10.10.20.0/24,10.10.30.0/24","","","first rule"
+"example-address-group","192.0.2.10/32","","","second rule for same group"

@@ -1,0 +1,3 @@
+"Name","Protocol","IncludedPorts","ExcludedPorts","IncludedGroups","ExcludedGroups","IcmpTypes","IcmpCodes","Comment"
+"example-service-group","TCP","0,443,8443-8445","","","","","","TCP rule"
+"example-service-group","UDP","53","","","","","","UDP rule for same group"

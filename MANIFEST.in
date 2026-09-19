@@ -1,0 +1,12 @@
+include README.md
+include QUICKSTART.md
+include LICENSE
+include setup.py
+include setup.cfg
+include CHANGELOG.md
+include SECURITY.md
+include CONTRIBUTING.md
+include .env.example
+recursive-include docs *.md
+recursive-include templates *.csv
+recursive-include tests *.py

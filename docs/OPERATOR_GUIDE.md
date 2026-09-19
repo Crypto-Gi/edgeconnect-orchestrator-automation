@@ -1,0 +1,128 @@
+# EdgeConnect Automation Operator Guide
+
+## Scope and safety
+
+`edgeconnect-auto` is a Python 3.9+ standard-library-only tool for global routing-segmentation firewall policy, zones, native address/service groups, application groups, application definitions, and AppExpress monitor configuration. It does not manage templates, appliance-local rules, routing-segmentation enablement, object updates, or deletes.
+
+The implementation is locally unit tested. API contracts were separately exercised in an isolated Orchestrator 9.7.1.42046 lab with one reachable ECOS 9.5.4.1 appliance: global policy create/readback/apply/rollback, native address/service imports, application definitions including compound, application groups, AppExpress monitor, audit correlation, and cleanup. This is not production certification or multi-appliance/multi-release validation. The global policy adapter uses the confirmed `merge=false` and `templateApply=false`; other releases require version-matched validation.
+
+No command reads a dotenv file automatically. Pass one explicitly with `--dotenv <PATH>`. HTTPS certificate and hostname verification are enabled by default; configure a private CA bundle when required. Reports contain sensitive configuration, are redacted and fingerprinted, and are written with mode `0600`.
+
+Every normal write command performs discovery, validation and preview in the same process, then:
+
+1. Displays the sanitized exact candidate, target state, fingerprints, impact, verification and recovery information.
+2. Refuses non-TTY execution.
+3. Requires exact uppercase `APPLY` with no `--yes` bypass.
+4. Re-reads the affected baseline and aborts on drift.
+5. Verifies normalized saved-state readback.
+
+Zone creation additionally requires `CREATE <zone>` for each new zone. `--dry-run` performs reads and preview only, makes no writes, requires no TTY, and returns success when validation succeeds.
+
+## Installation and configuration
+
+Run from the project root:
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --help
+```
+
+Supported runtime aliases include `orchestrator_base_url` / `ORCHESTRATOR_BASE_URL` / `EDGECONNECT_BASE_URL` / `EC_BASE_URL`, corresponding API-key aliases, CA-bundle aliases, and API-key-header aliases. Never place credentials in command arguments, reports, templates or source files.
+
+## Exit codes
+
+| Code | Meaning |
+|---:|---|
+| 0 | Success, verified no-op, or valid dry-run preview |
+| 1 | Runtime or API error |
+| 2 | Validation failure or no eligible firewall pair |
+| 3 | Approval refusal or non-TTY write refusal |
+| 4 | Baseline drift |
+| 5 | PARTIAL or CRITICAL, including unresolved appliance verification |
+
+## Default one-command workflows
+
+### Firewall
+
+Use `templates/edgeconnect/firewall_rules.csv`:
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> firewall deploy --csv rules.csv --resolved-csv reports/rules-resolved.csv --report reports/firewall-run.json --dry-run
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> firewall deploy --csv rules.csv --resolved-csv reports/rules-resolved.csv --report reports/firewall-run.json
+```
+
+The CSV requires source/destination segments and zones. Multi-value firewall criteria use `|`; port ranges use `-` and allow 0 through 65535. The unambiguous either-direction service-group column is `either_service_group`. Unknown headers, including URL criteria, fail validation. `rule_name` is local metadata; `description` becomes the API comment. Logging enabled with a blank level defaults to 2. Match-all rules require `broad_match_ack=true`.
+
+Discovery reads all managed appliances from `/appliance`, paused state from `/pauseOrchestration`, reachability per appliance from `/reachability/gms`, and fresh effective policy from `/securityMaps?cached=false` for reachable targets. Built-in applications and groups are resolved with exact wildcard searches in addition to user-defined inventories. Global policy targets every managed appliance. Unreachable and paused targets warn and continue, but remain unverified and therefore produce PARTIAL after a write.
+
+Exact local/global priority collisions invalidate that segment pair. Different local priorities receive no semantic analysis or warning. Zone IDs are unique per segment in the all-VRF mapping, so local priorities are checked by the effective source/destination zone-ID pair for both default and non-default segment pairs.
+
+Validation is isolated by source/destination segment pair. A bad row, dependency, zone pair, priority or local collision invalidates that pair; independent eligible pairs continue. Missing priorities allocate from 20000 by 10 only for an empty pair or one containing solely an actual 65535 allow/deny catch-all. Explicit priorities reserve their values first. Identical normalized rules are no-ops; differing collisions fail. Always use the generated resolved CSV for reruns.
+
+Each candidate preserves the complete baseline. Exact normalized readback detects silently dropped fields. A runtime pair failure removes only rules created by that run, verifies the exact baseline, and continues other pairs even when recovery remains unresolved. Audit reads always include `startTime` and `endTime`; audit evidence supports but does not replace saved/effective readback.
+
+### Zones
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> zones create --name POS --name RX --report reports/zones-run.json --dry-run
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> zones create --name POS --name RX --report reports/zones-run.json
+```
+
+`POST /zones` replaces the collection. The workflow preserves the full base collection, all-VRF state and segment mappings; allocates from `/zones/nextId`; uses `deleteDependencies=false`; and verifies complete readback. It never enables segmentation, deletes zones, renames zones, or performs automatic zone rollback.
+
+### Native address and service groups
+
+Use the exact GUI-native templates:
+
+- `templates/edgeconnect/address_groups.csv`
+- `templates/edgeconnect/service_groups.csv`
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> address-groups deploy --csv address_groups.csv --report reports/address-run.json --dry-run
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> service-groups deploy --csv service_groups.csv --report reports/service-run.json --dry-run
+```
+
+List cells are comma-separated and CSV-quoted. Repeated rows with the same `Name` are preserved in input order and become multiple native rules in one group. References, cycles, existing identities and maximum nesting depth 2 are prevalidated. Service protocols are TCP, UDP, ICMP and ICMPV6; native ports allow 0 through 65535.
+
+Uploads use `multipart/form-data` with file field `csvFile`. The tool parses the native `BulkUploadResponse`. Native imports are all-or-nothing: a runtime importer rejection, including release-specific ICMPV6 validation, reports PARTIAL with no claimed creations. Only rows for entirely new groups are uploaded, followed by full semantic readback verification.
+
+### Application groups
+
+Use `templates/edgeconnect/application_groups.csv` with exact headers `Name,Applications,ParentGroups`. Applications and parent groups are comma-separated; `parentGroup` is serialized as an array or `null`.
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> app-groups deploy --csv application_groups.csv --report reports/app-groups-run.json --dry-run
+```
+
+Application membership is resolved through user-defined inventories plus exact built-in wildcard searches. Parent references and cycles are validated. The complete existing collection and insertion semantics are preserved. POST does not add `resourceKey`.
+
+### Application definitions
+
+Use `templates/edgeconnect/application_definitions.csv`, which includes `IP_PROTOCOL`, `TCP_PORT`, `UDP_PORT`, `DOMAIN` and `COMPOUND` examples:
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> app-definitions deploy --csv application_definitions.csv --report reports/app-definitions-run.json --dry-run
+```
+
+Inventory uses root GET `/applicationDefinition` with exact bases `portProtocolClassification`, `dnsClassification` and `compoundClassification`. Writes use the corresponding classifier endpoints with `port`/`protocol`, `domain`, or `id` query identity. Confidence is 1 through 100. Compound bodies use `confidence`, enforce directional-versus-either exclusivity, require at least two meaningful attributes, and limit criterion text to 512 characters. Compound DNS selectors are direct strings.
+
+Compound name plus semantic body is the stable identity; numeric ID is not. Immediately before each compound POST, the tool fingerprints fresh inventory and allocates `max(existing user ID below 50000)+1`. Orchestrator can compact and renumber all compound IDs after deletion, so readback ignores ID while requiring unique name and exact semantic body. Product automation does not implement compound deletes.
+
+Creates are sequential. A failure stops later creates, reports PARTIAL, and never deletes successful definitions.
+
+### AppExpress monitor
+
+OFF means no AppExpress collection entry. MONITOR is a separate workflow after the application exists:
+
+```text
+PYTHONPATH=src python3 -m edgeconnect_automation --dotenv <PATH> appexpress deploy --csv templates/edgeconnect/appexpress_monitor.csv --report reports/appexpress-run.json --dry-run
+```
+
+The endpoint is `/applicationDefinition/appExpressAppConfig`. Existing mapping insertion order is preserved and new entries append. Orchestrator may reassign numeric IDs according to collection order, so verification compares names and semantic configuration while ignoring server-managed IDs. Existing monitor semantics must remain unchanged.
+
+## Advanced read-only and plan-file commands
+
+`firewall validate`, `firewall plan`, object `plan`, and `firewall verify` remain available for diagnostics and offline contract tests. Advanced `apply --approved-plan` commands still show the exact preview and require TTY `APPLY`; they do not bypass drift checks. The default operator procedure is the one-command `deploy` or `zones create` workflow.
+
+## Remaining release validation
+
+Before production use, validate the exact target release for global policy options, non-default multi-segment appliance representation, multi-appliance convergence timing, new-zone propagation, paused/unreachable behavior, native ICMPV6 importer behavior, classifier writes and AppExpress collection writes. Never claim HTTP acceptance alone as convergence, and never treat this local test suite as integration testing.

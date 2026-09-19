@@ -1,0 +1,3 @@
+Name,Applications,ParentGroups
+Example_Applications,"Example_App_One,Example_App_Two",
+Example_Child,Example_App_Three,Example_Applications

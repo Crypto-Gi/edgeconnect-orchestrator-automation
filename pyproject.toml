@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "edgeconnect-automation"
+version = "0.1.0"
+description = "Safety-focused CSV automation for HPE Aruba EdgeConnect Orchestrator"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = ["edgeconnect", "aruba", "sd-wan", "firewall", "automation"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: System :: Networking",
+]
+dependencies = []
+
+[project.scripts]
+edgeconnect-auto = "edgeconnect_automation.cli:main"
+
+[tool.unittest]
+start-directory = "tests"
