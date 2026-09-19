@@ -1,0 +1,3 @@
+rule_key,rule_name,description,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,source_address,source_address_group,destination_address,destination_address_group,either_address,either_address_group,application,application_group,protocol,source_port,destination_port,either_port,source_service_group,destination_service_group,either_service_group,action,logging,logging_level,broad_match_ack
+lab25-fw-110,LAB25 rule 110,INVALID duplicate priority first row,TRUE,35090,Default,Default,H_INSIDE,H_OUTSIDE,198.18.10.1/32,,,,,,,,,,,,,,,deny,FALSE,,FALSE
+lab25-fw-111,LAB25 rule 111,INVALID duplicate priority second row,FALSE,35090,Default,Default,H_INSIDE,H_OUTSIDE,198.18.11.1/32,,,,,,,,,,,,,,,inspect,TRUE,7,FALSE

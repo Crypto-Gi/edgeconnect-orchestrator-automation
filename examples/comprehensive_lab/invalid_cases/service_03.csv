@@ -1,0 +1,2 @@
+Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
+lab25-bad-sg-missing,TCP,,,lab25-no-such-service,,,,INVALID missing nested group

@@ -1,0 +1,6 @@
+Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
+lab25-bad-sg-protocol,SCTP,3868,,,,,,INVALID unsupported protocol
+lab25-bad-sg-port,TCP,70000,,,,,,INVALID port out of range
+lab25-bad-sg-missing,TCP,,,lab25-no-such-service,,,,INVALID missing nested group
+lab25-bad-sg-self,TCP,,,lab25-bad-sg-self,,,,INVALID self cycle
+lab25-bad-sg-icmpv6,ICMPV6,,,,,128,0,EXPECTED RUNTIME FAILURE on tested 9.7.1 importer

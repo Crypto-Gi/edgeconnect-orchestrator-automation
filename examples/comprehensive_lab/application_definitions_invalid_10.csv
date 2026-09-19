@@ -1,0 +1,11 @@
+DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
+IP_PROTOCOL,lab25-bad-ip-09,INVALID protocol number,TRUE,100,256,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-bad-ip-10,INVALID nonnumeric protocol,TRUE,100,abc,0,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-bad-tcp-09,INVALID TCP port zero,TRUE,100,,0,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-bad-tcp-10,INVALID dedicated TCP range,TRUE,100,,80-90,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-bad-udp-09,INVALID UDP port,TRUE,100,,70000,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-bad-udp-10,INVALID nonnumeric UDP port,TRUE,100,,abc,,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-bad-domain-09,INVALID URL not domain,TRUE,100,,,https://bad.example.com/path,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-bad-domain-10,INVALID double dot,TRUE,100,,,bad..example.com,,,,,,,,,,,,,,,,,,,OFF
+COMPOUND,lab25-bad-cmp-09,INVALID only one attribute,TRUE,100,,,,tcp,,,,,,,,,,,,,,,,,,OFF
+COMPOUND,lab25-bad-cmp-10,INVALID directional/either conflict,TRUE,100,,,,,,,,198.18.200.1/32,,198.18.200.2/32,,,,,,,,,,,,OFF

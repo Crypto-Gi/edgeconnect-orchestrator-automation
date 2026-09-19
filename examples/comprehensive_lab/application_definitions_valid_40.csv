@@ -1,0 +1,41 @@
+DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
+IP_PROTOCOL,lab25-ip-01,IP protocol 1,TRUE,100,1,0,,,,,,,,,,,,,,,,,,,,MONITOR
+IP_PROTOCOL,lab25-ip-02,IP protocol 4,TRUE,100,4,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-ip-03,IP protocol 41,TRUE,100,41,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-ip-04,IP protocol 47,TRUE,100,47,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-ip-05,IP protocol 50,TRUE,100,50,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-ip-06,IP protocol 51,TRUE,100,51,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-ip-07,IP protocol 89,TRUE,100,89,0,,,,,,,,,,,,,,,,,,,,OFF
+IP_PROTOCOL,lab25-ip-08,IP protocol 112,TRUE,100,112,0,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-01,SSH,TRUE,100,,22,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-02,HTTP,TRUE,100,,80,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-03,HTTPS,TRUE,100,,443,,,,,,,,,,,,,,,,,,,,MONITOR
+TCP_PORT,lab25-tcp-04,,TRUE,100,,8443,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-05,,TRUE,100,,3389,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-06,,TRUE,100,,1521,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-07,,TRUE,100,,5432,,,,,,,,,,,,,,,,,,,,OFF
+TCP_PORT,lab25-tcp-08,,TRUE,100,,65535,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-01,DNS,TRUE,100,,53,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-02,,TRUE,100,,67,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-03,,TRUE,100,,68,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-04,,TRUE,100,,123,,,,,,,,,,,,,,,,,,,,MONITOR
+UDP_PORT,lab25-udp-05,,TRUE,100,,161,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-06,,TRUE,100,,500,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-07,,TRUE,100,,4500,,,,,,,,,,,,,,,,,,,,OFF
+UDP_PORT,lab25-udp-08,,TRUE,100,,65535,,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-01,domain probe 1,TRUE,100,,,*.alpha.example.com,,,,,,,,,,,,,,,,,,,MONITOR
+DOMAIN,lab25-domain-02,domain probe 2,TRUE,100,,,beta.example.com,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-03,domain probe 3,TRUE,100,,,*gamma*,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-04,domain probe 4,TRUE,100,,,api.delta.example.com,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-05,domain probe 5,TRUE,100,,,*.epsilon.example.org,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-06,domain probe 6,TRUE,100,,,zeta.example.net,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-07,domain probe 7,TRUE,100,,,eta.example.com,,,,,,,,,,,,,,,,,,,OFF
+DOMAIN,lab25-domain-08,domain probe 8,TRUE,100,,,*.theta.example.com,,,,,,,,,,,,,,,,,,,OFF
+COMPOUND,lab25-cmp-01,directional ports,TRUE,100,,,,tcp,1024-2048,443,,,,,,,,,,,,,,,,OFF
+COMPOUND,lab25-cmp-02,either port and IP,TRUE,100,,,,udp,,,53|443,,,198.18.100.1/32|198.18.100.2/32,,,,,,,,,,,,OFF
+COMPOUND,lab25-cmp-03,IP and geo,TRUE,100,,,,,,,,198.18.101.0/24,198.18.102.0/24,,United States of America,Canada,,,,,,,,,,OFF
+COMPOUND,lab25-cmp-04,domain and DSCP,TRUE,100,,,,,,,,,,,,,,*.source.example.com,*.destination.example.com,,af31,,,,,OFF
+COMPOUND,lab25-cmp-05,address map and interface,TRUE,100,,,,,,,,,,,,,,,,,,Office365Common,Salesforce,,lan0,OFF
+COMPOUND,lab25-cmp-06,either geo/map,TRUE,100,,,,ip,,,,,,,,,United States of America,,,,,,,Office365Common,,OFF
+COMPOUND,lab25-cmp-07,IPv6 and DSCP,TRUE,100,,,,udp,,,,2001:db8:25::/64,2001:db8:26::/64,,,,,,,,ef,,,,,OFF
+COMPOUND,lab25-cmp-08,combined directional criteria,TRUE,100,,,,tcp,2000-2010,9443,,198.18.103.0/24,198.18.104.0/24,,United States of America,Canada,,*.src.example.net,*.dst.example.net,,af21,Office365Common,Salesforce,,lan0.10,MONITOR

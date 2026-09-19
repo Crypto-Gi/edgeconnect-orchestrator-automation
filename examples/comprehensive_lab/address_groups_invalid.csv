@@ -1,0 +1,6 @@
+Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment
+lab25-bad-ag-ip,999.1.1.1/24,,,INVALID bad IP
+lab25-bad-ag-missing,,,lab25-no-such-group,INVALID missing nested group
+lab25-bad-ag-self,,,lab25-bad-ag-self,INVALID self cycle
+lab25-bad-ag-cycle-a,,,lab25-bad-ag-cycle-b,INVALID cycle A
+lab25-bad-ag-cycle-b,,,lab25-bad-ag-cycle-a,INVALID cycle B

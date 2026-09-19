@@ -87,6 +87,8 @@ def parse_address_groups(path: str, existing_names: Iterable[str] = ()) -> List[
 
 def _check_port_members(value: str, row: str, field: str, comma_separated: bool = False) -> None:
     for member in (_csv_members(value) if comma_separated else _members(value)):
+        if comma_separated and member == "*":
+            continue
         if not PORT_PATTERN.fullmatch(member):
             raise ValidationError("row {} has invalid {} value {}".format(row, field, member))
         ends = [int(part) for part in member.split("-")]
@@ -99,14 +101,29 @@ def parse_service_groups(path: str, existing_names: Iterable[str] = ()) -> List[
     for row in rows:
         if not row["Name"] or not NAME_PATTERN.fullmatch(row["Name"]):
             raise ValidationError("row {} has invalid Name".format(row["_row"]))
-        if row["Protocol"].upper() not in {"TCP", "UDP", "ICMP", "ICMPV6"}:
+        protocol = row["Protocol"].upper()
+        if protocol not in {"TCP", "UDP", "ICMP", "ICMPV6"}:
             raise ValidationError("row {} has invalid Protocol".format(row["_row"]))
         _check_port_members(row["IncludedPorts"], row["_row"], "IncludedPorts", True)
         _check_port_members(row["ExcludedPorts"], row["_row"], "ExcludedPorts", True)
-        for field in ("IcmpTypes", "IcmpCodes"):
-            for value in _csv_members(row[field]):
+        icmp_types = _csv_members(row["IcmpTypes"])
+        icmp_codes = _csv_members(row["IcmpCodes"])
+        for field, values in (("IcmpTypes", icmp_types), ("IcmpCodes", icmp_codes)):
+            for value in values:
                 if not value.isdigit() or int(value) > 255:
                     raise ValidationError("row {} has invalid {}".format(row["_row"], field))
+        if protocol in {"TCP", "UDP"}:
+            if not row["IncludedPorts"] and not row["IncludedGroups"]:
+                raise ValidationError("row {} TCP/UDP requires IncludedPorts or IncludedGroups".format(row["_row"]))
+            if icmp_types or icmp_codes:
+                raise ValidationError("row {} TCP/UDP cannot include ICMP fields".format(row["_row"]))
+        else:
+            if not icmp_types:
+                raise ValidationError("row {} ICMP/ICMPV6 requires IcmpTypes".format(row["_row"]))
+            if row["IncludedPorts"] or row["ExcludedPorts"] or row["IncludedGroups"] or row["ExcludedGroups"]:
+                raise ValidationError("row {} ICMP/ICMPV6 cannot include port/group fields".format(row["_row"]))
+            if icmp_codes and len(icmp_types) != 1:
+                raise ValidationError("row {} IcmpCodes requires exactly one IcmpType".format(row["_row"]))
     _validate_graph(rows, set(existing_names), "IncludedGroups", "ExcludedGroups")
     return rows
 

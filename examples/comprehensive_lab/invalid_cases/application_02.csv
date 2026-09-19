@@ -1,0 +1,2 @@
+DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
+IP_PROTOCOL,lab25-bad-ip-10,INVALID nonnumeric protocol,TRUE,100,abc,0,,,,,,,,,,,,,,,,,,,,OFF

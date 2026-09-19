@@ -64,10 +64,15 @@ class NativeGroupTests(unittest.TestCase):
         finally:
             fixture.close()
 
-    def test_icmpv6_and_port_zero_are_locally_accepted(self):
-        fixture = TempCsv(SERVICE_HEADERS, [{"Name": "icmp6", "Protocol": "ICMPV6", "IncludedPorts": "0", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "128", "IcmpCodes": "0", "Comment": ""}])
+    def test_icmpv6_and_tcp_port_zero_are_locally_accepted(self):
+        fixture = TempCsv(SERVICE_HEADERS, [
+            {"Name": "icmp6", "Protocol": "ICMPV6", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "128", "IcmpCodes": "0", "Comment": ""},
+            {"Name": "tcp0", "Protocol": "TCP", "IncludedPorts": "0", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": ""},
+        ])
         try:
-            self.assertEqual(parse_service_groups(str(fixture.path))[0]["Protocol"], "ICMPV6")
+            rows = parse_service_groups(str(fixture.path))
+            self.assertEqual(rows[0]["Protocol"], "ICMPV6")
+            self.assertEqual(rows[1]["IncludedPorts"], "0")
         finally:
             fixture.close()
 

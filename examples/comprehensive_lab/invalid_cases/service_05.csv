@@ -1,0 +1,2 @@
+Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
+lab25-bad-sg-icmpv6,ICMPV6,,,,,128,0,EXPECTED RUNTIME FAILURE on tested 9.7.1 importer

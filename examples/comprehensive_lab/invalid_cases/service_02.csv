@@ -1,0 +1,2 @@
+Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
+lab25-bad-sg-port,TCP,70000,,,,,,INVALID port out of range

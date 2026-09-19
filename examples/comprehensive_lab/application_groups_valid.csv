@@ -1,0 +1,8 @@
+Name,Applications,ParentGroups
+lab25-apps-network,"lab25-ip-01,lab25-ip-02,lab25-ip-03,lab25-ip-04,lab25-ip-05,lab25-ip-06,lab25-ip-07,lab25-ip-08",
+lab25-apps-tcp,"lab25-tcp-01,lab25-tcp-02,lab25-tcp-03,lab25-tcp-04,lab25-tcp-05,lab25-tcp-06,lab25-tcp-07,lab25-tcp-08",
+lab25-apps-udp,"lab25-udp-01,lab25-udp-02,lab25-udp-03,lab25-udp-04,lab25-udp-05,lab25-udp-06,lab25-udp-07,lab25-udp-08",
+lab25-apps-domain,"lab25-domain-01,lab25-domain-02,lab25-domain-03,lab25-domain-04,lab25-domain-05,lab25-domain-06,lab25-domain-07,lab25-domain-08",
+lab25-apps-compound,"lab25-cmp-01,lab25-cmp-02,lab25-cmp-03,lab25-cmp-04,lab25-cmp-05,lab25-cmp-06,lab25-cmp-07,lab25-cmp-08",
+lab25-apps-all-simple,,"lab25-apps-network,lab25-apps-tcp,lab25-apps-udp,lab25-apps-domain"
+lab25-apps-all,,"lab25-apps-all-simple,lab25-apps-compound"

@@ -1,0 +1,2 @@
+DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
+TCP_PORT,lab25-bad-tcp-09,INVALID TCP port zero,TRUE,100,,0,,,,,,,,,,,,,,,,,,,,OFF

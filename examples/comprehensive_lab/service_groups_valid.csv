@@ -1,0 +1,22 @@
+Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
+lab25-sg-tcp-web,TCP,"80,443",,,,,,web ports
+lab25-sg-tcp-range,TCP,8000-8010,,,,,,TCP range
+lab25-sg-tcp-exclude,TCP,9000-9010,9005,,,,,TCP exclusion
+lab25-sg-udp-dns,UDP,53,,,,,,DNS
+lab25-sg-udp-range,UDP,5000-5010,,,,,,UDP range
+lab25-sg-wildcard,TCP,*,,,,,,wildcard port
+lab25-sg-tcp-child,TCP,8443,,lab25-sg-tcp-web,,,,nested TCP group
+lab25-sg-udp-child,UDP,5353,,lab25-sg-udp-dns,,,,nested UDP group
+lab25-sg-multi-rule,TCP,22,,,,,,multi-rule TCP
+lab25-sg-multi-rule,UDP,161,,,,,,multi-rule UDP
+lab25-sg-icmp-echo,ICMP,,,,,8,0,ICMP echo request
+lab25-sg-icmp-multi,ICMP,,,,,"8,0",,ICMP echo request/reply
+lab25-sg-icmp-unreach,ICMP,,,,,3,1,ICMP destination unreachable
+lab25-sg-port-zero,TCP,0,,,,,,port zero boundary
+lab25-sg-port-max,TCP,65535,,,,,,max TCP port
+lab25-sg-udp-max,UDP,65535,,,,,,max UDP port
+lab25-sg-excluded-group,TCP,10000,,lab25-sg-tcp-web,lab25-sg-tcp-range,,,include and exclude groups
+lab25-sg-depth-two,TCP,10443,,lab25-sg-tcp-child,,,,maximum nesting depth two
+lab25-sg-many-ranges,TCP,"11000-11010,12000-12010,13000","11005,12005",,,,,multiple ranges
+lab25-sg-comment,UDP,1900,,,,,,"comment with comma, quoted by CSV"
+lab25-sg-udp-group-only,UDP,,,lab25-sg-udp-dns,,,,group-only UDP rule

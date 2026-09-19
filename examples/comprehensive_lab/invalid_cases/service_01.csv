@@ -1,0 +1,2 @@
+Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
+lab25-bad-sg-protocol,SCTP,3868,,,,,,INVALID unsupported protocol

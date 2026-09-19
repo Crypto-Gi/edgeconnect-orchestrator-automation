@@ -436,6 +436,18 @@ Reports are:
 
 They may still contain sensitive network configuration. Store and transfer them only through approved systems.
 
+## Comprehensive lab test suite
+
+A deterministic test suite with valid and intentionally invalid CSVs is available under:
+
+```text
+examples/comprehensive_lab/
+```
+
+It includes 25 address groups, 25 service groups, 50 application definitions, application groups, AppExpress Monitor inputs, 57 firewall rules, expected-failure documentation, a generator, and a prefix-guarded cleanup script.
+
+See [examples/comprehensive_lab/README.md](examples/comprehensive_lab/README.md). Use it only in an isolated lab and always begin with dry-run.
+
 ## Testing and development
 
 ```bash

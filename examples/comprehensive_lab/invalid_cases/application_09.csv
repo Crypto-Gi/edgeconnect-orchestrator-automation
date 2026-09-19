@@ -1,0 +1,2 @@
+DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
+COMPOUND,lab25-bad-cmp-09,INVALID only one attribute,TRUE,100,,,,tcp,,,,,,,,,,,,,,,,,,OFF
