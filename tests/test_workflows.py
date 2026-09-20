@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from edgeconnect_automation.errors import DriftError, ValidationError
-from edgeconnect_automation.workflows import ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
+from edgeconnect_automation.workflows import ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
 
 
 class TempCsv:
@@ -46,6 +46,46 @@ class NativeGroupTests(unittest.TestCase):
             self.assertNotIn(b"base,10.0.0.0/24", plan.content)
         finally:
             fixture.close()
+
+    def test_address_groups_accept_documented_ipv4_formats(self):
+        values = [
+            "10.10.10.1",
+            "10.10.0.0/16",
+            "10.10.0.0/255.255.0.0",
+            "10.10.10.10-20",
+            "10.10-20.0.0/16",
+            "10.10-20.0.0/255.255.0.0",
+            "10.10.10.*",
+            "10.*.0.0/16",
+            "10.*.0.0/255.255.0.0",
+        ]
+        fixture = TempCsv(ADDRESS_HEADERS, [
+            {"Name": "documented", "IncludedIPs": ",".join(values), "ExcludedIPs": "10.20.30.10-20", "IncludedGroups": "", "Comment": ""},
+        ])
+        try:
+            self.assertEqual(parse_address_groups(str(fixture.path))[0]["IncludedIPs"], ",".join(values))
+        finally:
+            fixture.close()
+
+    def test_address_groups_reject_ipv6_and_invalid_ipv4_formats(self):
+        invalid = [
+            ("2001:db8::/64", "IPv6 is not supported"),
+            ("999.1.1.1", "out of range"),
+            ("10.0.0.20-10", "out of range"),
+            ("10.0.0.0/33", "prefix length"),
+            ("10.0.0.0/255.0.255.0", "not contiguous"),
+            ("10.0.*", "four octets"),
+        ]
+        for value, message in invalid:
+            with self.subTest(value=value):
+                fixture = TempCsv(ADDRESS_HEADERS, [
+                    {"Name": "invalid", "IncludedIPs": value, "ExcludedIPs": "", "IncludedGroups": "", "Comment": ""},
+                ])
+                try:
+                    with self.assertRaisesRegex(ValidationError, message):
+                        parse_address_groups(str(fixture.path))
+                finally:
+                    fixture.close()
 
     def test_repeated_group_rows_merge_rules_in_order(self):
         fixture = TempCsv(ADDRESS_HEADERS, [
@@ -96,6 +136,37 @@ class NativeGroupTests(unittest.TestCase):
         result = apply_native_groups(gateway, plan)
         self.assertEqual(result["status"], "success")
         self.assertEqual(gateway.uploaded, plan.content)
+
+    def test_native_group_server_managed_null_type_is_semantically_equal(self):
+        expected = {"name": "web", "type": "SG", "rules": [{"protocol": "TCP", "includedPorts": ["443"], "excludedPorts": [], "includedGroups": [], "excludedGroups": [], "icmpTypes": [], "icmpCodes": [], "comment": None}]}
+        actual = dict(expected, type=None)
+        self.assertTrue(native_group_semantic_equal(actual, expected))
+        self.assertFalse(native_group_semantic_equal(dict(expected, type="AG"), expected))
+
+        rows = [{"Name": "web", "Protocol": "TCP", "IncludedPorts": "443", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "", "_row": "2"}]
+        plan = plan_native_groups("service", rows, [actual])
+        self.assertEqual(plan.no_ops, ["web"])
+        self.assertFalse(plan.new_rows)
+        self.assertFalse(plan.conflicts)
+
+    def test_service_group_null_type_readback_is_verified(self):
+        rows = [{"Name": "web", "Protocol": "TCP", "IncludedPorts": "443", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "", "_row": "2"}]
+        plan = plan_native_groups("service", rows, [])
+
+        class Gateway:
+            def __init__(self):
+                self.values = []
+
+            def get_service_groups(self):
+                return copy.deepcopy(self.values)
+
+            def upload_service_groups(self, content):
+                self.values = [{"name": "web", "type": None, "rules": [{"protocol": "TCP", "includedPorts": ["443"], "excludedPorts": [], "includedGroups": [], "excludedGroups": [], "icmpTypes": [], "icmpCodes": [], "comment": None}]}]
+                return {"success": True}
+
+        result = apply_native_groups(Gateway(), plan)
+        self.assertEqual(result["status"], "success")
+        self.assertFalse(result["unverified"])
 
     def test_native_runtime_failure_is_all_or_nothing_partial(self):
         rows = [{"Name": "new", "IncludedIPs": "10.0.0.0/24", "ExcludedIPs": "", "IncludedGroups": "", "Comment": "", "_row": "2"}]
@@ -363,7 +434,8 @@ class ApplicationDefinitionTests(unittest.TestCase):
             self.assertEqual(plan_application_definitions(definitions, identical).no_ops, ["web"])
             different = copy.deepcopy(identical)
             different["portProtocolClassification"]["443"][0]["name"] = "other"
-            self.assertTrue(plan_application_definitions(definitions, different).conflicts)
+            conflicts = plan_application_definitions(definitions, different).conflicts
+            self.assertEqual(conflicts, [{"row": 2, "name": "web", "definition_type": "TCP_PORT", "identity": ("443", 6), "reason": "existing port/protocol identity has different semantics"}])
         finally:
             fixture.close()
 

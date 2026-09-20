@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from edgeconnect_automation.errors import ApprovalError, DriftError, ValidationError
 from edgeconnect_automation.util import fingerprint
-from scripts.cleanup_comprehensive_lab import FINAL_ACKNOWLEDGMENT, PREFIX, apply_plan, confirm, deletion_order, deletion_rows, format_deletion_table, generate_confirmation_code, load_suite, parse_args, require_prefix, verify_absent
+from edgeconnect_automation.workflows import native_group_semantic_equal
+from scripts.cleanup_comprehensive_lab import FINAL_ACKNOWLEDGMENT, PREFIX, apply_plan, confirm, deletion_order, deletion_rows, expected_groups, format_deletion_table, generate_confirmation_code, load_suite, parse_args, require_prefix, verify_absent
 
 
 class EmptyGateway:
@@ -51,6 +52,8 @@ class ComprehensiveLabTests(unittest.TestCase):
         self.assertEqual(len({row["Name"] for row in suite["address_rows"]}), 20)
         self.assertEqual(len({row["Name"] for row in suite["service_rows"]}), 20)
         self.assertEqual(len(suite["definitions"]), 40)
+        self.assertEqual(suite["definitions"][0].name, "lab25-ip-01")
+        self.assertEqual(suite["definitions"][0].identity, ("0", 2))
         self.assertEqual(len(suite["firewall_rules"]), 45)
         self.assertEqual(set(suite["app_express"]), {definition.name for definition in suite["definitions"] if definition.app_express == "MONITOR"})
         self.assertFalse((self.directory / "appexpress_monitor_valid.csv").exists())
@@ -64,6 +67,12 @@ class ComprehensiveLabTests(unittest.TestCase):
         self.assertEqual(len([row for row in expectations if row["Category"] == "application_definition"]), 10)
         self.assertEqual(len([row for row in expectations if row["Category"] == "firewall_rule"]), 12)
 
+    def test_cleanup_accepts_server_managed_null_group_type(self):
+        row = {"Name": "lab25-sg-web", "Protocol": "TCP", "IncludedPorts": "443", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": ""}
+        expected = expected_groups([row], "service")["lab25-sg-web"]
+        actual = dict(expected, type=None)
+        self.assertTrue(native_group_semantic_equal(actual, expected))
+
     def test_prefix_guard_and_dependency_delete_order(self):
         with self.assertRaises(ValidationError):
             require_prefix({"production-object"}, "objects")
@@ -74,7 +83,9 @@ class ComprehensiveLabTests(unittest.TestCase):
         self.assertEqual(deletion_order(set(groups), groups), [PREFIX + "parent", PREFIX + "child"])
 
     def test_cleanup_defaults_to_dry_run_and_empty_verification(self):
-        self.assertFalse(parse_args(["--dotenv", ".env"]).apply)
+        args = parse_args([])
+        self.assertFalse(args.apply)
+        self.assertIsNone(args.dotenv)
         plan = {"firewall": []}
         self.assertTrue(verify_absent(EmptyGateway(), plan)["verified_absent"])
 

@@ -55,6 +55,21 @@ class GatewayContractTests(unittest.TestCase):
         gateway.post_application_definition("compoundClassification", {"name": "compound", "id": 11}, 11)
         self.assertEqual(client.calls[-1][1:3], ("/applicationDefinition/compoundClassification", {"id": 11}))
 
+    def test_delete_paths_and_queries(self):
+        client = FakeClient()
+        gateway = OrchestratorGateway(client)
+        gateway.delete_address_group("address")
+        self.assertEqual(client.calls[-1][0:2], ("DELETE", "/ipObjects/addressGroup"))
+        self.assertEqual(client.calls[-1][2]["query"], {"name": "address"})
+        gateway.delete_service_group("service")
+        self.assertEqual(client.calls[-1][0:2], ("DELETE", "/ipObjects/serviceGroup"))
+        gateway.delete_application_definition("portProtocolClassification", ("443", 6))
+        self.assertEqual(client.calls[-1][2]["query"], {"port": "443", "protocol": 6})
+        gateway.delete_application_definition("dnsClassification", "example.com")
+        self.assertEqual(client.calls[-1][2]["query"], {"domain": "example.com"})
+        gateway.delete_application_definition("compoundClassification", 7)
+        self.assertEqual(client.calls[-1][2]["query"], {"id": 7})
+
     def test_appexpress_and_application_group_write_paths(self):
         client = FakeClient()
         gateway = OrchestratorGateway(client)

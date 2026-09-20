@@ -16,7 +16,7 @@ CLI
 
 | Module | Responsibility |
 |---|---|
-| `config.py` | Explicit dotenv/environment loading and URL/TLS configuration |
+| `config.py` | Current-directory dotenv defaults, explicit overrides, environment loading, and URL/TLS configuration |
 | `client.py` | Strict HTTPS, redaction, retries for safe reads, JSON and multipart requests |
 | `gateway.py` | Version-matched Orchestrator endpoint adapter |
 | `models.py` | Typed firewall plans, inventories and run results |

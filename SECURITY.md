@@ -3,6 +3,7 @@
 ## Secrets
 
 - Never commit `.env`, API keys, passwords, cookies, CSRF tokens, or authorization headers.
+- The CLI automatically reads only `./.env` from the current working directory; it never searches parents or the home directory. Verify your current directory before running a command.
 - Use an expiring least-privilege Orchestrator API key restricted by source IP where practical.
 - Keep TLS certificate and hostname verification enabled. Use a private CA bundle when required.
 - Treat CSV inputs, plans, reports, and readbacks as sensitive network configuration.

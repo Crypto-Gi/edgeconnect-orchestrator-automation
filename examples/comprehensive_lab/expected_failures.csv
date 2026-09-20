@@ -1,5 +1,5 @@
 Category,Identifier,Expected,Reason
-address_group,lab25-bad-ag-ip,FAIL,INVALID bad IP
+address_group,lab25-bad-ag-ipv6,FAIL,INVALID IPv6 unsupported by native address-group importer
 address_group,lab25-bad-ag-missing,FAIL,INVALID missing nested group
 address_group,lab25-bad-ag-self,FAIL,INVALID self cycle
 address_group,lab25-bad-ag-cycle-a,FAIL,INVALID cycle A

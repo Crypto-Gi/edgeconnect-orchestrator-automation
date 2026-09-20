@@ -15,7 +15,7 @@ def write_csv(name, headers, rows):
     target = ROOT / name
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, headers, extrasaction="ignore")
+        writer = csv.DictWriter(handle, headers, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -31,8 +31,8 @@ def address_rows():
         empty(ADDRESS_HEADERS, Name="lab25-ag-base-v4", IncludedIPs="198.18.1.0/24", Comment="single IPv4 network"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-multi-v4", IncludedIPs="198.18.2.0/24,198.18.3.10/32", Comment="multiple IPv4 members"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-exclude-v4", IncludedIPs="198.18.4.0/24", ExcludedIPs="198.18.4.128/25", Comment="IPv4 exclusion"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-ipv6", IncludedIPs="2001:db8:25::/64,2001:db8:25::10/128", Comment="IPv6 members"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-hosts", IncludedIPs="198.18.5.1/32,198.18.5.2/32,198.18.5.3/32", Comment="host members"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-dotted-mask", IncludedIPs="198.18.4.0/255.255.255.0", Comment="dotted-decimal subnet mask"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-hosts", IncludedIPs="198.18.5.1,198.18.5.2,198.18.5.3", Comment="individual IPv4 members"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-child-one", IncludedIPs="198.18.6.0/24", IncludedGroups="lab25-ag-base-v4", Comment="one nested group"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-child-two", IncludedIPs="198.18.7.0/24", IncludedGroups="lab25-ag-multi-v4", Comment="second nested group"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-depth-two", IncludedIPs="198.18.8.0/24", IncludedGroups="lab25-ag-child-one", Comment="maximum nesting depth two"),
@@ -41,17 +41,17 @@ def address_rows():
         empty(ADDRESS_HEADERS, Name="lab25-ag-multi-rule", IncludedIPs="198.18.10.0/24", Comment="multi-rule second"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-comment", IncludedIPs="198.18.11.0/24", Comment="comment with comma, quoted by CSV"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-two-exclusions", IncludedIPs="198.18.12.0/24", ExcludedIPs="198.18.12.10/32,198.18.12.20/32", Comment="two exclusions"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-mixed-host-net", IncludedIPs="198.18.13.0/24,198.18.14.14/32", Comment="network and host"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-ipv6-child", IncludedGroups="lab25-ag-ipv6", Comment="nested IPv6 group"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-mixed-host-net", IncludedIPs="198.18.13.0/24,198.18.14.14", Comment="network and host"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-range-subnet", IncludedIPs="198.18-19.0.0/16", Comment="ranged octet with prefix"),
         empty(ADDRESS_HEADERS, Name="lab25-ag-nested-pair", IncludedGroups="lab25-ag-child-one,lab25-ag-child-two", Comment="two child groups"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-exact-exclude", IncludedIPs="198.18.15.1/32,198.18.15.2/32", ExcludedIPs="198.18.15.2/32", Comment="exact host exclusion"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag.dot-17", IncludedIPs="198.18.16.0/24", Comment="dot and hyphen name"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag_underscore_18", IncludedIPs="198.18.17.0/24", Comment="underscore name"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-long-name-19", IncludedIPs="198.18.18.0/24", Comment="long valid name"),
-        empty(ADDRESS_HEADERS, Name="lab25-ag-final-20", IncludedIPs="198.18.19.0/24", Comment="final valid group"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-range-exclude", IncludedIPs="198.18.15.1-20", ExcludedIPs="198.18.15.2-5", Comment="short ranges and exclusion"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag.dot-17", IncludedIPs="198.18.16.*", Comment="wildcard final octet"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag_underscore_18", IncludedIPs="198.*.0.0/16", Comment="wildcard with prefix mask"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-long-name-19", IncludedIPs="198.18.18.10-20", Comment="short final-octet range"),
+        empty(ADDRESS_HEADERS, Name="lab25-ag-final-20", IncludedIPs="198.18-19.0.0/255.255.0.0", Comment="ranged octet with dotted mask"),
     ]
     invalid = [
-        empty(ADDRESS_HEADERS, Name="lab25-bad-ag-ip", IncludedIPs="999.1.1.1/24", Comment="INVALID bad IP"),
+        empty(ADDRESS_HEADERS, Name="lab25-bad-ag-ipv6", IncludedIPs="2001:db8:25::/64", Comment="INVALID IPv6 unsupported by native address-group importer"),
         empty(ADDRESS_HEADERS, Name="lab25-bad-ag-missing", IncludedGroups="lab25-no-such-group", Comment="INVALID missing nested group"),
         empty(ADDRESS_HEADERS, Name="lab25-bad-ag-self", IncludedGroups="lab25-bad-ag-self", Comment="INVALID self cycle"),
         empty(ADDRESS_HEADERS, Name="lab25-bad-ag-cycle-a", IncludedGroups="lab25-bad-ag-cycle-b", Comment="INVALID cycle A"),
@@ -102,7 +102,7 @@ def app_row(definition_type, name, **values):
 
 def application_rows():
     valid = []
-    for index, protocol in enumerate([1, 4, 41, 47, 50, 51, 89, 112], 1):
+    for index, protocol in enumerate([2, 4, 41, 47, 50, 51, 89, 112], 1):
         valid.append(app_row("IP_PROTOCOL", f"lab25-ip-{index:02d}", Notes=f"IP protocol {protocol}", ProtocolNumber=str(protocol), Port="0", AppExpressMode="MONITOR" if index == 1 else "OFF"))
     valid.extend([
         app_row("TCP_PORT", "lab25-tcp-01", Port="22", Notes="SSH"), app_row("TCP_PORT", "lab25-tcp-02", Port="80", Notes="HTTP"),

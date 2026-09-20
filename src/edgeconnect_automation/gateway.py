@@ -124,6 +124,12 @@ class OrchestratorGateway:
         response = self.client.post_multipart_file("/ipObjects/serviceGroup/bulkUpload", "csvFile", "service_groups.csv", content)
         return self._bulk_upload_response(response)
 
+    def delete_address_group(self, name: str) -> None:
+        self.client.request("DELETE", "/ipObjects/addressGroup", query={"name": name}, expected_status=(200, 204), expect_json=False)
+
+    def delete_service_group(self, name: str) -> None:
+        self.client.request("DELETE", "/ipObjects/serviceGroup", query={"name": name}, expected_status=(200, 204), expect_json=False)
+
     @staticmethod
     def _bulk_upload_response(value: Any) -> Mapping[str, Any]:
         if not isinstance(value, dict) or not isinstance(value.get("success"), bool):
@@ -160,6 +166,21 @@ class OrchestratorGateway:
         else:
             raise ValueError("unsupported application definition base")
         self.client.post_json(path, value, query, (200, 204))
+
+    def delete_application_definition(self, base: str, identity: Any) -> None:
+        if base == "portProtocolClassification":
+            port, protocol = identity
+            path = "/applicationDefinition/portProtocolClassification"
+            query = {"port": port, "protocol": protocol}
+        elif base == "dnsClassification":
+            path = "/applicationDefinition/dnsClassification"
+            query = {"domain": identity}
+        elif base == "compoundClassification":
+            path = "/applicationDefinition/compoundClassification"
+            query = {"id": identity}
+        else:
+            raise ValueError("unsupported application definition base")
+        self.client.request("DELETE", path, query=query, expected_status=(200, 204), expect_json=False)
 
     def get_appexpress(self) -> Mapping[str, Any]:
         return self._shape(self.client.get("/applicationDefinition/appExpressAppConfig", {"resourceKey": "userDefined"}), dict, "AppExpress")

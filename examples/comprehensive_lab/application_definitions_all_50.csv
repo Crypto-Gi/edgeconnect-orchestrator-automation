@@ -1,5 +1,5 @@
 DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
-IP_PROTOCOL,lab25-ip-01,IP protocol 1,TRUE,100,1,0,,,,,,,,,,,,,,,,,,,,MONITOR
+IP_PROTOCOL,lab25-ip-01,IP protocol 2,TRUE,100,2,0,,,,,,,,,,,,,,,,,,,,MONITOR
 IP_PROTOCOL,lab25-ip-02,IP protocol 4,TRUE,100,4,0,,,,,,,,,,,,,,,,,,,,OFF
 IP_PROTOCOL,lab25-ip-03,IP protocol 41,TRUE,100,41,0,,,,,,,,,,,,,,,,,,,,OFF
 IP_PROTOCOL,lab25-ip-04,IP protocol 47,TRUE,100,47,0,,,,,,,,,,,,,,,,,,,,OFF

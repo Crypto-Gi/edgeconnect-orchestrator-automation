@@ -1,6 +1,9 @@
 import io
+import os
+import tempfile
 import unittest
 from email.message import Message
+from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
 
@@ -111,6 +114,40 @@ class ConfigAndCliTests(unittest.TestCase):
             load_config(environ={"EC_BASE_URL": "https://unit.invalid/unexpected", "EC_API_KEY": "secret"})
         with self.assertRaises(ConfigurationError):
             load_config(environ={"EC_BASE_URL": "http://unit.invalid", "EC_API_KEY": "secret"})
+
+    def test_current_directory_dotenv_default_override_and_environment_precedence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text("orchestrator_base_url=https://default.invalid\norchestrator_api_key=default-key\n", encoding="utf-8")
+            override = root / "override.env"
+            override.write_text("orchestrator_base_url=https://override.invalid\norchestrator_api_key=override-key\n", encoding="utf-8")
+            previous = os.getcwd()
+            try:
+                os.chdir(root)
+                default = load_config(environ={})
+                self.assertEqual(default.base_url, "https://default.invalid/gms/rest")
+                self.assertEqual(default.api_key, "default-key")
+                explicit = load_config(str(override), environ={})
+                self.assertEqual(explicit.base_url, "https://override.invalid/gms/rest")
+                environment = load_config(environ={"EC_BASE_URL": "https://environment.invalid", "EC_API_KEY": "environment-key"})
+                self.assertEqual(environment.base_url, "https://environment.invalid/gms/rest")
+                self.assertEqual(environment.api_key, "environment-key")
+            finally:
+                os.chdir(previous)
+
+    def test_default_dotenv_does_not_search_parent_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text("orchestrator_base_url=https://parent.invalid\norchestrator_api_key=parent-key\n", encoding="utf-8")
+            child = root / "child"
+            child.mkdir()
+            previous = os.getcwd()
+            try:
+                os.chdir(child)
+                with self.assertRaisesRegex(ConfigurationError, "./.env"):
+                    load_config(environ={})
+            finally:
+                os.chdir(previous)
 
     def test_help_does_not_load_config_or_network(self):
         parser = build_parser()

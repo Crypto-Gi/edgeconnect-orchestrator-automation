@@ -44,14 +44,14 @@ orchestrator_api_key=<API_KEY>
 # orchestrator_ca_bundle=/absolute/path/to/private-ca.pem
 ```
 
-The base URL may be the host URL or may end in `/gms/rest`; it must not contain credentials, a query string, or another path.
+The base URL may be the host URL or may end in `/gms/rest`; it must not contain credentials, a query string, or another path. Commands load `./.env` from the current working directory by default, never search parent directories, and accept `--dotenv <PATH>` as an explicit override. Process environment variables take precedence.
 
 ## Verify
 
 ```bash
 edgeconnect-auto --help
 python -m unittest discover -v
-edgeconnect-auto --dotenv .env discovery --output reports/discovery.json
+edgeconnect-auto discovery --output reports/discovery.json
 ```
 
 Discovery is read-only.

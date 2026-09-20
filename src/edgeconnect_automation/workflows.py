@@ -70,6 +70,41 @@ def _validate_graph(rows: Sequence[Mapping[str, str]], existing: Set[str], inclu
         raise ValidationError("group nesting exceeds maximum depth 2")
 
 
+def _validate_address_group_member(value: str) -> None:
+    if ":" in value:
+        raise ValueError("IPv6 is not supported by the native address-group importer")
+    parts = value.split("/")
+    if len(parts) > 2:
+        raise ValueError("multiple subnet masks")
+    address = parts[0]
+    octets = address.split(".")
+    if len(octets) != 4:
+        raise ValueError("IPv4 address must contain four octets")
+    for octet in octets:
+        if octet == "*":
+            continue
+        ends = octet.split("-")
+        if len(ends) > 2 or any(not end.isdigit() for end in ends):
+            raise ValueError("invalid IPv4 octet")
+        numbers = [int(end) for end in ends]
+        if any(number > 255 for number in numbers) or len(numbers) == 2 and numbers[0] > numbers[1]:
+            raise ValueError("IPv4 octet is out of range")
+    if len(parts) == 1:
+        return
+    mask = parts[1]
+    if mask.isdigit():
+        if int(mask) > 32:
+            raise ValueError("IPv4 prefix length is out of range")
+        return
+    mask_octets = mask.split(".")
+    if len(mask_octets) != 4 or any(not octet.isdigit() or int(octet) > 255 for octet in mask_octets):
+        raise ValueError("invalid dotted-decimal subnet mask")
+    mask_value = sum(int(octet) << (24 - index * 8) for index, octet in enumerate(mask_octets))
+    inverse = (~mask_value) & 0xFFFFFFFF
+    if inverse & (inverse + 1):
+        raise ValueError("dotted-decimal subnet mask is not contiguous")
+
+
 def parse_address_groups(path: str, existing_names: Iterable[str] = ()) -> List[Dict[str, str]]:
     rows = _read_exact_csv(path, ADDRESS_HEADERS)
     for row in rows:
@@ -78,9 +113,9 @@ def parse_address_groups(path: str, existing_names: Iterable[str] = ()) -> List[
         for field in ("IncludedIPs", "ExcludedIPs"):
             for value in _csv_members(row[field]):
                 try:
-                    ipaddress.ip_network(value, strict=False)
+                    _validate_address_group_member(value)
                 except ValueError as error:
-                    raise ValidationError("row {} has invalid {} value {}".format(row["_row"], field, value)) from error
+                    raise ValidationError("row {} has invalid {} value {}: {}".format(row["_row"], field, value, error)) from error
     _validate_graph(rows, set(existing_names), "IncludedGroups")
     return rows
 
@@ -145,6 +180,16 @@ def _service_semantic(rows: Sequence[Mapping[str, str]]) -> Dict[str, Any]:
     return {"name": rows[0]["Name"], "type": "SG", "rules": [{"protocol": row["Protocol"].upper(), "includedPorts": _csv_members(row["IncludedPorts"]), "excludedPorts": _csv_members(row["ExcludedPorts"]), "includedGroups": _csv_members(row["IncludedGroups"]), "excludedGroups": _csv_members(row["ExcludedGroups"]), "icmpTypes": _csv_members(row["IcmpTypes"]), "icmpCodes": _csv_members(row["IcmpCodes"]), "comment": row["Comment"] or None} for row in rows]}
 
 
+def native_group_semantic_equal(actual: Any, expected: Mapping[str, Any]) -> bool:
+    if not isinstance(actual, Mapping) or actual.get("type") not in {None, expected.get("type")}:
+        return False
+    normalized_actual = dict(actual)
+    normalized_expected = dict(expected)
+    normalized_actual.pop("type", None)
+    normalized_expected.pop("type", None)
+    return semantic_equal(normalized_actual, normalized_expected)
+
+
 @dataclass
 class BulkPlan:
     kind: str
@@ -186,7 +231,7 @@ def plan_native_groups(kind: str, rows: Sequence[Mapping[str, str]], existing: S
         actual = current.get(name)
         if actual is None:
             new_rows.extend(dict(row) for row in group_rows)
-        elif semantic_equal(actual, expected):
+        elif native_group_semantic_equal(actual, expected):
             no_ops.append(name)
         else:
             conflicts.append(name)
@@ -222,7 +267,7 @@ def apply_native_groups(gateway: Any, plan: BulkPlan) -> Dict[str, Any]:
     except Exception as error:
         return {"status": "partial", "created": list(grouped), "error": str(error), "verification": "unknown", "all_or_nothing": True}
     current = {str(item.get("name")): item for item in readback}
-    missing = [name for name, rows in grouped.items() if not semantic_equal(current.get(name), normalizer(rows))]
+    missing = [name for name, rows in grouped.items() if not native_group_semantic_equal(current.get(name), normalizer(rows))]
     return {"status": "success" if not missing else "partial", "created": list(grouped), "unverified": missing, "bulk_response": response}
 
 
@@ -289,32 +334,91 @@ def parse_application_groups(path: str) -> List[Dict[str, str]]:
     return rows
 
 
-def plan_application_groups(rows: Sequence[Mapping[str, str]], existing: Mapping[str, Any], applications: Set[str]) -> Dict[str, Any]:
-    candidate = copy.deepcopy(dict(existing))
-    conflicts: List[str] = []
-    no_ops: List[str] = []
-    row_names = {row["Name"] for row in rows}
+def parse_application_groups_partial(path: str) -> Tuple[List[Dict[str, str]], List[Dict[str, Any]]]:
+    rows = _read_exact_csv(path, APP_GROUP_HEADERS)
+    counts: Dict[str, int] = {}
     for row in rows:
-        apps = sorted(set(_csv_members(row["Applications"])))
-        missing_apps = set(apps) - applications
-        if missing_apps:
-            raise ValidationError("group {} references missing applications: {}".format(row["Name"], ", ".join(sorted(missing_apps))))
-        parents = sorted(set(_csv_members(row["ParentGroups"])))
-        missing_parents = set(parents) - row_names - set(existing)
-        if missing_parents:
-            raise ValidationError("group {} references missing parents: {}".format(row["Name"], ", ".join(sorted(missing_parents))))
-        expected = {"apps": apps, "parentGroup": parents or None}
-        if row["Name"] in existing:
-            if semantic_equal(existing[row["Name"]], expected):
-                no_ops.append(row["Name"])
-            else:
-                conflicts.append(row["Name"])
+        counts[row["Name"]] = counts.get(row["Name"], 0) + 1
+    skipped = []
+    eligible = []
+    for row in rows:
+        if not row["Name"] or not NAME_PATTERN.fullmatch(row["Name"]):
+            skipped.append({"row": int(row["_row"]), "name": row["Name"] or "<blank>", "reason": "invalid application group name"})
+        elif counts[row["Name"]] > 1:
+            skipped.append({"row": int(row["_row"]), "name": row["Name"], "reason": "duplicate application group name in CSV"})
         else:
-            candidate[row["Name"]] = expected
-    graph = {name: list(value.get("parentGroup") or []) for name, value in candidate.items()}
-    if detect_cycle(graph):
-        raise ValidationError("application group parents contain a cycle")
-    return {"baseline": dict(existing), "candidate": candidate, "fingerprint": fingerprint(existing), "conflicts": conflicts, "no_ops": no_ops}
+            eligible.append(row)
+    return eligible, skipped
+
+
+def _cycle_nodes(graph: Mapping[str, Sequence[str]]) -> Set[str]:
+    state: Dict[str, int] = {}
+    stack: List[str] = []
+    cyclic: Set[str] = set()
+
+    def visit(node: str) -> None:
+        state[node] = 1
+        stack.append(node)
+        for child in graph.get(node, []):
+            if child not in graph:
+                continue
+            if state.get(child, 0) == 0:
+                visit(child)
+            elif state.get(child) == 1:
+                cyclic.update(stack[stack.index(child):])
+        stack.pop()
+        state[node] = 2
+
+    for node in graph:
+        if state.get(node, 0) == 0:
+            visit(node)
+    return cyclic
+
+
+def plan_application_groups(rows: Sequence[Mapping[str, str]], existing: Mapping[str, Any], applications: Set[str], initial_skips: Sequence[Mapping[str, Any]] = ()) -> Dict[str, Any]:
+    row_map = {row["Name"]: row for row in rows}
+    row_names = set(row_map)
+    skipped: Dict[str, Dict[str, Any]] = {str(item["name"]): dict(item) for item in initial_skips}
+    expected: Dict[str, Dict[str, Any]] = {}
+    for name, row in row_map.items():
+        apps = sorted(set(_csv_members(row["Applications"])))
+        parents = sorted(set(_csv_members(row["ParentGroups"])))
+        missing_apps = sorted(set(apps) - applications)
+        missing_parents = sorted(set(parents) - row_names - set(existing))
+        reason = ""
+        if missing_apps:
+            reason = "missing applications: {}".format(", ".join(missing_apps))
+        elif missing_parents:
+            reason = "missing parents: {}".format(", ".join(missing_parents))
+        elif name in existing and not semantic_equal(existing[name], {"apps": apps, "parentGroup": parents or None}):
+            reason = "existing application group has different semantics"
+        if reason:
+            skipped[name] = {"row": int(row["_row"]), "name": name, "reason": reason}
+        expected[name] = {"apps": apps, "parentGroup": parents or None}
+    graph = {name: list(value.get("parentGroup") or []) for name, value in expected.items()}
+    for name in _cycle_nodes(graph):
+        row = row_map[name]
+        skipped[name] = {"row": int(row["_row"]), "name": name, "reason": "application group parent cycle"}
+    changed = True
+    while changed:
+        changed = False
+        for name, value in expected.items():
+            if name in skipped:
+                continue
+            bad_parents = sorted(set(value.get("parentGroup") or []) & set(skipped))
+            if bad_parents:
+                skipped[name] = {"row": int(row_map[name]["_row"]), "name": name, "reason": "depends on skipped parents: {}".format(", ".join(bad_parents))}
+                changed = True
+    candidate = copy.deepcopy(dict(existing))
+    no_ops = []
+    for name, value in expected.items():
+        if name in skipped:
+            continue
+        if name in existing:
+            no_ops.append(name)
+        else:
+            candidate[name] = value
+    return {"baseline": dict(existing), "candidate": candidate, "fingerprint": fingerprint(existing), "conflicts": [], "skipped_conflicts": sorted(skipped.values(), key=lambda item: (item.get("row", 0), item["name"])), "no_ops": no_ops}
 
 
 def apply_application_groups(gateway: Any, plan: Mapping[str, Any]) -> Dict[str, Any]:
@@ -415,7 +519,7 @@ def parse_application_definitions(path: str) -> List[ApplicationDefinition]:
 class ApplicationDefinitionPlan:
     new: List[ApplicationDefinition]
     no_ops: List[str]
-    conflicts: List[str]
+    conflicts: List[Dict[str, Any]]
     fingerprints: Dict[str, str]
 
 
@@ -423,8 +527,12 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
     base_map = {"IP_PROTOCOL": "portProtocolClassification", "TCP_PORT": "portProtocolClassification", "UDP_PORT": "portProtocolClassification", "DOMAIN": "dnsClassification", "COMPOUND": "compoundClassification"}
     new: List[ApplicationDefinition] = []
     no_ops: List[str] = []
-    conflicts: List[str] = []
+    conflicts: List[Dict[str, Any]] = []
     compounds = inventories.get("compoundClassification", {})
+
+    def add_conflict(definition: ApplicationDefinition, reason: str) -> None:
+        identity = definition.name if definition.definition_type == "COMPOUND" else definition.identity
+        conflicts.append({"row": definition.row, "name": definition.name, "definition_type": definition.definition_type, "identity": identity, "reason": reason})
     seen_compounds: Set[str] = set()
     seen_identities: Set[Tuple[str, str]] = set()
     for definition in definitions:
@@ -432,7 +540,7 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
         inventory = inventories.get(base, {})
         if definition.definition_type == "COMPOUND":
             if definition.name in seen_compounds:
-                conflicts.append(definition.name)
+                add_conflict(definition, "duplicate compound name in CSV")
                 continue
             seen_compounds.add(definition.name)
             matches = [value for value in inventory.values() if isinstance(value, dict) and value.get("name") == definition.name]
@@ -443,13 +551,13 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
                 if semantic_equal(actual, expected):
                     no_ops.append(definition.name)
                 else:
-                    conflicts.append(definition.name)
+                    add_conflict(definition, "existing compound name has different semantics")
             else:
                 new.append(ApplicationDefinition(definition.row, definition.definition_type, definition.name, dict(definition.payload), definition.name, definition.app_express))
         elif definition.definition_type == "DOMAIN":
             identity_key = (base, str(definition.identity))
             if identity_key in seen_identities:
-                conflicts.append(str(definition.identity))
+                add_conflict(definition, "duplicate domain identity in CSV")
                 continue
             seen_identities.add(identity_key)
             matches = [item for item in inventory if item.get("domain") == definition.identity]
@@ -458,11 +566,11 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
             elif any(_simple_definition_equal(item, definition.payload) for item in matches):
                 no_ops.append(definition.name)
             else:
-                conflicts.append(str(definition.identity))
+                add_conflict(definition, "existing domain identity has different semantics")
         else:
             identity_key = (base, "{}:{}".format(*definition.identity))
             if identity_key in seen_identities:
-                conflicts.append(identity_key[1])
+                add_conflict(definition, "duplicate port/protocol identity in CSV")
                 continue
             seen_identities.add(identity_key)
             entries = inventory.get(str(definition.identity[0]), []) if isinstance(inventory, dict) else []
@@ -472,7 +580,7 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
             elif any(_simple_definition_equal(item, definition.payload) for item in matches):
                 no_ops.append(definition.name)
             else:
-                conflicts.append("{}:{}".format(*definition.identity))
+                add_conflict(definition, "existing port/protocol identity has different semantics")
     return ApplicationDefinitionPlan(new, no_ops, conflicts, {base: fingerprint(value) for base, value in inventories.items()})
 
 

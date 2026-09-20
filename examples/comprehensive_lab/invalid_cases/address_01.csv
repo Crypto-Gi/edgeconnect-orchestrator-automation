@@ -1,2 +1,2 @@
 Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment
-lab25-bad-ag-ip,999.1.1.1/24,,,INVALID bad IP
+lab25-bad-ag-ipv6,2001:db8:25::/64,,,INVALID IPv6 unsupported by native address-group importer

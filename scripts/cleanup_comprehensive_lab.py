@@ -14,7 +14,7 @@ from edgeconnect_automation.errors import ApprovalError, DriftError, EdgeConnect
 from edgeconnect_automation.firewall import parse_firewall_csv, rule_payload
 from edgeconnect_automation.gateway import OrchestratorGateway
 from edgeconnect_automation.util import fingerprint, safe_report, semantic_equal
-from edgeconnect_automation.workflows import parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups
+from edgeconnect_automation.workflows import native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups
 
 
 PREFIX = "lab25-"
@@ -24,7 +24,7 @@ FINAL_ACKNOWLEDGMENT = "I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION"
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Remove only resources created by the comprehensive lab CSV suite")
-    parser.add_argument("--dotenv", required=True)
+    parser.add_argument("--dotenv", help="dotenv path override; defaults to ./.env when present")
     parser.add_argument("--data-dir", default="examples/comprehensive_lab")
     parser.add_argument("--report", default="reports/comprehensive_lab_cleanup.json")
     parser.add_argument("--apply", action="store_true", help="perform deletion after exact confirmation; default is dry-run")
@@ -201,10 +201,10 @@ def build_plan(gateway: OrchestratorGateway, suite: Mapping[str, Any]) -> Dict[s
     expected_address = expected_groups(suite["address_rows"], "address")
     expected_service = expected_groups(suite["service_cleanup_rows"], "service")
     for name in address_names:
-        if not semantic_equal(address[name], expected_address[name]):
+        if not native_group_semantic_equal(address[name], expected_address[name]):
             raise ValidationError("address group changed since suite creation: {}".format(name))
     for name in service_names:
-        if not semantic_equal(service[name], expected_service[name]):
+        if not native_group_semantic_equal(service[name], expected_service[name]):
             raise ValidationError("service group changed since suite creation: {}".format(name))
     for name, value in address.items():
         if name not in address_names and references(value) & address_names:

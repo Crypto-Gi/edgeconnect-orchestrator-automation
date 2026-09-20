@@ -110,6 +110,8 @@ orchestrator_api_key=<ORCHESTRATOR_API_KEY>
 # orchestrator_ca_bundle=/absolute/path/to/ca-bundle.pem
 ```
 
+When `--dotenv` is omitted, the CLI loads only `./.env` from the current working directory. It never searches parent or home directories. Process environment variables override values from the file. Use `--dotenv /absolute/path/to/other.env` to select a different file.
+
 ### Windows PowerShell
 
 ```powershell
@@ -189,7 +191,7 @@ python -m unittest discover -v
 ### 2. Perform read-only discovery
 
 ```bash
-edgeconnect-auto --dotenv .env discovery \
+edgeconnect-auto discovery \
   --output reports/discovery.json
 ```
 
@@ -211,7 +213,7 @@ edgeconnect-auto firewall validate \
 ### 4. Perform an authenticated dry-run
 
 ```bash
-edgeconnect-auto --dotenv .env firewall deploy \
+edgeconnect-auto firewall deploy \
   --csv rules.csv \
   --resolved-csv reports/rules-resolved.csv \
   --report reports/firewall-dry-run.json \
@@ -235,7 +237,7 @@ Check:
 ### 6. Deploy
 
 ```bash
-edgeconnect-auto --dotenv .env firewall deploy \
+edgeconnect-auto firewall deploy \
   --csv rules.csv \
   --resolved-csv reports/rules-resolved.csv \
   --report reports/firewall-run.json
@@ -247,7 +249,7 @@ When prompted, type:
 APPLY
 ```
 
-Use the generated resolved CSV for every future rerun when the original CSV omitted priorities.
+Use the generated resolved CSV for every future rerun when the original CSV omitted priorities. See [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md) for a beginner-friendly explanation, examples, rerun workflow, and troubleshooting.
 
 ## Common workflows
 
@@ -262,7 +264,7 @@ templates/edgeconnect/firewall_rules.csv
 Dry-run:
 
 ```bash
-edgeconnect-auto --dotenv .env firewall deploy \
+edgeconnect-auto firewall deploy \
   --csv firewall_rules.csv \
   --resolved-csv reports/firewall_rules_resolved.csv \
   --report reports/firewall_preview.json \
@@ -272,7 +274,7 @@ edgeconnect-auto --dotenv .env firewall deploy \
 Apply:
 
 ```bash
-edgeconnect-auto --dotenv .env firewall deploy \
+edgeconnect-auto firewall deploy \
   --csv firewall_rules.csv \
   --resolved-csv reports/firewall_rules_resolved.csv \
   --report reports/firewall_result.json
@@ -293,7 +295,7 @@ Firewall deployment detects missing zones. A missing base zone requires:
 Zones can also be created directly:
 
 ```bash
-edgeconnect-auto --dotenv .env zones create \
+edgeconnect-auto zones create \
   --name POS \
   --name RX \
   --report reports/zones.json \
@@ -309,13 +311,13 @@ templates/edgeconnect/address_groups.csv
 ```
 
 ```bash
-edgeconnect-auto --dotenv .env address-groups deploy \
+edgeconnect-auto address-groups deploy \
   --csv address_groups.csv \
   --report reports/address-groups.json \
   --dry-run
 ```
 
-The file uses Orchestrator’s native GUI CSV format. List cells are comma-separated and quoted. Repeated group names create multiple rules.
+The file uses Orchestrator’s native GUI CSV format. List cells are comma-separated and quoted. Repeated group names create multiple rules. Address members support documented IPv4 addresses, CIDR or dotted-decimal masks, short octet ranges, ranged octets with masks, and wildcard octets with optional masks. IPv6 is rejected locally because the tested Orchestrator 9.7.1 native address-group importer rejects it.
 
 ### Service groups
 
@@ -326,7 +328,7 @@ templates/edgeconnect/service_groups.csv
 ```
 
 ```bash
-edgeconnect-auto --dotenv .env service-groups deploy \
+edgeconnect-auto service-groups deploy \
   --csv service_groups.csv \
   --report reports/service-groups.json \
   --dry-run
@@ -343,7 +345,7 @@ templates/edgeconnect/application_definitions.csv
 ```
 
 ```bash
-edgeconnect-auto --dotenv .env app-definitions deploy \
+edgeconnect-auto app-definitions deploy \
   --csv application_definitions.csv \
   --report reports/application-definitions.json \
   --dry-run
@@ -363,7 +365,7 @@ Defaults:
 - Confidence 100
 - AppExpress Off
 
-`AppExpressMode` is authoritative in the application-definition CSV. `MONITOR` ensures a Monitor entry exists, while `OFF` removes an existing AppExpress entry for that named application. Both definition and AppExpress changes are shown in one preview and applied after one approval.
+`AppExpressMode` is authoritative in the application-definition CSV. `MONITOR` ensures a Monitor entry exists, while `OFF` removes an existing AppExpress entry for that named application. Both definition and AppExpress changes are shown in one preview and applied after one approval. Rows whose classifier identity conflicts with an existing different definition are shown under `skipped_conflicts`; they and their AppExpress intent are excluded while independent definitions may proceed. Any skipped conflict makes the command return partial exit code `5` even when all eligible rows verify.
 
 Compound definitions support directional/either port, IP/subnet, geo, domain, address map, DSCP, protocol, and interface selectors. Compound numeric IDs are server ordering indices and are not treated as stable identities.
 
@@ -376,13 +378,13 @@ templates/edgeconnect/application_groups.csv
 ```
 
 ```bash
-edgeconnect-auto --dotenv .env app-groups deploy \
+edgeconnect-auto app-groups deploy \
   --csv application_groups.csv \
   --report reports/application-groups.json \
   --dry-run
 ```
 
-The workflow validates application membership, parent references, and cycles while preserving the complete existing collection.
+The workflow validates application membership, parent references, and cycles while preserving the complete existing collection. A group with missing applications, missing parents, conflicting existing semantics, a parent cycle, or invalid identity is listed under `skipped_conflicts`; groups that depend on a skipped parent are also skipped. Independent groups may proceed after `APPLY`, and any skips produce partial exit code `5`.
 
 ### AppExpress Monitor
 
@@ -393,7 +395,7 @@ templates/edgeconnect/appexpress_monitor.csv
 ```
 
 ```bash
-edgeconnect-auto --dotenv .env appexpress deploy \
+edgeconnect-auto appexpress deploy \
   --csv appexpress_monitor.csv \
   --report reports/appexpress.json \
   --dry-run
@@ -401,11 +403,26 @@ edgeconnect-auto --dotenv .env appexpress deploy \
 
 Application-definition CSVs apply `AppExpressMode` directly. This standalone workflow remains available for Monitor-only changes to other applications. Steering is not supported in phase one.
 
+## CSV-driven deletion
+
+Every configurable resource workflow supports `delete` with the same CSV used for deployment:
+
+```bash
+edgeconnect-auto firewall delete --csv firewall_rules.csv --report reports/firewall-delete.json --dry-run
+edgeconnect-auto address-groups delete --csv address_groups.csv --report reports/address-delete.json --dry-run
+edgeconnect-auto service-groups delete --csv service_groups.csv --report reports/service-delete.json --dry-run
+edgeconnect-auto app-groups delete --csv application_groups.csv --report reports/app-groups-delete.json --dry-run
+edgeconnect-auto app-definitions delete --csv application_definitions.csv --report reports/app-definitions-delete.json --dry-run
+edgeconnect-auto appexpress delete --csv appexpress_monitor.csv --report reports/appexpress-delete.json --dry-run
+```
+
+Deletion has no implicit name-prefix restriction. A live resource must match the CSV semantics exactly; absent resources are no-ops, while mismatches, external references detected by the workflow, or baseline drift block deletion. Always begin with `--dry-run`. Without it, the CLI displays the complete deletion table, requires a fresh random code, then requires typing `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. State is re-read after confirmation and absence is verified after deletion. Delete dependencies in this order when separate CSVs are involved: firewall rules, application groups, AppExpress/application definitions, service groups, then address groups.
+
 ## Verbose output
 
 ```bash
-edgeconnect-auto -v --dotenv .env discovery
-edgeconnect-auto -vv --dotenv .env firewall deploy --csv rules.csv --dry-run
+edgeconnect-auto -v discovery
+edgeconnect-auto -vv firewall deploy --csv rules.csv --dry-run
 ```
 
 - Default: plans, validation results, changes, and verification summary
@@ -485,10 +502,11 @@ Review `CHANGELOG.md` before using a new version.
 
 ### Configuration is missing
 
-Pass the dotenv explicitly:
+Run from the repository directory containing `.env`, provide process environment variables, or select another file explicitly:
 
 ```bash
-edgeconnect-auto --dotenv .env discovery
+edgeconnect-auto discovery
+edgeconnect-auto --dotenv /absolute/path/to/other.env discovery
 ```
 
 ### Certificate verification fails
@@ -528,6 +546,7 @@ Normalized readback fails and the affected segment pair enters recovery. Unsuppo
 - [Installation and migration](docs/INSTALLATION.md)
 - [Operator guide](docs/OPERATOR_GUIDE.md)
 - [CSV reference](docs/CSV_REFERENCE.md)
+- [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Implementation requirements](docs/IMPLEMENTATION_REQUIREMENTS.md)
 - [Security policy](SECURITY.md)

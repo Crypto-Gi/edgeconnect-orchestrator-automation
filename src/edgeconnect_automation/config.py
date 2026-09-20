@@ -7,6 +7,9 @@ from urllib.parse import urlsplit, urlunsplit
 from .errors import ConfigurationError
 
 
+DEFAULT_DOTENV = ".env"
+
+
 ALIASES = {
     "base_url": ("orchestrator_base_url", "ORCHESTRATOR_BASE_URL", "EDGECONNECT_BASE_URL", "EC_BASE_URL"),
     "api_key": ("orchestrator_api_key", "ORCHESTRATOR_API_KEY", "EDGECONNECT_API_KEY", "EC_API_KEY"),
@@ -58,14 +61,21 @@ def _first(source: Mapping[str, str], names: tuple) -> Optional[str]:
 
 
 def load_config(dotenv_path: Optional[str] = None, environ: Optional[Mapping[str, str]] = None, allow_http: bool = False) -> Config:
-    values: Dict[str, str] = {}
-    if dotenv_path:
-        values.update(parse_dotenv(dotenv_path))
-    values.update(dict(os.environ if environ is None else environ))
-    base_url = _first(values, ALIASES["base_url"])
-    api_key = _first(values, ALIASES["api_key"])
+    dotenv_values: Dict[str, str] = {}
+    selected_dotenv = dotenv_path
+    if selected_dotenv is None and Path(DEFAULT_DOTENV).is_file():
+        selected_dotenv = DEFAULT_DOTENV
+    if selected_dotenv:
+        dotenv_values.update(parse_dotenv(selected_dotenv))
+    environment_values = dict(os.environ if environ is None else environ)
+
+    def configured_value(name: str) -> Optional[str]:
+        return _first(environment_values, ALIASES[name]) or _first(dotenv_values, ALIASES[name])
+
+    base_url = configured_value("base_url")
+    api_key = configured_value("api_key")
     if not base_url or not api_key:
-        raise ConfigurationError("Orchestrator base URL and API key are required")
+        raise ConfigurationError("Orchestrator base URL and API key are required; provide them in ./.env, process environment variables, or --dotenv <path>")
     parsed = urlsplit(base_url)
     if parsed.scheme not in ({"https"} if not allow_http else {"https", "http"}) or not parsed.netloc:
         raise ConfigurationError("base URL must be an absolute {} URL".format("HTTPS" if not allow_http else "HTTP(S)"))
@@ -77,13 +87,13 @@ def load_config(dotenv_path: Optional[str] = None, environ: Optional[Mapping[str
     elif path != "/gms/rest":
         raise ConfigurationError("base URL path must be empty or /gms/rest")
     normalized_url = urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
-    ca_bundle = _first(values, ALIASES["ca_bundle"])
+    ca_bundle = configured_value("ca_bundle")
     if ca_bundle and not Path(ca_bundle).is_file():
         raise ConfigurationError("CA bundle does not exist")
     return Config(
         base_url=normalized_url,
         api_key=api_key,
         ca_bundle=ca_bundle,
-        api_key_header=_first(values, ALIASES["api_key_header"]) or "X-Auth-Token",
+        api_key_header=configured_value("api_key_header") or "X-Auth-Token",
         allow_http=allow_http,
     )
