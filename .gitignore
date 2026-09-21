@@ -17,3 +17,6 @@ htmlcov/
 .mypy_cache/
 .idea/
 .vscode/
+.devin/
+.agents/
+
