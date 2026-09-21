@@ -2,6 +2,12 @@
 
 Safety-focused, CSV-driven automation for HPE Aruba Networking EdgeConnect Orchestrator.
 
+Preview, validate, deploy, verify, and remove firewall policies and supporting objects without silently overwriting existing configuration. Every write is approval-gated, checked for drift, and verified through fresh readback.
+
+EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
+
+**Current release:** `v1.0` / package version `1.0.0`
+
 The tool implements:
 
 - Central/global Routing Segmentation firewall policies
@@ -11,7 +17,25 @@ The tool implements:
 - Application groups and parent relationships
 - IP protocol, TCP port, UDP port, domain, and compound application definitions
 - AppExpress Monitor configuration
+- Strict exact-match CSV deletion workflows
 - Dry-run, drift checks, exact readback, appliance verification, audit correlation, and segment-pair rollback
+
+## Contents
+
+- [Safety model](#safety-model)
+- [Supported scope](#supported-scope)
+- [Repository layout](#repository-layout)
+- [Installation](#new-machine-installation)
+- [First-use procedure](#first-use-procedure)
+- [Common workflows](#common-workflows)
+- [CSV-driven deletion](#csv-driven-deletion)
+- [Exit codes](#exit-codes)
+- [Comprehensive lab](#comprehensive-lab-test-suite)
+- [Testing and development](#testing-and-development)
+- [Troubleshooting](#troubleshooting)
+- [Support](#support)
+- [Documentation](#additional-documentation)
+- [License](#license)
 
 ## Safety model
 
@@ -28,7 +52,8 @@ Key safeguards:
 - Non-interactive writes are refused
 - No `--yes` bypass
 - Baselines are fingerprinted and re-read before writes
-- Existing rules and objects are preserved
+- Deploy workflows preserve existing rules and objects
+- Delete workflows remove only exact CSV-matched resources after three-stage confirmation
 - Missing dependencies invalidate the affected segment pair
 - Exact local/global priority collisions invalidate the segment pair
 - Dropped or changed API fields fail normalized readback verification
@@ -40,22 +65,22 @@ Read [SECURITY.md](SECURITY.md) before using the tool.
 
 ## Supported scope
 
-- Orchestrator 9.3 or later, with runtime capability checks
-- ECOS 9.5 or later as the current target
+- The CLI accepts Orchestrator 9.3 or later
+- ECOS 9.5 or later is the current design target
 - Centrally managed Routing Segmentation Global Firewall Policies
 - Python 3.9 or later
 
-The isolated contract-test environment used Orchestrator 9.7.1.42046 and one reachable ECOS 9.5.4.1 appliance. This is not production certification for every release or topology.
+Complete contract testing used Orchestrator 9.7.1.42046 and one reachable ECOS 9.5.4.1 appliance. Other release combinations and multi-appliance topologies require release-specific lab validation before production use; this repository is not blanket certification for every supported release.
 
-Not supported in phase one:
+Not supported:
 
 - Firewall templates
-- Automatic routing-segmentation enablement
+- Automatic Routing Segmentation enablement
 - Appliance-local rule modification
-- Existing-object updates/deletes
+- Updating semantically different existing rules or objects
 - URL firewall matching
 - AppExpress steering
-- Compound application deletion
+- Automatic dependency deletion
 
 ## Repository layout
 
@@ -63,8 +88,11 @@ Not supported in phase one:
 edgeconnect-automation/
 ├── src/edgeconnect_automation/   Python package
 ├── tests/                        Unit, contract, and safety tests
-├── templates/                    CSV templates
-├── docs/                         Detailed operator and design guides
+├── templates/                    Reusable CSV templates
+├── examples/comprehensive_lab/   Deterministic valid and invalid datasets
+├── scripts/                      Guarded comprehensive-lab cleanup
+├── docs/                         Operator, CSV, architecture, and design guides
+├── .devin/skills/                Project documentation skill
 ├── pyproject.toml                Python packaging and CLI entry point
 ├── .env.example                  Safe configuration example
 ├── SECURITY.md                   Security requirements
@@ -195,19 +223,30 @@ edgeconnect-auto discovery \
   --output reports/discovery.json
 ```
 
-Review:
+Expected result:
 
-- Orchestrator release
-- Routing Segmentation state
-- Segments and zones
-- Address and service groups
-- Appliance reachability
+- Exit code `0`
+- No Orchestrator write
+- Orchestrator release, Routing Segmentation state, segments, zones, address groups, service groups, appliance reachability, and an inventory fingerprint
 
-### 3. Validate a firewall CSV locally
+### 3. Copy, edit, and validate a firewall CSV
+
+```bash
+cp templates/edgeconnect/firewall_rules.csv rules.csv
+```
+
+Edit `rules.csv` with the intended segments, zones, addresses, dependencies, actions, logging, and explicit priorities where required. Then validate it locally:
 
 ```bash
 edgeconnect-auto firewall validate \
-  --csv templates/edgeconnect/firewall_rules.csv
+  --csv rules.csv
+```
+
+Expected result for a valid file:
+
+```text
+status: valid
+exit code: 0
 ```
 
 ### 4. Perform an authenticated dry-run
@@ -219,6 +258,15 @@ edgeconnect-auto firewall deploy \
   --report reports/firewall-dry-run.json \
   --dry-run
 ```
+
+Expected result for an eligible plan:
+
+- Exit code `0`
+- No Orchestrator write
+- Complete baseline and candidate preview
+- Eligible segment pairs and final rule priorities
+- Warnings for paused or unreachable appliances
+- A JSON dry-run report; a resolved CSV is also written when eligible rows exist
 
 ### 5. Review the complete preview
 
@@ -238,8 +286,7 @@ Check:
 
 ```bash
 edgeconnect-auto firewall deploy \
-  --csv rules.csv \
-  --resolved-csv reports/rules-resolved.csv \
+  --csv reports/rules-resolved.csv \
   --report reports/firewall-run.json
 ```
 
@@ -252,6 +299,8 @@ APPLY
 Use the generated resolved CSV for every future rerun when the original CSV omitted priorities. See [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md) for a beginner-friendly explanation, examples, rerun workflow, and troubleshooting.
 
 ## Common workflows
+
+Unless a section states otherwise, a successful `--dry-run` exits `0`, performs no Orchestrator write, and prints the exact candidate. A real write requires interactive `APPLY`; a later exact rerun should be a verified no-op. Exit `5` means the result is intentionally incomplete and requires review, even when eligible changes succeeded.
 
 ### Firewall rules
 
@@ -275,8 +324,7 @@ Apply:
 
 ```bash
 edgeconnect-auto firewall deploy \
-  --csv firewall_rules.csv \
-  --resolved-csv reports/firewall_rules_resolved.csv \
+  --csv reports/firewall_rules_resolved.csv \
   --report reports/firewall_result.json
 ```
 
@@ -463,7 +511,7 @@ A deterministic test suite with valid and intentionally invalid CSVs is availabl
 examples/comprehensive_lab/
 ```
 
-It includes 25 address groups, 25 service groups, 50 application definitions with integrated AppExpress modes, application groups, 57 firewall rules, expected-failure documentation, a generator, and a prefix-guarded cleanup script.
+It includes 20 valid and 5 invalid address groups, 20 valid and 5 invalid service groups, 40 valid and 10 invalid application definitions with integrated AppExpress modes, application groups, 45 valid and 12 invalid firewall rules, focused expected-failure cases, a deterministic generator, and a prefix-guarded cleanup script.
 
 See [examples/comprehensive_lab/README.md](examples/comprehensive_lab/README.md). Use it only in an isolated lab and always begin with dry-run.
 
@@ -471,10 +519,10 @@ See [examples/comprehensive_lab/README.md](examples/comprehensive_lab/README.md)
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -v
-PYTHONPATH=src python3 -m compileall -q src tests
+PYTHONPATH=src python3 -m compileall -q src tests scripts
 ```
 
-The default tests use fake transports and make no network calls.
+Release `v1.0` contains 96 standard-library tests. The default suite uses fake transports and makes no network calls.
 
 Live contract testing requires:
 
@@ -539,6 +587,13 @@ The global policy may be saved, but verification remains incomplete. The command
 ### API returns success but drops a field
 
 Normalized readback fails and the affected segment pair enters recovery. Unsupported fields are not silently accepted.
+
+## Support
+
+- Use [GitHub Issues](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation/issues) for reproducible bugs, documentation problems, and feature requests.
+- Include the command, sanitized output, Orchestrator release, and relevant non-secret CSV rows.
+- Never post API keys, `.env`, authorization headers, customer configuration, production reports, or private topology.
+- Follow [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
 ## Additional documentation
 

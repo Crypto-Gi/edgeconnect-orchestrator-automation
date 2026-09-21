@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Reworked the main and comprehensive-lab READMEs for source-verified accuracy, self-contained onboarding, expected outcomes, navigation, support guidance, and clearer release limitations.
+- Corrected linked operator and implementation documentation for strict deletion, compound deletion, and conflict-isolation behavior.
+
 ## 1.0.0 — 2026-09-20
 
 - Added missing-zone detection, explicit per-zone approval, full-collection preservation, readback verification, and firewall replanning.

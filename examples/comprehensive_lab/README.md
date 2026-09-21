@@ -4,6 +4,26 @@ This suite exercises phase-one automation in `Default / H_INSIDE → H_OUTSIDE` 
 
 Do not use these files in production. Review every dry-run and ensure the zones are isolated before applying.
 
+## Prerequisites
+
+Before using the valid deployment files, confirm:
+
+- The target is an isolated lab, not production.
+- Routing Segmentation is already enabled.
+- Segment `Default` exists.
+- Zones `H_INSIDE` and `H_OUTSIDE` exist in the `Default` segment, or you are prepared to review and separately approve their creation.
+- `./.env` contains lab credentials, or equivalent process environment variables are set.
+- The Orchestrator API is reachable over verified HTTPS.
+- No unrelated lab object uses the reserved `lab25-` names or firewall priorities `30000` through `30440`.
+
+Run read-only discovery first:
+
+```bash
+edgeconnect-auto discovery --output reports/lab25-discovery.json
+```
+
+Expected result: exit code `0`, no configuration write, and a complete inventory for the target lab.
+
 ## Dataset summary
 
 | Resource | Valid | Intentionally invalid | Invalid percentage |
@@ -72,6 +92,16 @@ Every valid application definition is referenced by at least one firewall rule. 
 
 Always start with local and authenticated dry-runs.
 
+| Stage | Successful first apply | Successful rerun |
+|---|---|---|
+| Address groups | 20 groups created and verified | 20 exact no-ops |
+| Service groups | 20 groups created and verified | 20 exact no-ops |
+| Application definitions | 40 definitions verified; five Monitor intents applied | 40 definition no-ops; AppExpress desired state unchanged |
+| Application groups | Seven groups present with parent relationships | Seven exact no-ops |
+| Firewall | 45 rules saved for the eligible pair | 45 exact no-ops |
+
+A firewall write can still return PARTIAL/exit `5` when Orchestrator saves the policy and reachable appliances verify it but other managed appliances are paused or unreachable. Review `result.pairs[].targets`; do not interpret HTTP acceptance or one verified appliance as complete fabric convergence.
+
 ### 1. Validate intentional failures
 
 ```bash
@@ -132,6 +162,21 @@ edgeconnect-auto firewall deploy \
 ```
 
 All priorities are explicit, so `--resolved-csv` is optional here; keeping it provides a normalized reviewed execution artifact. See [Understanding the resolved firewall CSV](../../docs/RESOLVED_FIREWALL_CSV.md).
+
+### 7. Verify idempotency
+
+After the complete valid chain is present, rerun each deploy command with `--dry-run`. Every resource should be an exact no-op. Any proposed creation, conflict, missing dependency, or semantic mismatch means the live state differs from the reviewed CSV and must be investigated before cleanup or further testing.
+
+### Completion checklist
+
+- [ ] Address-group dry-run reports 20 no-ops.
+- [ ] Service-group dry-run reports 20 no-ops.
+- [ ] Application-definition dry-run reports 40 no-ops and unchanged AppExpress intent.
+- [ ] Application-group dry-run reports seven no-ops.
+- [ ] Firewall dry-run reports 45 no-ops.
+- [ ] Reachable target appliances verify the effective policy.
+- [ ] Paused or unreachable targets are recorded for operator follow-up.
+- [ ] Reports contain no secrets before they are stored or shared.
 
 ## Cleanup
 

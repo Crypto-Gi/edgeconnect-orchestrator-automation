@@ -72,8 +72,7 @@ Review all segment-pair errors, dependencies, priorities, targets, and the candi
 
 ```bash
 edgeconnect-auto firewall deploy \
-  --csv firewall_rules.csv \
-  --resolved-csv reports/firewall_rules_resolved.csv \
+  --csv reports/firewall_rules_resolved.csv \
   --report reports/firewall_result.json
 ```
 
