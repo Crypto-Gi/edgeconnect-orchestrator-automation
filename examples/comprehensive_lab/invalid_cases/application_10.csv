@@ -1,2 +1,0 @@
-DefinitionType,Name,Notes,Enabled,Confidence,ProtocolNumber,Port,Domain,Protocol,SourcePort,DestinationPort,EitherPort,SourceIP,DestinationIP,EitherIP,SourceGeo,DestinationGeo,EitherGeo,SourceDomain,DestinationDomain,EitherDomain,DSCP,SourceAddressMap,DestinationAddressMap,EitherAddressMap,Interface,AppExpressMode
-COMPOUND,lab25-bad-cmp-10,INVALID directional/either conflict,TRUE,100,,,,,,,,198.18.200.1/32,,198.18.200.2/32,,,,,,,,,,,,OFF

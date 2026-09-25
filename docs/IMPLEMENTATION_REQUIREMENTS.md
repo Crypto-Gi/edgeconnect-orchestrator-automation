@@ -188,7 +188,7 @@ The global policy rule is represented under:
 data.map1.<sourceZoneId_destinationZoneId>.prio.<priority>
 ```
 
-The supplied schema still loosely types `match`, `misc`, and `set`, but 9.7.1 lab readbacks confirm `set.action` values `allow`, `deny`, and `inspect`; `misc.rule` values `enable`/`disable`; `misc.logging` values `enable`/`disable`; and logging priority 0–7. Confirmed match keys are `application`, `app_group`, `src_ip`, `dst_ip`, `either_ip`, `protocol`, `src_port`, `dst_port`, `either_port`, `src_addrgrp_groups`, `dst_addrgrp_groups`, `either_addrgrp_groups`, `src_srvcgrp_groups`, `dst_srvcgrp_groups`, `either_srvcgrp_groups`, and `either_dns`. Requested but unverified fields must block validation rather than be ignored.
+The supplied schema still loosely types `match`, `misc`, and `set`, but 9.7.1 lab readbacks confirm `set.action` values `allow`, `deny`, and `inspect`; `misc.rule` values `enable`/`disable`; `misc.logging` values `enable`/`disable`; and logging priority 0–7. Confirmed match keys are `application`, `app_group`, `src_ip`, `dst_ip`, `either_ip`, `protocol`, `src_port`, `dst_port`, `either_port`, `src_addrgrp_groups`, `dst_addrgrp_groups`, `either_addrgrp_groups`, `src_srvcgrp_groups`, `dst_srvcgrp_groups`, `either_srvcgrp_groups`, and `either_dns`. Requested but unverified fields must block validation rather than be ignored; the directional `src_dns`/`dst_dns` keys reuse the GUI-confirmed ACL encoding and any silently dropped criterion fails exact readback and triggers rollback.
 
 URL matching is phase two. An approved disabled-rule probe on Orchestrator 9.7.1 with reachable ECOS 9.5.4.1 submitted `match.url`; the server returned 204 but silently dropped the URL criterion and stored a rule with no match criteria. The rollback restored baseline. Phase-one validation must reject URL columns/values. Never send `match.url`, and always fail normalized candidate/readback comparison if any requested criterion disappears.
 
@@ -208,6 +208,7 @@ source_segment
 destination_segment
 source_zone
 destination_zone
+acl
 source_address
 source_address_group
 destination_address
@@ -218,6 +219,9 @@ protocol
 source_port
 destination_port
 service_group
+source_domain
+destination_domain
+either_domain
 action
 logging
 logging_level
@@ -228,9 +232,15 @@ Rules:
 - `rule_key` is a local stable identity; it is not a documented native rule UUID.
 - Lab testing confirms literal address and address-group criteria can coexist in the same source or destination selector; preserve both when supplied and validated.
 - Lab testing confirms literal port and service-group criteria can coexist in the same source or destination selector; preserve both when supplied and validated.
-- Multi-value IP/port cells use `|`; port ranges use `-` (for example `10.1.1.1/32|10.1.1.2/32` and `1000-1002|1010`).
-- Ports require compatible protocol semantics.
-- A rule with no match conditions requires explicit acknowledgement because it is broad.
+- Within one directional family, either-direction values exclude source/destination values. Different families may use different direction modes (GUI-created rule 20030 combines `dst_ip` with `either_addrgrp_groups`).
+- Multi-value IP/port/domain cells use `|`; port ranges use `-` (for example `10.1.1.1/32|10.1.1.2/32` and `1000-1002|1010`).
+- Ports are allowed with a blank, `tcp`, `udp`, `tcp/udp`, `6`, or `17` protocol. GUI-created firewall rules and ACL entries store ports without a protocol, so blank stays valid; other explicit protocols are rejected.
+- Policy IP values accept the documented prefix-matching grammar (octet ranges, whole-octet wildcards, IPv6), dotted masks, and GUI-compatibility forms with warnings; see `CSV_CONSTRAINTS_AND_DEPENDENCIES.md` §14.2.
+- Domain columns map to `src_dns`, `dst_dns`, `either_dns`. `either_dns` is readback-confirmed; directional firewall domain keys match the ACL/compound encodings and are protected by exact readback with rollback.
+- `application=any` is rejected; `application_group=any` is valid. A nonzero `logging_level` requires logging enabled.
+- Every problem in a row is reported with its rule ID, field, value, fix, and blocked scope.
+- `acl` is one exact central ACL name and is mutually exclusive with every ordinary traffic-match criterion. Require a selected, nonempty central definition and block conflicting central semantics. Absent associations are reported. A missing or semantically different ACL on any reachable target blocks the affected segment pair; live 9.7.1 testing showed that Orchestrator otherwise rejects the complete appliance security-map update. Unreachable or paused targets warn and remain PARTIAL. Preserve the exact nonempty ACL through global/effective readback and verify ACL semantics on reachable targets.
+- A rule with no traffic match conditions, including no ACL, produces `match: {}` and matches all traffic in its segment/zone-pair scope. Require `broad_match_ack=TRUE` as a local intent acknowledgment; `FALSE` or blank rejects the row before any write. The acknowledgment never changes match semantics, is not sent to Orchestrator, remains required when the rule is disabled, and does not bypass any other safety gate. ACL internal broadness is handled by ACL authoring and does not require firewall acknowledgment.
 - Unsupported columns or combinations are errors.
 - CSV values must never silently override existing remote state.
 
@@ -247,9 +257,15 @@ Collect each inventory once per plan and track completeness:
 - Applications: built-in and user-defined
 - Application groups
 - Protocol references
+- Central Access Lists template definitions and template-group associations when ACL references are requested
+- Fresh appliance ACL inventories for reachable targets when ACL references are requested
 - Target appliances, associations, reachability, and paused orchestration
 
 Inventory statuses must distinguish `complete`, `partial`, `unavailable`, `permission_denied`, and `unsupported`. Anything other than complete for a required namespace blocks firewall deployment.
+
+### Template-group ACL authoring
+
+The ACL CSV identifies the exact template group, ACL, and priority. Phase one supports merge only: preserve omitted priorities, add new priorities, and replace the complete body at matching priorities. Missing groups require exact-name confirmation; selecting Access Lists or changing native template mode to merge requires separate confirmation. Preserve unrelated ACLs/templates, abort on central or association drift, verify central and associated reachable-appliance state, and never associate a group automatically. Replace remains deferred.
 
 ## 10. Global Policy Write Safety
 
@@ -355,7 +371,7 @@ Reference examples must use non-customer placeholder names. Example prefixes nev
 
 Existing identical objects are reusable/no-op. A missing application definition may be created only through its separate validated, previewed, and approved workflow. A conflicting existing identity is shown and skipped with its AppExpress intent; independent rows may continue with PARTIAL/exit 5. Never overwrite the existing definition. Exact-match deletion is a separate three-stage approved workflow.
 
-Compound application definitions are phase one. The unified CSV includes directional/either protocol, port, IP/subnet, geo, domain, DSCP, address-map, and interface columns plus AppExpress OFF/MONITOR intent. For each criterion family, `Either` is mutually exclusive with source/destination fields. At least two meaningful attributes are required; simple single-port/domain/IP definitions must use their dedicated definition type. GUI and API tests showed sequential create IDs. Allocate `max(existing user IDs < 50000)+1`, use the same query/body ID, fingerprint/re-read immediately before POST, and abort on drift; document residual concurrency risk because POST is create-or-update. Treat unique name + semantic body as stable identity, never numeric ID: deleting a compound compacts/renumbers all remaining user records. Compound deployment is create-only. Exact-match CSV deletion resolves the current compound ID immediately before deletion, revalidates semantic identity, and verifies absence. A compound domain selected or added in the GUI is stored directly in `src_dns`/`dst_dns`/`either_dns`; it is not required to exist as a separate DNS application definition and “Add new item” did not create one. Only explicit `DOMAIN` rows use the DNS-definition endpoint.
+Compound application definitions are phase one. The unified CSV includes directional/either protocol, port, IP/subnet, geo, domain, DSCP, address-map, and interface columns plus AppExpress OFF/MONITOR intent. For each criterion family, `Either` is mutually exclusive with source/destination fields. At least two meaningful attributes are required; simple single-port/domain/IP definitions must use their dedicated definition type. GUI and API tests showed sequential create IDs. Allocate `max(existing user IDs < 50000)+1`, use the same query/body ID, fingerprint/re-read immediately before POST, and abort on drift; document residual concurrency risk because POST is create-or-update. Treat unique name + semantic body as stable identity, never numeric ID: deleting a compound compacts/renumbers all remaining user records. Compound deployment is create-only. Exact-match CSV deletion resolves the current compound ID immediately before deletion, revalidates semantic identity, and verifies absence. A compound domain selected or added in the GUI is stored directly in `src_dns`/`dst_dns`/`either_dns`; it is not required to exist as a separate DNS application definition and “Add new item” did not create one. Only explicit `DOMAIN` rows use the DNS-definition endpoint. Compound multi-value payloads are comma-separated (CSV lists stay `|`). Geo resolves to ISO alpha-2 codes, interface-label names resolve to label IDs, DSCP accepts 0–63 or standard names, and address maps must exist in IP Intelligence inventory; all four were read back exactly by an approved 9.7.1 probe.
 
 Additional phase-one create-only workflows:
 
@@ -364,7 +380,7 @@ Additional phase-one create-only workflows:
 - Pre-parse native CSVs for syntax, references, cycles, existing identities and conflicts; submit only create-only eligible groups, then verify full object readback. Identical existing groups are no-ops; differing existing groups are conflicts. Contract testing confirmed address include/exclude/nesting/multi-rule and TCP/ICMP service features. The 9.7.1 native importer rejected ICMPv6 type/code despite Swagger validation; treat that as a release-specific runtime failure, never as successful creation.
 - Application groups: application members plus parent-group relationships, with cycle/reference validation and full-collection preservation.
 - Application definitions: one universal CSV with `definition_type` and conditional type-specific fields.
-- AppExpress monitor: separate command after definitions exist; off requires no AppExpress entry. Preserve collection insertion order and append new entries. Orchestrator may reassign all numeric IDs from collection order, so verify existing/new name and semantic configuration while treating IDs as server-managed. If a monitor write fails, stop and report without deleting the valid application definition.
+- AppExpress desired state is managed only through each application-definition row's `AppExpressMode`. `OFF` requires no AppExpress entry; `MONITOR` ensures one exists. Preserve collection insertion order and append new entries. Orchestrator may reassign all numeric IDs from collection order, so verify names and semantic configuration while treating IDs as server-managed. If the AppExpress phase fails, report PARTIAL without deleting the valid application definition.
 
 All object workflows are create-only: identical existing identity is a no-op; different existing content is a conflict. Runtime partial failures stop subsequent writes and are reported; no automatic deletion rollback.
 
@@ -381,13 +397,13 @@ Operational decisions:
 
 - Additional compound criteria or behaviors not validated in phase one
 - Address-map creation and advanced attributes
-- Firewall domain and geolocation matching
+- Firewall geolocation matching
 - Interface, DSCP, traffic behavior, and Fabric-or-Internet criteria
-- URL, web category, web reputation, and bad-IP reputation
+- URL, web category, web reputation, and bad-IP reputation (Swagger lists `webcc_dst_url`, `webcc_cat`, `webcc_url_rep`, `webcc_anyip_rep`; URL classification is disabled on the lab appliance)
 - Endpoint role, MAC, username, device, group, and user VLAN criteria
 - AppExpress steering and associated transport/group configuration
 
-Phase-one domain application definitions are different from phase-two firewall domain matching.
+Firewall domain matching (`source_domain`, `destination_domain`, `either_domain`) is implemented; domain application definitions remain a separate workflow.
 
 ## 15. CLI and Approval Model
 

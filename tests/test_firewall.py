@@ -9,11 +9,17 @@ from edgeconnect_automation.models import Inventory
 
 
 HEADERS = "rule_key,rule_name,description,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,source_address,source_address_group,destination_address,destination_address_group,either_address,either_address_group,application,application_group,protocol,source_port,destination_port,either_port,source_service_group,destination_service_group,either_service_group,action,logging,logging_level,broad_match_ack"
+ACL_HEADERS = HEADERS + ",acl"
 
 
 def row(key="r1", priority="", source_segment="A", destination_segment="B", source_zone="ZA", destination_zone="ZB", source_address="10.0.0.0/24", source_group="", destination_address="", destination_group="", protocol="tcp", source_port="", destination_port="443", action="allow", logging="true", level=""):
     values = [key, "name", "desc", "true", priority, source_segment, destination_segment, source_zone, destination_zone, source_address, source_group, destination_address, destination_group, "", "", "", "", protocol, source_port, destination_port, "", "", "", "", action, logging, level, "false"]
     return ",".join(values)
+
+
+def acl_row(key="acl-rule", priority="30000", acl="lab25-test1"):
+    values = row(key=key, priority=priority, source_address="", protocol="", destination_port="").split(",")
+    return ",".join(values + [acl])
 
 
 def policy(rules=None, marker=None):
@@ -23,7 +29,7 @@ def policy(rules=None, marker=None):
     return value
 
 
-def inventory(policies=None, local=None, address_groups=None):
+def inventory(policies=None, local=None, address_groups=None, acls=None, appliance_acls=None, target_states=None):
     return Inventory(
         segments={"A": 10, "B": 20, "C": 30, "D": 40},
         zones={("A", "ZA"): 1, ("B", "ZB"): 2, ("C", "ZC"): 3, ("D", "ZD"): 4},
@@ -32,10 +38,22 @@ def inventory(policies=None, local=None, address_groups=None):
         service_groups=set(),
         applications=set(),
         application_groups=set(),
+        acls=acls or {},
+        appliance_acls=appliance_acls or {},
         local_priorities=local or {},
         statuses={"all": "complete"},
         segmentation_enabled=True,
+        target_states=target_states or {},
     )
+
+
+def central_acl(entries=None, group="test2", selected=True, targets=None):
+    return {
+        "template_group": group,
+        "entries": {"1000": {"app_group": "Accounting", "comment": "", "permit": True}} if entries is None else entries,
+        "selected": selected,
+        "associated_targets": targets or [],
+    }
 
 
 class FirewallParsingTests(unittest.TestCase):
@@ -55,9 +73,10 @@ class FirewallParsingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "fields"):
             parse_firewall_text(HEADERS + "\n" + row() + ",extra")
 
-    def test_port_requires_protocol_and_either_exclusive(self):
+    def test_port_protocol_compatibility_and_either_exclusive(self):
+        self.assertEqual(parse_firewall_text(HEADERS + "\n" + row(protocol=""))[0].destination_port, "443")
         with self.assertRaisesRegex(ValidationError, "literal ports require"):
-            parse_firewall_text(HEADERS + "\n" + row(protocol=""))
+            parse_firewall_text(HEADERS + "\n" + row(protocol="ip"))
         values = row().split(",")
         values[13] = "192.0.2.1/32"
         with self.assertRaisesRegex(ValidationError, "either_address"):
@@ -74,8 +93,39 @@ class FirewallParsingTests(unittest.TestCase):
         values = row(source_address="", protocol="", destination_port="").split(",")
         with self.assertRaisesRegex(ValidationError, "broad_match_ack"):
             parse_firewall_text(HEADERS + "\n" + ",".join(values))
+        values[3] = "false"
+        with self.assertRaisesRegex(ValidationError, "broad_match_ack"):
+            parse_firewall_text(HEADERS + "\n" + ",".join(values))
         values[-1] = "true"
         self.assertEqual(len(parse_firewall_text(HEADERS + "\n" + ",".join(values))), 1)
+
+    def test_acl_is_an_exclusive_match_mode_without_firewall_broad_ack(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]
+        self.assertEqual(rule.acl, "lab25-test1")
+        self.assertFalse(rule.broad_match_ack)
+        self.assertEqual(rule_payload(rule)["match"], {"acl": "lab25-test1"})
+        mixed = acl_row().split(",")
+        mixed[9] = "10.0.0.0/24"
+        with self.assertRaisesRegex(ValidationError, "acl is mutually exclusive"):
+            parse_firewall_text(ACL_HEADERS + "\n" + ",".join(mixed))
+
+    def test_acl_name_must_be_single_and_exact(self):
+        with self.assertRaisesRegex(ValidationError, "single exact name"):
+            parse_firewall_text(ACL_HEADERS + "\n" + acl_row(acl="one|two"))
+
+    def test_acl_rejects_every_ordinary_match_field(self):
+        fields = [
+            "source_address", "source_address_group", "destination_address", "destination_address_group",
+            "either_address", "either_address_group", "application", "application_group", "protocol",
+            "source_port", "destination_port", "either_port", "source_service_group",
+            "destination_service_group", "either_service_group",
+        ]
+        headers = ACL_HEADERS.split(",")
+        for field in fields:
+            values = acl_row().split(",")
+            values[headers.index(field)] = "value"
+            with self.subTest(field=field), self.assertRaisesRegex(ValidationError, "acl is mutually exclusive"):
+                parse_firewall_text(ACL_HEADERS + "\n" + ",".join(values))
 
 
 class FirewallPlanningTests(unittest.TestCase):
@@ -144,13 +194,59 @@ class FirewallPlanningTests(unittest.TestCase):
         self.assertFalse(plan.pairs[0].eligible)
         self.assertIn("duplicates CSV priority", " ".join(plan.pairs[0].errors))
 
+    def test_acl_requires_one_selected_nonempty_central_semantic_definition(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]
+        missing = build_firewall_plan([rule], inventory())
+        self.assertFalse(missing.pairs[0].eligible)
+        self.assertIn("missing central ACL lab25-test1", " ".join(missing.pairs[0].errors))
+        empty = build_firewall_plan([rule], inventory(acls={"lab25-test1": [central_acl(entries={})]}))
+        self.assertFalse(empty.pairs[0].eligible)
+        different = central_acl(entries={"1000": {"permit": False}}, group="other")
+        ambiguous = build_firewall_plan([rule], inventory(acls={"lab25-test1": [central_acl(), different]}))
+        self.assertFalse(ambiguous.pairs[0].eligible)
+        self.assertIn("conflicting central definitions", " ".join(ambiguous.pairs[0].errors))
+
+    def test_acl_missing_or_mismatched_on_reachable_target_blocks_pair(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]
+        missing = inventory(
+            acls={"lab25-test1": [central_acl()]},
+            appliance_acls={"0.NE": {}},
+            target_states={"0.NE": "reachable", "4.NE": "unreachable"},
+        )
+        plan = build_firewall_plan([rule], missing)
+        self.assertFalse(plan.pairs[0].eligible)
+        self.assertIn("reject the complete security-map update", " ".join(plan.pairs[0].errors))
+        self.assertIn("no appliance associations", " ".join(plan.pairs[0].warnings))
+        self.assertIn("4.NE is unreachable", " ".join(plan.pairs[0].warnings))
+        mismatched = inventory(
+            acls={"lab25-test1": [central_acl()]},
+            appliance_acls={"0.NE": {"lab25-test1": {"1000": {"permit": False}}}},
+            target_states={"0.NE": "reachable"},
+        )
+        self.assertFalse(build_firewall_plan([rule], mismatched).pairs[0].eligible)
+        exact = inventory(
+            acls={"lab25-test1": [central_acl()]},
+            appliance_acls={"0.NE": {"lab25-test1": central_acl()["entries"]}},
+            target_states={"0.NE": "reachable"},
+        )
+        self.assertTrue(build_firewall_plan([rule], exact).pairs[0].eligible)
+
+    def test_identical_acl_definitions_in_multiple_groups_are_not_ambiguous(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]
+        inv = inventory(acls={"lab25-test1": [central_acl(group="one"), central_acl(group="two")]})
+        plan = build_firewall_plan([rule], inv)
+        self.assertTrue(plan.pairs[0].eligible)
+        self.assertIn("multiple template groups", " ".join(plan.pairs[0].warnings))
+
 
 class FakeGateway:
-    def __init__(self, policies, corrupt_map=None, target_states=None):
+    def __init__(self, policies, corrupt_map=None, target_states=None, central_acls=None):
         self.policies = copy.deepcopy(policies)
         self.corrupt_map = corrupt_map
         self.target_states = target_states or {}
+        self.central_acls = copy.deepcopy(central_acls or {})
         self.posts = []
+        self.verify_calls = 0
         self.corrupted = False
 
     def get_policy(self, segment_map):
@@ -166,7 +262,11 @@ class FakeGateway:
             first_rule["match"] = {}
             self.corrupted = True
 
-    def verify_targets(self, segment_map, candidate, reference):
+    def get_central_acls(self, names=None):
+        return {name: copy.deepcopy(self.central_acls.get(name, [])) for name in names or self.central_acls}
+
+    def verify_targets(self, segment_map, candidate, reference, acl_dependencies=None):
+        self.verify_calls += 1
         return dict(self.target_states or {"target": "verified"})
 
 
@@ -188,6 +288,27 @@ class FirewallExecutionTests(unittest.TestCase):
         result = FirewallExecutor(fake).apply(plan, "run")
         self.assertEqual(result.status, "PARTIAL")
         self.assertEqual(result.pairs[0].targets["two"], "unreachable")
+
+    def test_acl_dependency_drift_blocks_write(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]
+        definitions = {"lab25-test1": [central_acl()]}
+        plan = build_firewall_plan([rule], inventory(acls=definitions))
+        changed = {"lab25-test1": [central_acl(entries={"1000": {"permit": False}})]}
+        fake = FakeGateway({"10_20": policy()}, central_acls=changed)
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual(result.status, "DRIFT")
+        self.assertEqual(fake.posts, [])
+
+    def test_acl_noop_still_verifies_targets(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]
+        existing = policy({"30000": rule_payload(rule)})
+        definitions = {"lab25-test1": [central_acl()]}
+        plan = build_firewall_plan([rule], inventory(policies={("A", "B"): existing}, acls=definitions))
+        fake = FakeGateway({"10_20": existing}, central_acls=definitions)
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual(result.status, "SUCCESS")
+        self.assertEqual(result.pairs[0].status, "no_op")
+        self.assertEqual(fake.verify_calls, 1)
 
 
 if __name__ == "__main__":

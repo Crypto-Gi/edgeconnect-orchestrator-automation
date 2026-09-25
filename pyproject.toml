@@ -10,7 +10,7 @@ where = ["src"]
 
 [project]
 name = "edgeconnect-automation"
-version = "1.0.0"
+version = "1.1.0"
 description = "Safety-focused CSV automation for HPE Aruba EdgeConnect Orchestrator"
 readme = "README.md"
 license = { file = "LICENSE" }

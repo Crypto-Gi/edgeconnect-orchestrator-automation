@@ -1,0 +1,7 @@
+"TemplateGroup","ACLName","ACLUpdateMode","TemplateApplyMode","Priority","Permit","Application","ApplicationGroup","SourceIP","DestinationIP","EitherIP","SourcePort","DestinationPort","EitherPort","SourceDomain","DestinationDomain","EitherDomain","Protocol","Comment","BroadMatchAck"
+"EXISTING_OR_NEW_GROUP","example-valid-acl","MERGE","MERGE","1000","TRUE","example-valid-app","","","","","","","","","","","","VALID row","FALSE"
+"EXISTING_OR_NEW_GROUP","example-bad-mode","REPLACE","MERGE","1010","TRUE","example-valid-app","","","","","","","","","","","","INVALID replace mode","FALSE"
+"EXISTING_OR_NEW_GROUP","example-bad-priority","MERGE","MERGE","0","TRUE","example-valid-app","","","","","","","","","","","","INVALID priority","FALSE"
+"EXISTING_OR_NEW_GROUP","example-bad-direction","MERGE","MERGE","1020","TRUE","","","192.0.2.1/32","","198.51.100.1/32","","","","","","","","INVALID directional and either conflict","FALSE"
+"EXISTING_OR_NEW_GROUP","example-bad-list","MERGE","MERGE","1030","TRUE","app-one|app-two","","","","","","","","","","","","INVALID application list","FALSE"
+"EXISTING_OR_NEW_GROUP","example-bad-catchall","MERGE","MERGE","1040","FALSE","","","","","","","","","","","","","INVALID unacknowledged catch-all","FALSE"

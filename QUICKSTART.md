@@ -66,7 +66,9 @@ edgeconnect-auto firewall deploy \
   --dry-run
 ```
 
-Review all segment-pair errors, dependencies, priorities, targets, and the candidate payload. If the input contains blank priorities, retain the generated resolved CSV and use it as the input for deployment and future reruns. See [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md).
+Review all segment-pair errors, dependencies, priorities, targets, and the candidate payload. A row with every traffic match field blank is match-all and must use `broad_match_ack=TRUE`; `FALSE` or blank rejects the row rather than making it match nothing. A populated `acl` is an exclusive match criterion: leave all ordinary match fields blank and review central source and appliance-distribution warnings. See the [CSV reference](docs/CSV_REFERENCE.md#broad-match-acknowledgment) and [ACL match mode](docs/CSV_REFERENCE.md#acl-match-mode).
+
+If the input contains blank priorities, retain the generated resolved CSV and use it as the input for deployment and future reruns. See [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md).
 
 ## 6. Apply
 
@@ -85,7 +87,6 @@ edgeconnect-auto address-groups deploy --csv address_groups.csv --dry-run
 edgeconnect-auto service-groups deploy --csv service_groups.csv --dry-run
 edgeconnect-auto app-definitions deploy --csv application_definitions.csv --dry-run
 edgeconnect-auto app-groups deploy --csv application_groups.csv --dry-run
-edgeconnect-auto appexpress deploy --csv appexpress_monitor.csv --dry-run
 ```
 
 Start every workflow with `--dry-run`. See [README.md](README.md) and [docs/OPERATOR_GUIDE.md](docs/OPERATOR_GUIDE.md) for full details.

@@ -43,12 +43,13 @@ class ApiClient:
         content_type: Optional[str] = None,
         expected_status: Iterable[int] = (200,),
         expect_json: bool = True,
+        accept: str = "application/json",
     ) -> Any:
         method = method.upper()
         if json_body is not None and binary_body is not None:
             raise ValueError("json_body and binary_body are mutually exclusive")
         url = self._url(path, query)
-        headers = {"Accept": "application/json", self.config.api_key_header: self.config.api_key}
+        headers = {"Accept": accept, self.config.api_key_header: self.config.api_key}
         data = binary_body
         if json_body is not None:
             data = json.dumps(json_body, separators=(",", ":")).encode("utf-8")
@@ -89,8 +90,8 @@ class ApiClient:
     def get(self, path: str, query: Optional[Mapping[str, Any]] = None, expected_status: Iterable[int] = (200,)) -> Any:
         return self.request("GET", path, query=query, expected_status=expected_status)
 
-    def post_json(self, path: str, value: Any, query: Optional[Mapping[str, Any]] = None, expected_status: Iterable[int] = (200, 204)) -> Any:
-        return self.request("POST", path, query=query, json_body=value, expected_status=expected_status, expect_json=False)
+    def post_json(self, path: str, value: Any, query: Optional[Mapping[str, Any]] = None, expected_status: Iterable[int] = (200, 204), accept: str = "application/json") -> Any:
+        return self.request("POST", path, query=query, json_body=value, expected_status=expected_status, expect_json=False, accept=accept)
 
     def post_binary(self, path: str, value: bytes, query: Optional[Mapping[str, Any]] = None, expected_status: Iterable[int] = (200, 204)) -> Any:
         return self.request("POST", path, query=query, binary_body=value, content_type="application/octet-stream", expected_status=expected_status, expect_json=False)

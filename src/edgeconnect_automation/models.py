@@ -18,6 +18,7 @@ class FirewallRule:
     destination_segment: str
     source_zone: str
     destination_zone: str
+    acl: str = ""
     source_address: str = ""
     source_address_group: str = ""
     destination_address: str = ""
@@ -33,6 +34,9 @@ class FirewallRule:
     source_service_group: str = ""
     destination_service_group: str = ""
     either_service_group: str = ""
+    source_domain: str = ""
+    destination_domain: str = ""
+    either_domain: str = ""
     action: str = ""
     logging: bool = False
     logging_level: int = 0
@@ -56,6 +60,8 @@ class Inventory:
     service_groups: Set[str] = field(default_factory=set)
     applications: Set[str] = field(default_factory=set)
     application_groups: Set[str] = field(default_factory=set)
+    acls: Mapping[str, List[Mapping[str, Any]]] = field(default_factory=dict)
+    appliance_acls: Mapping[str, Mapping[str, Mapping[str, Any]]] = field(default_factory=dict)
     local_priorities: Mapping[ScopeKey, Set[int]] = field(default_factory=dict)
     statuses: Mapping[str, str] = field(default_factory=dict)
     segmentation_enabled: bool = True
@@ -77,6 +83,8 @@ class PairPlan:
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     target_states: Dict[str, str] = field(default_factory=dict)
+    acl_dependencies: Dict[str, Mapping[str, Any]] = field(default_factory=dict)
+    acl_inventory_fingerprint: str = ""
 
 
 @dataclass

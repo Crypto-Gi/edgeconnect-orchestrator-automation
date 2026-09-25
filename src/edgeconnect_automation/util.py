@@ -68,5 +68,15 @@ def semantic_equal(left: Any, right: Any) -> bool:
     return canonical_json(left) == canonical_json(right)
 
 
+def normalize_acl_entries(entries: Mapping[str, Any]) -> Dict[str, Any]:
+    result = {}
+    for priority, value in entries.items():
+        if not isinstance(value, Mapping):
+            result[str(priority)] = value
+            continue
+        result[str(priority)] = {str(key): item for key, item in value.items() if key not in {"self", "gms_marked"}}
+    return result
+
+
 def indexed_by_name(items: Iterable[Mapping[str, Any]], key: str = "name") -> Dict[str, Mapping[str, Any]]:
     return {str(item[key]): item for item in items if key in item}

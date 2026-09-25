@@ -1,2 +1,0 @@
-Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment
-lab25-bad-sg-self,TCP,,,lab25-bad-sg-self,,,,INVALID self cycle

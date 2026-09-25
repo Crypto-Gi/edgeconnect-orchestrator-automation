@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from .client import ApiClient
 from .errors import ResponseFormatError, ValidationError
-from .util import semantic_equal
+from .util import normalize_acl_entries, semantic_equal
 
 
 class OrchestratorGateway:
@@ -42,6 +42,75 @@ class OrchestratorGateway:
     def get_segment_zones(self) -> Any:
         return self._shape(self.client.get("/zones/vrfSegmentZonesMap"), list, "segment zones")
 
+    def get_template_groups(self) -> Any:
+        return self._shape(self.client.get("/template/templateGroups"), list, "template groups")
+
+    def get_template_group(self, name: str) -> Optional[Mapping[str, Any]]:
+        groups = [group for group in self.get_template_groups() if group.get("name") == name]
+        if len(groups) > 1:
+            raise ResponseFormatError("template group response is ambiguous")
+        return groups[0] if groups else None
+
+    def get_template_selection(self, name: str) -> Any:
+        return self._shape(self.client.get("/template/templateSelection", {"templateGroup": name}), list, "template selection")
+
+    def post_template_group(self, name: str, value: Mapping[str, Any]) -> None:
+        self.client.post_json("/template/templateGroups", value, {"templateGroup": name}, (200, 204), "text/plain")
+
+    def create_template_group(self, value: Mapping[str, Any]) -> None:
+        self.client.post_json("/template/templateCreate", value, expected_status=(200, 204), accept="text/plain")
+
+    def select_template_group(self, name: str, templates: Iterable[str]) -> None:
+        self.client.post_json("/template/templateSelection", list(templates), {"templateGroup": name}, (200, 204), "text/plain")
+
+    def get_template_associations(self) -> Mapping[str, Any]:
+        return self._shape(self.client.get("/template/applianceAssociation"), dict, "template associations")
+
+    def get_central_acls(self, names: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+        requested = set(names or ())
+        associations = self.get_template_associations()
+        result: Dict[str, Any] = {}
+        for group in self.get_template_groups():
+            group_name = str(group.get("name", ""))
+            targets = sorted(str(target) for target, groups in associations.items() if group_name in groups)
+            selected_names = {str(name) for name in group.get("selectedTemplateNames", [])}
+            for template in group.get("templates", []):
+                if template.get("name") != "acls":
+                    continue
+                value = template.get("valObject")
+                if not isinstance(value, (dict, str)):
+                    value = template.get("value")
+                if isinstance(value, str):
+                    try:
+                        value = json.loads(value)
+                    except ValueError as error:
+                        raise ResponseFormatError("Access Lists template contains invalid JSON") from error
+                if not isinstance(value, dict):
+                    raise ResponseFormatError("Access Lists template has an invalid value")
+                selected = "acls" in selected_names or template.get("isSelected") is True or template.get("isselected") is True
+                for name, body in value.get("data", {}).items():
+                    name = str(name)
+                    if requested and name not in requested:
+                        continue
+                    if not isinstance(body, dict) or not isinstance(body.get("entry", {}), dict):
+                        raise ResponseFormatError("ACL {} has an invalid entry collection".format(name))
+                    result.setdefault(name, []).append({
+                        "template_group": group_name,
+                        "entries": normalize_acl_entries(body.get("entry", {})),
+                        "selected": selected,
+                        "associated_targets": targets,
+                    })
+        return result
+
+    def get_appliance_acls(self, nepk: str) -> Dict[str, Any]:
+        value = self._shape(self.client.get("/acls", {"nePk": nepk, "cached": "false"}), dict, "appliance ACLs")
+        result = {}
+        for name, body in value.items():
+            if not isinstance(body, dict) or not isinstance(body.get("entry", {}), dict):
+                raise ResponseFormatError("appliance ACL {} has an invalid entry collection".format(name))
+            result[str(name)] = normalize_acl_entries(body.get("entry", {}))
+        return result
+
     def get_policy(self, segment_map: str) -> Mapping[str, Any]:
         value = self.client.get("/vrf/config/securityPolicies", {"map": segment_map})
         if not isinstance(value, dict):
@@ -56,23 +125,35 @@ class OrchestratorGateway:
             (204,),
         )
 
-    def verify_targets(self, segment_map: str, candidate: Mapping[str, Any], run_reference: str) -> Dict[str, str]:
+    def verify_targets(self, segment_map: str, candidate: Mapping[str, Any], run_reference: str, acl_dependencies: Optional[Mapping[str, Mapping[str, Any]]] = None) -> Dict[str, str]:
+        dependencies = dict(acl_dependencies or {})
         results = {target: state for target, state in self.targets.items() if state != "reachable"}
         pending = {target for target, state in self.targets.items() if state == "reachable"}
+        latest = {target: "unverified" for target in pending}
         deadline = time.monotonic() + getattr(getattr(self.client, "config", None), "verification_timeout", 120.0)
         while pending and time.monotonic() < deadline:
             for target in list(pending):
                 try:
                     value = self.client.get("/securityMaps", {"nePk": target, "cached": "false"})
+                    if not self._effective_contains(value, candidate):
+                        latest[target] = "policy_unverified"
+                        continue
+                    appliance_acls = self.get_appliance_acls(target) if dependencies else {}
                 except Exception:
                     continue
-                if self._effective_contains(value, candidate):
+                missing = sorted(name for name in dependencies if name not in appliance_acls)
+                mismatched = sorted(name for name, entries in dependencies.items() if name in appliance_acls and not semantic_equal(appliance_acls[name], entries))
+                if missing:
+                    latest[target] = "acl_missing:{}".format(",".join(missing))
+                elif mismatched:
+                    latest[target] = "acl_mismatch:{}".format(",".join(mismatched))
+                else:
                     results[target] = "verified"
                     pending.remove(target)
             if pending:
                 time.sleep(getattr(getattr(self.client, "config", None), "poll_interval", 5.0))
         for target in pending:
-            results[target] = "unverified"
+            results[target] = latest[target]
         return results
 
     @staticmethod
@@ -85,7 +166,8 @@ class OrchestratorGateway:
                 actual = copy.deepcopy(actual_rules.get(priority))
                 if actual is None:
                     return False
-                actual.get("match", {}).pop("acl", None)
+                if not expected.get("match", {}).get("acl") and actual.get("match", {}).get("acl") == "":
+                    actual.get("match", {}).pop("acl", None)
                 if "logging_priority" in actual.get("misc", {}):
                     actual["misc"]["logging_priority"] = int(actual["misc"]["logging_priority"])
                 if not semantic_equal(actual, expected):
@@ -187,6 +269,15 @@ class OrchestratorGateway:
 
     def post_appexpress(self, value: Mapping[str, Any]) -> None:
         self.client.post_json("/applicationDefinition/appExpressAppConfig", value, {"resourceKey": "userDefined"}, (200, 204))
+
+    def get_countries(self) -> Mapping[str, Any]:
+        return self._shape(self.client.get("/spPortal/internetDb/serviceIdToSaasId/countries"), dict, "countries")
+
+    def get_interface_labels(self) -> Mapping[str, Any]:
+        return self._shape(self.client.get("/gms/interfaceLabels"), dict, "interface labels")
+
+    def search_address_map(self, name: str) -> Any:
+        return self._shape(self.client.get("/spPortal/internetDb/ipIntelligence/search", {"filter": name}), list, "address map search")
 
     def search_application(self, name: str) -> Any:
         return self.client.request("POST", "/applicationDefinition/applications/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True)

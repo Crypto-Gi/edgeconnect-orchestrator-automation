@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.0` / package version `1.0.0`
+**Current release:** `v1.1` / package version `1.1.0` — stricter CSV validation, merge-only template ACL automation, safer firewall ACL dependency checks, and compact valid/invalid example sets.
 
 The tool implements:
 
@@ -16,7 +16,7 @@ The tool implements:
 - Native address-group and service-group CSV imports
 - Application groups and parent relationships
 - IP protocol, TCP port, UDP port, domain, and compound application definitions
-- AppExpress Monitor configuration
+- Application-definition-driven AppExpress OFF/MONITOR desired state
 - Strict exact-match CSV deletion workflows
 - Dry-run, drift checks, exact readback, appliance verification, audit correlation, and segment-pair rollback
 
@@ -30,7 +30,7 @@ The tool implements:
 - [Common workflows](#common-workflows)
 - [CSV-driven deletion](#csv-driven-deletion)
 - [Exit codes](#exit-codes)
-- [Comprehensive lab](#comprehensive-lab-test-suite)
+- [CSV templates and examples](#csv-templates-and-examples)
 - [Testing and development](#testing-and-development)
 - [Troubleshooting](#troubleshooting)
 - [Support](#support)
@@ -87,12 +87,10 @@ Not supported:
 ```text
 edgeconnect-automation/
 ├── src/edgeconnect_automation/   Python package
-├── tests/                        Unit, contract, and safety tests
-├── templates/                    Reusable CSV templates
-├── examples/comprehensive_lab/   Deterministic valid and invalid datasets
-├── scripts/                      Guarded comprehensive-lab cleanup
+├── tests/                        Unit, contract, safety, and generated CSV cases
+├── templates/edgeconnect/        Clean starter CSV templates
+├── examples/edgeconnect/         Valid and intentionally invalid CSV examples
 ├── docs/                         Operator, CSV, architecture, and design guides
-├── .devin/skills/                Project documentation skill
 ├── pyproject.toml                Python packaging and CLI entry point
 ├── .env.example                  Safe configuration example
 ├── SECURITY.md                   Security requirements
@@ -330,6 +328,42 @@ edgeconnect-auto firewall deploy \
 
 The tool evaluates each source/destination segment pair independently. Invalid pairs are excluded; valid pairs may proceed. Individual invalid rules are never skipped inside a submitted pair.
 
+#### Match-all safety: `broad_match_ack`
+
+A rule matches all traffic in its source/destination segment and zone-pair scope when every traffic match field is blank. `broad_match_ack` does not change that behavior; it is a local safety acknowledgment proving the empty criteria were intentional.
+
+| Match fields | `broad_match_ack` | Result |
+|---|---|---|
+| All blank | `TRUE` | Accepted as an intentional match-all rule |
+| All blank | `FALSE` or blank | Local validation fails; nothing is deployed |
+| One or more criteria present | `TRUE`, `FALSE`, or blank | Accepted; the supplied criteria determine the match |
+
+For example, an intentional final catch-all deny uses blank match fields and:
+
+```csv
+action,broad_match_ack
+deny,TRUE
+```
+
+With blank match fields, `FALSE` never means “match nothing.” It blocks the CSV during local validation. If the rule reached Orchestrator, an empty API `match` object would still mean “match everything.” The acknowledgment is not sent to Orchestrator, does not appear as a stored GUI property, and does not bypass dependency, priority, drift, approval, or verification checks. Disabled match-all rules also require `TRUE` because they could later be enabled. See [CSV reference](docs/CSV_REFERENCE.md#broad-match-acknowledgment) for the complete field list and examples.
+
+#### ACL firewall references
+
+Set `acl` to one exact centrally defined ACL name and leave every ordinary traffic-match field blank. ACL mode is exclusive: mixing an ACL with addresses, groups, applications, protocol, ports, or service groups fails local validation. The central ACL must be nonempty and selected in an Access Lists template.
+
+An unassociated source template is reported, but every reachable target must already contain an exact matching ACL body; a missing or mismatched ACL blocks the segment pair. Unreachable/paused targets still warn and produce PARTIAL because their state cannot be proven. Live 9.7.1 testing showed that one missing ACL makes Orchestrator reject the complete appliance security-map update, not only the ACL-referencing rule. Exact global and reachable-appliance readback must preserve the nonempty ACL name and matching ACL body. The firewall CSV does not require `broad_match_ack=TRUE` based on the ACL's internal rules. See [ACL match mode](docs/CSV_REFERENCE.md#acl-match-mode).
+
+### Template-group ACL creation and merge
+
+Use `templates/edgeconnect/template_acls.csv` with `template-acls deploy`. Existing groups and ACLs are merged by priority: matching priorities replace the complete rule, new priorities are added, and omitted priorities remain unchanged. Supported match criteria are application, application group, directional/either IP, directional/either port, directional/either domain, and protocol. Phase one accepts only `MERGE`; `REPLACE` is rejected.
+
+```bash
+edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/template-acls.json --dry-run
+edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/template-acls.json
+```
+
+A missing group requires typing its exact name and then `APPLY`. Existing groups additionally require explicit confirmation before selecting Access Lists or changing native template mode to merge. New groups are never associated with appliances automatically. See [Template-group ACL CSV](docs/CSV_REFERENCE.md#template-group-acls).
+
 ### Missing zones
 
 Firewall deployment detects missing zones. A missing base zone requires:
@@ -415,7 +449,9 @@ Defaults:
 
 `AppExpressMode` is authoritative in the application-definition CSV. `MONITOR` ensures a Monitor entry exists, while `OFF` removes an existing AppExpress entry for that named application. Both definition and AppExpress changes are shown in one preview and applied after one approval. Rows whose classifier identity conflicts with an existing different definition are shown under `skipped_conflicts`; they and their AppExpress intent are excluded while independent definitions may proceed. Any skipped conflict makes the command return partial exit code `5` even when all eligible rows verify.
 
-Compound definitions support directional/either port, IP/subnet, geo, domain, address map, DSCP, protocol, and interface selectors. Compound numeric IDs are server ordering indices and are not treated as stable identities.
+Compound definitions support directional/either port, IP/subnet, geo, domain, address map, DSCP, protocol, and interface selectors. Geo accepts ISO codes or country names, interface accepts label names or IDs, and address maps must exist; all are resolved against live inventory during planning. Compound numeric IDs are server ordering indices and are not treated as stable identities.
+
+Every CSV row is validated completely, and each problem is reported with a rule ID, field, value, suggested fix, and blocked scope. See [CSV constraints and dependencies](docs/CSV_CONSTRAINTS_AND_DEPENDENCIES.md) for the full rule catalogue.
 
 ### Application groups
 
@@ -434,23 +470,6 @@ edgeconnect-auto app-groups deploy \
 
 The workflow validates application membership, parent references, and cycles while preserving the complete existing collection. A group with missing applications, missing parents, conflicting existing semantics, a parent cycle, or invalid identity is listed under `skipped_conflicts`; groups that depend on a skipped parent are also skipped. Independent groups may proceed after `APPLY`, and any skips produce partial exit code `5`.
 
-### AppExpress Monitor
-
-Template:
-
-```text
-templates/edgeconnect/appexpress_monitor.csv
-```
-
-```bash
-edgeconnect-auto appexpress deploy \
-  --csv appexpress_monitor.csv \
-  --report reports/appexpress.json \
-  --dry-run
-```
-
-Application-definition CSVs apply `AppExpressMode` directly. This standalone workflow remains available for Monitor-only changes to other applications. Steering is not supported in phase one.
-
 ## CSV-driven deletion
 
 Every configurable resource workflow supports `delete` with the same CSV used for deployment:
@@ -461,10 +480,9 @@ edgeconnect-auto address-groups delete --csv address_groups.csv --report reports
 edgeconnect-auto service-groups delete --csv service_groups.csv --report reports/service-delete.json --dry-run
 edgeconnect-auto app-groups delete --csv application_groups.csv --report reports/app-groups-delete.json --dry-run
 edgeconnect-auto app-definitions delete --csv application_definitions.csv --report reports/app-definitions-delete.json --dry-run
-edgeconnect-auto appexpress delete --csv appexpress_monitor.csv --report reports/appexpress-delete.json --dry-run
 ```
 
-Deletion has no implicit name-prefix restriction. A live resource must match the CSV semantics exactly; absent resources are no-ops, while mismatches, external references detected by the workflow, or baseline drift block deletion. Always begin with `--dry-run`. Without it, the CLI displays the complete deletion table, requires a fresh random code, then requires typing `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. State is re-read after confirmation and absence is verified after deletion. Delete dependencies in this order when separate CSVs are involved: firewall rules, application groups, AppExpress/application definitions, service groups, then address groups.
+Deletion has no implicit name-prefix restriction. A live resource must match the CSV semantics exactly; absent resources are no-ops, while mismatches, external references detected by the workflow, or baseline drift block deletion. Always begin with `--dry-run`. Without it, the CLI displays the complete deletion table, requires a fresh random code, then requires typing `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. State is re-read after confirmation and absence is verified after deletion. Delete dependencies in this order when separate CSVs are involved: firewall rules, application groups, application definitions with their integrated AppExpress state, service groups, then address groups.
 
 ## Verbose output
 
@@ -503,17 +521,19 @@ Reports are:
 
 They may still contain sensitive network configuration. Store and transfer them only through approved systems.
 
-## Comprehensive lab test suite
+## CSV templates and examples
 
-A deterministic test suite with valid and intentionally invalid CSVs is available under:
+Use the six concise deployment starters under:
 
 ```text
-examples/comprehensive_lab/
+templates/edgeconnect/
 ```
 
-It includes 20 valid and 5 invalid address groups, 20 valid and 5 invalid service groups, 40 valid and 10 invalid application definitions with integrated AppExpress modes, application groups, 45 valid and 12 invalid firewall rules, focused expected-failure cases, a deterministic generator, and a prefix-guarded cleanup script.
+For broader testing, `examples/edgeconnect/` contains exactly two CSVs per workflow: one valid file covering supported field families and important boundaries, and one intentionally mixed valid/invalid file. The mixed files must fail validation and must never be applied.
 
-See [examples/comprehensive_lab/README.md](examples/comprehensive_lab/README.md). Use it only in an isolated lab and always begin with dry-run.
+Both valid sets form the same dependency chain: address groups and service groups → application definitions → application groups → template ACLs → firewall rules. Copy valid files before editing. Replace zone names, the template-group name, interface label, and any Address Map names with values from your Orchestrator. Always start with `validate`, `plan`, or `--dry-run`.
+
+Additional conflict, drift, merge, deletion, and release-regression cases remain generated inside the standard-library tests rather than being published as dozens of single-case CSV files.
 
 ## Testing and development
 
@@ -522,7 +542,7 @@ PYTHONPATH=src python3 -m unittest discover -v
 PYTHONPATH=src python3 -m compileall -q src tests scripts
 ```
 
-Release `v1.0` contains 96 standard-library tests. The default suite uses fake transports and makes no network calls.
+The standard-library tests generate invalid and edge-case CSVs in temporary directories. The default suite uses fake transports and makes no network calls.
 
 Live contract testing requires:
 

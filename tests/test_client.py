@@ -71,6 +71,11 @@ class ClientTests(unittest.TestCase):
             ApiClient(self.config(), opener=opener, sleep=lambda _: None).post_json("/x", {"a": 1}, expected_status=(204,))
         self.assertEqual(len(opener.calls), 1)
 
+    def test_post_can_request_text_response_contract(self):
+        opener = Opener([Response(status=204, body=b"", content_type="text/plain")])
+        ApiClient(self.config(), opener=opener).post_json("/template", {"name": "group"}, expected_status=(204,), accept="text/plain")
+        self.assertEqual(opener.calls[0].get_header("Accept"), "text/plain")
+
     def test_binary_upload_and_api_key_header(self):
         opener = Opener([Response(status=204, body=b"", content_type="application/octet-stream")])
         ApiClient(self.config(), opener=opener).post_binary("/upload", b"abc", expected_status=(204,))
@@ -154,6 +159,11 @@ class ConfigAndCliTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as result:
             parser.parse_args(["--help"])
         self.assertEqual(result.exception.code, 0)
+
+    def test_standalone_appexpress_command_is_removed(self):
+        commands = next(action.choices for action in build_parser()._actions if action.dest == "command")
+        self.assertNotIn("appexpress", commands)
+        self.assertIn("app-definitions", commands)
 
     def test_exact_apply_is_required(self):
         with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="apply"):

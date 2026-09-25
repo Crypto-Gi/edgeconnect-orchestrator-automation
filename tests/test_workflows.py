@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from edgeconnect_automation.errors import DriftError, ValidationError
-from edgeconnect_automation.workflows import ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, plan_appexpress, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_zones
+from edgeconnect_automation.firewall import parse_firewall_csv
+from edgeconnect_automation.workflows import ACL_HEADERS, ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acls, plan_zones
 
 
 class TempCsv:
@@ -21,13 +22,278 @@ class TempCsv:
         self.directory.cleanup()
 
 
+def acl_group(name, acls=None, merge=True, selected=True):
+    return {
+        "name": name,
+        "selectedTemplateNames": ["acls"] if selected else [],
+        "templates": [
+            {"name": "acls", "value": {"data": copy.deepcopy(acls or {"NewACL": {"entry": {}}}), "options": {"merge": merge, "delDependent": True}}},
+            {"name": "hostname", "value": {"hostname": name}},
+        ],
+    }
+
+
+class TemplateAclTests(unittest.TestCase):
+    def row(self, **values):
+        row = {header: "" for header in ACL_HEADERS}
+        row.update({"TemplateGroup": "test2", "ACLName": "web-acl", "ACLUpdateMode": "MERGE", "TemplateApplyMode": "MERGE", "Priority": "1000", "Permit": "TRUE", "BroadMatchAck": "FALSE"}, **values)
+        return row
+
+    def test_parse_merge_overwrites_whole_priority_and_preserves_omitted_rules(self):
+        fixture = TempCsv(ACL_HEADERS, [
+            self.row(ApplicationGroup="Accounting"),
+            self.row(Priority="2000", Protocol="tcp", EitherPort="443"),
+        ])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        existing = acl_group("test2", {"web-acl": {"entry": {
+            "1000": {"permit": True, "protocol": "udp", "either_port": "53", "comment": "old"},
+            "3000": {"permit": False, "comment": "preserve"},
+        }}})
+        plan = plan_template_acls(rules, [existing], {"test2": ["acls"]}, {"0.NE": ["test2"]}, {"Accounting"}, set())
+        group = plan["groups"][0]
+        entries = group["candidate_acl_value"]["data"]["web-acl"]["entry"]
+        self.assertEqual(entries["1000"], {"permit": True, "comment": "", "app_group": "Accounting"})
+        self.assertEqual(entries["2000"]["additionalSwitch_port"], "ports")
+        self.assertEqual(entries["3000"]["comment"], "preserve")
+        self.assertEqual([item["priority"] for item in group["overwrites"]], ["1000"])
+        self.assertEqual([item["priority"] for item in group["additions"]], ["2000"])
+
+    def test_selected_match_criteria_use_native_directional_and_either_keys(self):
+        fixture = TempCsv(ACL_HEADERS, [
+            self.row(Priority="1000", Application="0-1"),
+            self.row(Priority="1010", ApplicationGroup="Accounting"),
+            self.row(Priority="1020", SourceIP="1.1.1.1-255/32", DestinationIP="10.10.10.1/24", DestinationPort="20-30"),
+            self.row(Priority="1030", SourceDomain="*youtube.com", DestinationDomain="*google.com", Protocol="icmp"),
+            self.row(Priority="1040", EitherIP="192.0.2.0/24", EitherPort="443", EitherDomain="*.example.com", Protocol="tcp"),
+        ])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        entries = {rule.priority: rule.entry for rule in rules}
+        self.assertEqual(entries["1020"]["additionalSwitch_ip"], "ips")
+        self.assertEqual(entries["1020"]["src_ip"], "1.1.1.1-255/32")
+        self.assertEqual(entries["1020"]["dst_port"], "20-30")
+        self.assertEqual(entries["1030"]["src_dns"], "*youtube.com")
+        self.assertEqual(entries["1030"]["dst_dns"], "*google.com")
+        self.assertEqual(entries["1040"]["either_ip"], "192.0.2.0/24")
+        self.assertEqual(entries["1040"]["either_port"], "443")
+        self.assertEqual(entries["1040"]["either_dns"], "*.example.com")
+        existing = acl_group("test2", {"web-acl": {"entry": {priority: entries[priority] for priority in ("1000", "1010", "1020", "1030")}}})
+        plan = plan_template_acls(rules, [existing], {"test2": ["acls"]}, {}, {"0-1"}, {"Accounting"})
+        group = plan["groups"][0]
+        self.assertEqual([item["priority"] for item in group["no_ops"]], ["1000", "1010", "1020", "1030"])
+        self.assertEqual([item["priority"] for item in group["additions"]], ["1040"])
+
+    def test_parser_rejects_directional_and_either_mix(self):
+        fixture = TempCsv(ACL_HEADERS, [self.row(SourceIP="192.0.2.1/32", EitherIP="198.51.100.1/32")])
+        try:
+            with self.assertRaisesRegex(ValidationError, "EitherIP is mutually exclusive"):
+                parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+
+    def test_parser_rejects_replace_duplicates_missing_dependencies_and_unacknowledged_broad_rule(self):
+        cases = [
+            ([self.row(ACLUpdateMode="REPLACE", Application="App")], "MERGE"),
+            ([self.row(Application="App"), self.row(Application="App")], "duplicate"),
+            ([self.row(Application="Missing")], "missing application"),
+            ([self.row()], "BroadMatchAck"),
+        ]
+        for rows, message in cases:
+            with self.subTest(message=message):
+                fixture = TempCsv(ACL_HEADERS, rows)
+                try:
+                    rules = parse_template_acls(str(fixture.path))
+                    if message == "missing application":
+                        plan = plan_template_acls(rules, [acl_group("test2")], {"test2": ["acls"]}, {}, set(), set())
+                        self.assertIn(message, " ".join(plan["groups"][0]["errors"]))
+                    else:
+                        self.fail("expected parser failure")
+                except ValidationError as error:
+                    self.assertIn(message, str(error))
+                finally:
+                    fixture.close()
+
+    def test_missing_group_builds_unassociated_merge_candidate(self):
+        fixture = TempCsv(ACL_HEADERS, [self.row(TemplateGroup="new-group", ACLName="catch-all", BroadMatchAck="TRUE")])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        plan = plan_template_acls(rules, [acl_group("Default Template Group")], {"Default Template Group": []}, {"0.NE": ["Default Template Group"]}, set(), set())
+        group = plan["groups"][0]
+        self.assertTrue(group["create"])
+        self.assertEqual(group["associations"], [])
+        self.assertTrue(group["candidate_acl_value"]["options"]["merge"])
+        self.assertEqual(group["candidate_acl_value"]["data"]["catch-all"]["entry"]["1000"], {"permit": True, "comment": ""})
+
+    def test_conflicting_same_priority_on_shared_appliance_blocks_group(self):
+        target = acl_group("target", {"shared": {"entry": {}}})
+        other = acl_group("other", {"shared": {"entry": {"1000": {"permit": False, "comment": ""}}}})
+        fixture = TempCsv(ACL_HEADERS, [self.row(TemplateGroup="target", ACLName="shared", BroadMatchAck="TRUE")])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        plan = plan_template_acls(rules, [target, other], {"target": ["acls"], "other": ["acls"]}, {"0.NE": ["target", "other"]}, set(), set())
+        self.assertFalse(plan["groups"][0]["eligible"])
+        self.assertIn("conflicting priority 1000", " ".join(plan["groups"][0]["errors"]))
+
+
+class TemplateAclApplyGateway:
+    def __init__(self, groups, selections, associations):
+        self.groups = {group["name"]: copy.deepcopy(group) for group in groups}
+        self.selections = copy.deepcopy(selections)
+        self.associations = copy.deepcopy(associations)
+        self.appliance_acls = {}
+        self.posts = []
+
+    def get_template_groups(self):
+        return list(copy.deepcopy(self.groups).values())
+
+    def get_template_group(self, name):
+        return copy.deepcopy(self.groups.get(name))
+
+    def get_template_selection(self, name):
+        return copy.deepcopy(self.selections.get(name, []))
+
+    def get_template_associations(self):
+        return copy.deepcopy(self.associations)
+
+    def post_template_group(self, name, value):
+        self.posts.append(("update", name))
+        group = self.groups[name]
+        template = next(item for item in group["templates"] if item["name"] == "acls")
+        template["value"] = copy.deepcopy(value["templates"][0]["valObject"])
+
+    def create_template_group(self, value):
+        self.posts.append(("create", value["name"]))
+        self.groups[value["name"]] = {"name": value["name"], "selectedTemplateNames": [], "templates": [{"name": "acls", "value": copy.deepcopy(value["templates"][0]["valObject"])}]}
+        self.selections[value["name"]] = []
+
+    def select_template_group(self, name, templates):
+        self.posts.append(("select", name))
+        self.selections[name] = list(templates)
+        self.groups[name]["selectedTemplateNames"] = list(templates)
+
+    def get_appliances(self):
+        return [{"nePk": target, "state": 1} for target in self.associations]
+
+    def get_reachability(self, target):
+        return {"state": 1}
+
+    def get_appliance_acls(self, target):
+        return copy.deepcopy(self.appliance_acls.get(target, {}))
+
+    def get_actions(self, start, end):
+        return []
+
+
+class TemplateAclApplyTests(unittest.TestCase):
+    def test_existing_group_update_and_new_group_creation_verify_without_association(self):
+        existing = acl_group("test2", {"web": {"entry": {"1000": {"permit": True, "comment": ""}}}})
+        rows = []
+        for group, acl, priority in (("test2", "web", "2000"), ("new-group", "new", "1000")):
+            rows.append({"TemplateGroup": group, "ACLName": acl, "ACLUpdateMode": "MERGE", "TemplateApplyMode": "MERGE", "Priority": priority, "Permit": "TRUE", "Application": "", "ApplicationGroup": "", "Protocol": "", "EitherPort": "", "Comment": "", "BroadMatchAck": "TRUE"})
+        fixture = TempCsv(ACL_HEADERS, rows)
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        default = acl_group("Default Template Group")
+        plan = plan_template_acls(rules, [default, existing], {"Default Template Group": [], "test2": ["acls"]}, {}, set(), set())
+        gateway = TemplateAclApplyGateway([default, existing], {"Default Template Group": [], "test2": ["acls"]}, {})
+        result = apply_template_acls(gateway, plan)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(gateway.posts, [("update", "test2"), ("create", "new-group"), ("select", "new-group")])
+        self.assertEqual(gateway.associations, {})
+
+    def test_create_race_aborts_before_write(self):
+        default = acl_group("Default Template Group")
+        fixture = TempCsv(ACL_HEADERS, [{"TemplateGroup": "new-group", "ACLName": "new", "ACLUpdateMode": "MERGE", "TemplateApplyMode": "MERGE", "Priority": "1000", "Permit": "TRUE", "Application": "", "ApplicationGroup": "", "Protocol": "", "EitherPort": "", "Comment": "", "BroadMatchAck": "TRUE"}])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        plan = plan_template_acls(rules, [default], {"Default Template Group": []}, {}, set(), set())
+        gateway = TemplateAclApplyGateway([default, acl_group("new-group")], {"Default Template Group": [], "new-group": []}, {})
+        with self.assertRaisesRegex(DriftError, "changed before write"):
+            apply_template_acls(gateway, plan)
+        self.assertEqual(gateway.posts, [])
+
+    def test_associated_appliance_exact_acl_is_verified(self):
+        existing = acl_group("test2", {"web": {"entry": {}}})
+        fixture = TempCsv(ACL_HEADERS, [{"TemplateGroup": "test2", "ACLName": "web", "ACLUpdateMode": "MERGE", "TemplateApplyMode": "MERGE", "Priority": "1000", "Permit": "TRUE", "Application": "", "ApplicationGroup": "", "Protocol": "", "EitherPort": "", "Comment": "", "BroadMatchAck": "TRUE"}])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        associations = {"0.NE": ["test2"]}
+        plan = plan_template_acls(rules, [existing], {"test2": ["acls"]}, associations, set(), set())
+        gateway = TemplateAclApplyGateway([existing], {"test2": ["acls"]}, associations)
+        gateway.appliance_acls["0.NE"] = {"web": {"1000": {"permit": True, "comment": ""}}}
+        result = apply_template_acls(gateway, plan)
+        self.assertEqual(result["groups"][0]["targets"], {"0.NE": "verified"})
+        self.assertEqual(result["status"], "success")
+
+
 class RepositoryTemplateTests(unittest.TestCase):
     def test_current_templates_validate(self):
         root = Path(__file__).resolve().parents[1] / "templates" / "edgeconnect"
-        self.assertEqual(len(parse_address_groups(str(root / "address_groups.csv"))), 2)
-        self.assertEqual(len(parse_service_groups(str(root / "service_groups.csv"))), 2)
-        self.assertTrue(any(item.definition_type == "COMPOUND" for item in parse_application_definitions(str(root / "application_definitions.csv"))))
-        self.assertEqual(len(parse_application_groups(str(root / "application_groups.csv"))), 2)
+        addresses = parse_address_groups(str(root / "address_groups.csv"))
+        services = parse_service_groups(str(root / "service_groups.csv"))
+        definitions = parse_application_definitions(str(root / "application_definitions.csv"))
+        groups = parse_application_groups(str(root / "application_groups.csv"))
+        acls = parse_template_acls(str(root / "template_acls.csv"))
+        firewall = parse_firewall_csv(str(root / "firewall_rules.csv"))
+        self.assertEqual((len(addresses), len(services), len(definitions), len(groups), len(acls), len(firewall)), (4, 5, 8, 3, 6, 9))
+        address_names = {row["Name"] for row in addresses}
+        service_names = {row["Name"] for row in services}
+        application_names = {item.name for item in definitions}
+        group_names = {row["Name"] for row in groups}
+        for rule in firewall:
+            self.assertTrue(set(filter(None, (rule.source_address_group, rule.destination_address_group, rule.either_address_group))) <= address_names)
+            self.assertTrue(set(filter(None, (rule.source_service_group, rule.destination_service_group, rule.either_service_group))) <= service_names)
+            self.assertTrue(not rule.application or rule.application in application_names)
+            self.assertTrue(not rule.application_group or rule.application_group == "any" or rule.application_group in group_names)
+        for rule in acls:
+            self.assertTrue(not rule.entry.get("application") or rule.entry["application"] in application_names)
+            self.assertTrue(not rule.entry.get("app_group") or rule.entry["app_group"] in group_names)
+
+    def test_published_valid_and_mixed_examples(self):
+        root = Path(__file__).resolve().parents[1] / "examples" / "edgeconnect"
+        parsers = {
+            "address_groups": parse_address_groups,
+            "service_groups": parse_service_groups,
+            "application_definitions": parse_application_definitions,
+            "application_groups": parse_application_groups,
+            "template_acls": parse_template_acls,
+            "firewall_rules": parse_firewall_csv,
+        }
+        parsed = {}
+        for name, parser in parsers.items():
+            with self.subTest(name=name, kind="valid"):
+                parsed[name] = parser(str(root / "{}_valid.csv".format(name)))
+            with self.subTest(name=name, kind="mixed"):
+                with self.assertRaises(ValidationError):
+                    parser(str(root / "{}_mixed.csv".format(name)))
+        self.assertEqual(tuple(len(parsed[name]) for name in parsers), (6, 10, 8, 4, 7, 9))
+        address_names = {row["Name"] for row in parsed["address_groups"]}
+        service_names = {row["Name"] for row in parsed["service_groups"]}
+        application_names = {item.name for item in parsed["application_definitions"]}
+        group_names = {row["Name"] for row in parsed["application_groups"]}
+        for rule in parsed["firewall_rules"]:
+            self.assertTrue(set(filter(None, (rule.source_address_group, rule.destination_address_group, rule.either_address_group))) <= address_names)
+            self.assertTrue(set(filter(None, (rule.source_service_group, rule.destination_service_group, rule.either_service_group))) <= service_names)
+            self.assertTrue(not rule.application or rule.application in application_names)
+            self.assertTrue(not rule.application_group or rule.application_group == "any" or rule.application_group in group_names)
+        for rule in parsed["template_acls"]:
+            self.assertTrue(not rule.entry.get("application") or rule.entry["application"] in application_names)
+            self.assertTrue(not rule.entry.get("app_group") or rule.entry["app_group"] in group_names)
 
 
 class NativeGroupTests(unittest.TestCase):
@@ -361,8 +627,15 @@ class ApplicationDefinitionTests(unittest.TestCase):
                 parse_application_definitions(str(fixture.path))
         finally:
             fixture.close()
-        bad_name = self._row("DOMAIN", "bad.name")
-        bad_name["Domain"] = "example.com"
+        dotted = self._row("DOMAIN", "good.name")
+        dotted["Domain"] = "example.com"
+        fixture = TempCsv(APP_DEF_HEADERS, [dotted])
+        try:
+            self.assertEqual(parse_application_definitions(str(fixture.path))[0].name, "good.name")
+        finally:
+            fixture.close()
+        bad_name = self._row("COMPOUND", "bad.name")
+        bad_name.update({"Protocol": "ip", "SourcePort": "80"})
         fixture = TempCsv(APP_DEF_HEADERS, [bad_name])
         try:
             with self.assertRaisesRegex(ValidationError, "Name must"):
@@ -458,47 +731,6 @@ class ApplicationGroupAndExpressTests(unittest.TestCase):
         plan = plan_application_groups(rows, existing, {"app1", "app2"})
         self.assertEqual(plan["candidate"]["child"]["apps"], ["app1", "app2"])
         self.assertEqual(plan["candidate"]["child"]["parentGroup"], ["parent1", "parent2"])
-
-    def test_appexpress_monitor_preserves_collection_and_ids(self):
-        current = {"old": {"id": 4, "name": "Old", "monitor": True, "appExpressEnabled": False}}
-        plan = plan_appexpress(["NewApp"], {"NewApp"}, current)
-        self.assertEqual(plan["candidate"]["newapp"]["id"], 5)
-        self.assertEqual(plan["candidate"]["old"], current["old"])
-
-        class Gateway:
-            def __init__(self):
-                self.value = copy.deepcopy(current)
-
-            def get_appexpress(self):
-                return copy.deepcopy(self.value)
-
-            def post_appexpress(self, value):
-                self.value = copy.deepcopy(value)
-
-        self.assertEqual(apply_appexpress(Gateway(), plan)["status"], "success")
-
-    def test_appexpress_readback_ignores_server_reindexed_ids(self):
-        current = {"first": {"id": 7, "name": "First", "monitor": True, "appExpressEnabled": False}}
-        plan = plan_appexpress(["Second"], {"Second"}, current)
-
-        class Gateway:
-            def __init__(self):
-                self.value = copy.deepcopy(current)
-
-            def get_appexpress(self):
-                return copy.deepcopy(self.value)
-
-            def post_appexpress(self, value):
-                self.value = copy.deepcopy(value)
-                self.value["first"]["id"] = 0
-                self.value["second"]["id"] = 1
-
-        self.assertEqual(list(plan["candidate"]), ["first", "second"])
-        self.assertEqual(apply_appexpress(Gateway(), plan)["status"], "success")
-
-    def test_appexpress_missing_application_rejected(self):
-        with self.assertRaisesRegex(ValidationError, "do not exist"):
-            plan_appexpress(["missing"], set(), {})
 
     def test_appexpress_modes_apply_monitor_and_off_as_desired_state(self):
         current = {

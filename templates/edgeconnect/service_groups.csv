@@ -1,3 +1,6 @@
 "Name","Protocol","IncludedPorts","ExcludedPorts","IncludedGroups","ExcludedGroups","IcmpTypes","IcmpCodes","Comment"
-"example-service-group","TCP","0,443,8443-8445","","","","","","TCP rule"
-"example-service-group","UDP","53","","","","","","UDP rule for same group"
+"Example_Web","TCP","80,443,8000-9000","8080","","","","","TCP ports, range, and exclusion"
+"Example_DNS","UDP","53","","","","","","UDP service"
+"Example_ICMP_Echo","ICMP","","","","","8","0","ICMP type and code"
+"Example_ICMP_Ranges","ICMP","","","","","0,3-4,8","","Multiple ICMP types and a range"
+"Example_Nested_Service","TCP","","","Example_Web","","","","Nested TCP service group"

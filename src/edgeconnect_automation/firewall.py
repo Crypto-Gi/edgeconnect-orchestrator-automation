@@ -1,7 +1,6 @@
 import copy
 import csv
 import io
-import ipaddress
 import os
 import re
 import uuid
@@ -11,23 +10,27 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 
 from .errors import DriftError, ValidationError
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan, PairResult, RunResult, ScopeKey
-from .util import fingerprint, semantic_equal, split_values
+from .util import fingerprint, normalize_acl_entries, semantic_equal, split_values
+from .validation import PORT_PROTOCOLS, Issues, check_families, check_ports, control_characters, members, policy_ip, valid_domain, valid_protocol
 
 
+FAMILIES = (
+    ("source_address", "destination_address", "either_address"),
+    ("source_address_group", "destination_address_group", "either_address_group"),
+    ("source_port", "destination_port", "either_port"),
+    ("source_service_group", "destination_service_group", "either_service_group"),
+    ("source_domain", "destination_domain", "either_domain"),
+)
+ORDINARY_MATCH_FIELDS = tuple(name for family in FAMILIES for name in family) + ("application", "application_group", "protocol")
 FIREWALL_HEADERS = {
     "rule_key", "rule_name", "description", "enabled", "priority", "source_segment", "destination_segment",
-    "source_zone", "destination_zone", "source_address", "source_address_group", "destination_address",
-    "destination_address_group", "either_address", "either_address_group", "application", "application_group",
-    "protocol", "source_port", "destination_port", "either_port", "source_service_group",
-    "destination_service_group", "either_service_group", "action", "logging", "logging_level", "broad_match_ack",
-}
+    "source_zone", "destination_zone", "acl", "action", "logging", "logging_level", "broad_match_ack",
+} | set(ORDINARY_MATCH_FIELDS)
 REQUIRED_HEADERS = {
     "rule_key", "source_segment", "destination_segment", "source_zone", "destination_zone", "action",
 }
 TRUE_VALUES = {"true", "yes", "1", "enabled", "enable"}
 FALSE_VALUES = {"false", "no", "0", "disabled", "disable"}
-PORT_PATTERN = re.compile(r"^[0-9]+(?:-[0-9]+)?$")
-PROTOCOL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def parse_bool(value: str, field: str, default: Optional[bool] = None) -> bool:
@@ -41,21 +44,12 @@ def parse_bool(value: str, field: str, default: Optional[bool] = None) -> bool:
     raise ValidationError("{} must be true or false".format(field))
 
 
-def _validate_ip_list(value: str, field: str) -> None:
-    for item in split_values(value):
-        try:
-            ipaddress.ip_network(item, strict=False)
-        except ValueError as error:
-            raise ValidationError("{} contains invalid IP/CIDR {}".format(field, item)) from error
-
-
-def _validate_ports(value: str, field: str) -> None:
-    for item in split_values(value):
-        if not PORT_PATTERN.fullmatch(item):
-            raise ValidationError("{} contains invalid port {}".format(field, item))
-        parts = [int(part) for part in item.split("-")]
-        if any(part < 0 or part > 65535 for part in parts) or len(parts) == 2 and parts[0] > parts[1]:
-            raise ValidationError("{} contains out-of-range port {}".format(field, item))
+def _bool(row: Mapping[str, str], field: str, default: Optional[bool], issues: Issues, number: int) -> bool:
+    try:
+        return parse_bool(row.get(field, ""), field, default)
+    except ValidationError as error:
+        issues.add("VAL-01", str(error), number, field, row.get(field, ""), "use TRUE or FALSE")
+        return bool(default)
 
 
 @dataclass
@@ -63,10 +57,16 @@ class FirewallParseResult:
     rules: List[FirewallRule] = field(default_factory=list)
     pair_errors: Dict[Tuple[str, str], List[str]] = field(default_factory=dict)
     global_errors: List[str] = field(default_factory=list)
+    pair_warnings: Dict[Tuple[str, str], List[str]] = field(default_factory=dict)
+    issues: List[Mapping[str, Any]] = field(default_factory=list)
 
     @property
     def errors(self) -> List[str]:
         return self.global_errors + [error for errors in self.pair_errors.values() for error in errors]
+
+    @property
+    def warnings(self) -> List[str]:
+        return [warning for warnings in self.pair_warnings.values() for warning in warnings]
 
 
 def parse_firewall_csv(path: str) -> List[FirewallRule]:
@@ -97,18 +97,21 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
             continue
         saw_row = True
         if len(values) != len(normalized_headers):
-            result.global_errors.append("row {} has {} fields; expected {}".format(row_number, len(values), len(normalized_headers)))
+            result.global_errors.append("row {} [CSV-06] has {} fields; expected {}".format(row_number, len(values), len(normalized_headers)))
             continue
         row = {key: value.strip() for key, value in zip(normalized_headers, values)}
         pair = (row.get("source_segment", ""), row.get("destination_segment", ""))
-        try:
-            result.rules.append(_parse_rule(row_number, row))
-        except ValidationError as error:
-            message = "row {}: {}".format(row_number, error)
-            if all(pair):
-                result.pair_errors.setdefault(pair, []).append(message)
-            else:
-                result.global_errors.append(message)
+        issues = Issues("segment pair {} -> {}".format(*pair) if all(pair) else "the whole CSV")
+        warnings = Issues("")
+        control_characters(row, issues, row_number)
+        rule = _parse_rule(row_number, row, issues, warnings)
+        result.issues.extend(issues.items)
+        if issues:
+            (result.pair_errors.setdefault(pair, []) if all(pair) else result.global_errors).extend(issues.messages())
+        elif rule is not None:
+            result.rules.append(rule)
+            if warnings:
+                result.pair_warnings.setdefault(pair, []).extend(warnings.messages())
     if not saw_row:
         raise ValidationError("firewall CSV has no rules")
     return result
@@ -117,108 +120,100 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
 def parse_firewall_text(text: str) -> List[FirewallRule]:
     result = parse_firewall_document(text)
     if result.errors:
-        raise ValidationError("\n".join(result.errors))
+        raise ValidationError("\n".join(result.errors), result.issues)
     return result.rules
 
 
-def _parse_rule(row_number: int, row: Mapping[str, str]) -> FirewallRule:
-    for field in REQUIRED_HEADERS:
-        if not row.get(field, ""):
-            raise ValidationError("{} is required".format(field))
+def _parse_rule(number: int, row: Mapping[str, str], issues: Issues, warnings: Issues) -> Optional[FirewallRule]:
+    start = len(issues)
+    for name in sorted(REQUIRED_HEADERS):
+        if not row.get(name, ""):
+            issues.add("FW-01", "{} is required".format(name), number, name, fix="fill in {}".format(name))
     priority: Optional[int] = None
     if row.get("priority"):
-        try:
+        if not re.fullmatch(r"-?[0-9]+", row["priority"]):
+            issues.add("FW-20", "priority must be an integer", number, "priority", row["priority"], "use a whole number 0-65535 or leave blank for automatic allocation")
+        elif not 0 <= int(row["priority"]) <= 65535:
+            issues.add("FW-20", "priority must be between 0 and 65535", number, "priority", row["priority"], "use 0-65535")
+        else:
             priority = int(row["priority"])
-        except ValueError as error:
-            raise ValidationError("priority must be an integer") from error
-        if priority < 0 or priority > 65535:
-            raise ValidationError("priority must be between 0 and 65535")
-    for field in ("source_address", "destination_address", "either_address"):
-        _validate_ip_list(row.get(field, ""), field)
-    for field in ("source_port", "destination_port", "either_port"):
-        _validate_ports(row.get(field, ""), field)
+    acl = row.get("acl", "")
+    if "|" in acl:
+        issues.add("FW-02", "acl must be a single exact name", number, "acl", acl, "reference one ACL per rule")
+    used = [name for name in ORDINARY_MATCH_FIELDS if row.get(name, "")]
+    if acl and used:
+        issues.add("FW-02", "acl is mutually exclusive with all ordinary match criteria ({})".format(", ".join(used)), number, "acl", acl, "put the criteria in the ACL or remove the acl reference")
+    lists = {name: members(row.get(name, ""), issues, number, name) for name in ORDINARY_MATCH_FIELDS if name != "protocol"}
+    check_families(row, FAMILIES, issues, number)
+    for name in FAMILIES[0]:
+        for value in lists[name]:
+            try:
+                warning = policy_ip(value)
+            except ValueError as error:
+                issues.add("FW-14", "{} contains invalid IP/CIDR {}: {}".format(name, value, error), number, name, value, "use an IPv4/IPv6 address, prefix, dotted mask, octet range, or whole-octet wildcard")
+            else:
+                if warning:
+                    warnings.add("FW-12", warning, number, name, value)
+    for name in FAMILIES[2]:
+        check_ports(lists[name], issues, number, name)
+    for name in FAMILIES[4]:
+        for value in lists[name]:
+            if not valid_domain(value):
+                issues.add("VAL-09", "invalid domain {}".format(value), number, name, value, "use example.com, *.example.com, or *example.com")
     protocol = row.get("protocol", "").lower()
-    if protocol and not PROTOCOL_PATTERN.fullmatch(protocol):
-        raise ValidationError("protocol is invalid")
-    if any(row.get(field, "") for field in ("source_port", "destination_port", "either_port")) and protocol not in {"tcp", "udp"}:
-        raise ValidationError("literal ports require protocol tcp or udp")
-    if row.get("either_address") and (row.get("source_address") or row.get("destination_address")):
-        raise ValidationError("either_address is mutually exclusive with directional addresses")
-    if row.get("either_address_group") and (row.get("source_address_group") or row.get("destination_address_group")):
-        raise ValidationError("either_address_group is mutually exclusive with directional address groups")
-    if row.get("either_port") and (row.get("source_port") or row.get("destination_port")):
-        raise ValidationError("either_port is mutually exclusive with directional ports")
-    if row.get("either_service_group") and (row.get("source_service_group") or row.get("destination_service_group")):
-        raise ValidationError("either_service_group is mutually exclusive with directional service groups")
-    action = row["action"].lower()
-    if action not in {"allow", "deny", "inspect"}:
-        raise ValidationError("action must be allow, deny, or inspect")
-    logging = parse_bool(row.get("logging", ""), "logging", False)
+    if protocol and not valid_protocol(protocol):
+        issues.add("VAL-06", "protocol is invalid", number, "protocol", protocol, "use ip, tcp, udp, tcp/udp, icmp, icmpv6, or a protocol number 0-255")
+    if any(lists[name] for name in FAMILIES[2]) and protocol not in PORT_PROTOCOLS:
+        issues.add("FW-06", "literal ports require protocol tcp, udp, tcp/udp, or blank", number, "protocol", protocol, "change the protocol or remove the port criteria")
+    if any(value.lower() == "any" for value in lists["application"]):
+        issues.add("FW-18", "application=any is not supported", number, "application", row.get("application", ""), "leave application blank or use application_group=any")
+    action = row.get("action", "").lower()
+    if action and action not in {"allow", "deny", "inspect"}:
+        issues.add("FW-03", "action must be allow, deny, or inspect", number, "action", row.get("action", ""), "use allow, deny, or inspect")
+    enabled = _bool(row, "enabled", True, issues, number)
+    logging = _bool(row, "logging", False, issues, number)
+    broad_match_ack = _bool(row, "broad_match_ack", False, issues, number)
     level_text = row.get("logging_level", "")
+    logging_level = 2 if logging else 0
     if level_text:
-        try:
+        if not re.fullmatch(r"-?[0-9]+", level_text):
+            issues.add("FW-19", "logging_level must be an integer", number, "logging_level", level_text, "use 0-7")
+        elif not 0 <= int(level_text) <= 7:
+            issues.add("FW-19", "logging_level must be between 0 and 7", number, "logging_level", level_text, "use 0-7")
+        elif int(level_text) and not logging:
+            issues.add("FW-19", "a nonzero logging_level requires logging=TRUE", number, "logging_level", level_text, "set logging=TRUE or clear logging_level")
+        else:
             logging_level = int(level_text)
-        except ValueError as error:
-            raise ValidationError("logging_level must be an integer") from error
-        if logging_level < 0 or logging_level > 7:
-            raise ValidationError("logging_level must be between 0 and 7")
-    else:
-        logging_level = 2 if logging else 0
+    if len(issues) != start:
+        return None
+    values = {name: row.get(name, "") for name in ORDINARY_MATCH_FIELDS}
+    values["protocol"] = protocol
     rule = FirewallRule(
-        row=row_number,
-        rule_key=row["rule_key"],
-        rule_name=row.get("rule_name", ""),
-        description=row.get("description", ""),
-        enabled=parse_bool(row.get("enabled", ""), "enabled", True),
-        priority=priority,
-        source_segment=row["source_segment"],
-        destination_segment=row["destination_segment"],
-        source_zone=row["source_zone"],
-        destination_zone=row["destination_zone"],
-        source_address=row.get("source_address", ""),
-        source_address_group=row.get("source_address_group", ""),
-        destination_address=row.get("destination_address", ""),
-        destination_address_group=row.get("destination_address_group", ""),
-        either_address=row.get("either_address", ""),
-        either_address_group=row.get("either_address_group", ""),
-        application=row.get("application", ""),
-        application_group=row.get("application_group", ""),
-        protocol=protocol,
-        source_port=row.get("source_port", ""),
-        destination_port=row.get("destination_port", ""),
-        either_port=row.get("either_port", ""),
-        source_service_group=row.get("source_service_group", ""),
-        destination_service_group=row.get("destination_service_group", ""),
-        either_service_group=row.get("either_service_group", ""),
-        action=action,
-        logging=logging,
-        logging_level=logging_level,
-        broad_match_ack=parse_bool(row.get("broad_match_ack", ""), "broad_match_ack", False),
+        row=number, rule_key=row["rule_key"], rule_name=row.get("rule_name", ""), description=row.get("description", ""),
+        enabled=enabled, priority=priority, source_segment=row["source_segment"], destination_segment=row["destination_segment"],
+        source_zone=row["source_zone"], destination_zone=row["destination_zone"], acl=acl, action=action,
+        logging=logging, logging_level=logging_level, broad_match_ack=broad_match_ack, **values,
     )
     if not rule_match(rule) and not rule.broad_match_ack:
-        raise ValidationError("a rule without match conditions requires broad_match_ack=true")
+        issues.add("FW-04", "a rule without match conditions requires broad_match_ack=true", number, "broad_match_ack", row.get("broad_match_ack", ""), "add match criteria or set broad_match_ack=TRUE to confirm a match-all rule")
+        return None
+    if rule_match(rule) and rule.broad_match_ack:
+        warnings.add("FW-05", "broad_match_ack=TRUE has no effect because the rule has match criteria", number, "broad_match_ack")
     return rule
 
 
+MATCH_KEYS = {
+    "acl": "acl", "source_address": "src_ip", "destination_address": "dst_ip", "either_address": "either_ip",
+    "source_address_group": "src_addrgrp_groups", "destination_address_group": "dst_addrgrp_groups", "either_address_group": "either_addrgrp_groups",
+    "application": "application", "application_group": "app_group", "protocol": "protocol",
+    "source_port": "src_port", "destination_port": "dst_port", "either_port": "either_port",
+    "source_service_group": "src_srvcgrp_groups", "destination_service_group": "dst_srvcgrp_groups", "either_service_group": "either_srvcgrp_groups",
+    "source_domain": "src_dns", "destination_domain": "dst_dns", "either_domain": "either_dns",
+}
+
+
 def rule_match(rule: FirewallRule) -> Dict[str, str]:
-    values = {
-        "src_ip": rule.source_address,
-        "dst_ip": rule.destination_address,
-        "either_ip": rule.either_address,
-        "src_addrgrp_groups": rule.source_address_group,
-        "dst_addrgrp_groups": rule.destination_address_group,
-        "either_addrgrp_groups": rule.either_address_group,
-        "application": rule.application,
-        "app_group": rule.application_group,
-        "protocol": rule.protocol,
-        "src_port": rule.source_port,
-        "dst_port": rule.destination_port,
-        "either_port": rule.either_port,
-        "src_srvcgrp_groups": rule.source_service_group,
-        "dst_srvcgrp_groups": rule.destination_service_group,
-        "either_srvcgrp_groups": rule.either_service_group,
-    }
-    return {key: value for key, value in values.items() if value}
+    return {key: getattr(rule, name) for name, key in MATCH_KEYS.items() if getattr(rule, name)}
 
 
 def rule_payload(rule: FirewallRule) -> Dict[str, Any]:
@@ -238,7 +233,8 @@ def rule_payload(rule: FirewallRule) -> Dict[str, Any]:
 def normalize_rule(value: Mapping[str, Any], appliance: bool = False) -> Dict[str, Any]:
     result = copy.deepcopy(dict(value))
     if appliance:
-        result.get("match", {}).pop("acl", None)
+        if result.get("match", {}).get("acl") == "":
+            result.get("match", {}).pop("acl", None)
         misc = result.get("misc", {})
         if "logging_priority" in misc:
             misc["logging_priority"] = int(misc["logging_priority"])
@@ -261,11 +257,61 @@ def _ensure_candidate_shape(baseline: Mapping[str, Any]) -> Dict[str, Any]:
     return candidate
 
 
+def _acl_snapshot(acls: Mapping[str, Sequence[Mapping[str, Any]]], names: Iterable[str]) -> Dict[str, Any]:
+    result = {}
+    for name in sorted(set(names)):
+        occurrences = []
+        for occurrence in acls.get(name, []):
+            occurrences.append({
+                "template_group": str(occurrence.get("template_group", "")),
+                "entries": normalize_acl_entries(occurrence.get("entries", {})),
+                "selected": occurrence.get("selected") is True,
+                "associated_targets": sorted(str(target) for target in occurrence.get("associated_targets", [])),
+            })
+        result[name] = sorted(occurrences, key=lambda item: (item["template_group"], fingerprint(item["entries"])))
+    return result
+
+
+def _resolve_acl_dependencies(names: Iterable[str], inventory: Inventory, errors: List[str], warnings: List[str]) -> Dict[str, Mapping[str, Any]]:
+    dependencies = {}
+    for name in sorted(set(names)):
+        occurrences = list(inventory.acls.get(name, []))
+        usable = [item for item in occurrences if item.get("selected") is True and item.get("entries")]
+        if not usable:
+            errors.append("missing central ACL {} in a selected Access Lists template with at least one entry".format(name))
+            continue
+        definitions: Dict[str, Mapping[str, Any]] = {}
+        for occurrence in usable:
+            entries = normalize_acl_entries(occurrence.get("entries", {}))
+            definitions.setdefault(fingerprint(entries), entries)
+        if len(definitions) != 1:
+            groups = sorted(str(item.get("template_group", "")) for item in usable)
+            errors.append("ACL {} has conflicting central definitions in template groups: {}".format(name, ", ".join(groups)))
+            continue
+        dependencies[name] = next(iter(definitions.values()))
+        groups = sorted({str(item.get("template_group", "")) for item in usable})
+        associations = sorted({str(target) for item in usable for target in item.get("associated_targets", [])})
+        if len(groups) > 1:
+            warnings.append("ACL {} has identical definitions in multiple template groups: {}".format(name, ", ".join(groups)))
+        if not associations:
+            warnings.append("ACL {} is central but its source template has no appliance associations".format(name))
+        for target, state in inventory.target_states.items():
+            if state != "reachable":
+                continue
+            appliance = inventory.appliance_acls.get(target, {})
+            if name not in appliance:
+                errors.append("[FW-29] ACL {} is missing on reachable target {}; Orchestrator will reject the complete security-map update".format(name, target))
+            elif not semantic_equal(normalize_acl_entries(appliance[name]), dependencies[name]):
+                errors.append("[FW-29] ACL {} differs on reachable target {}; Orchestrator will reject or misapply the complete security-map update".format(name, target))
+    return dependencies
+
+
 def build_firewall_plan(
     rules: Sequence[FirewallRule],
     inventory: Inventory,
     pair_errors: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
     parse_global_errors: Sequence[str] = (),
+    pair_warnings: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
 ) -> FirewallPlan:
     grouped: Dict[Tuple[str, str], List[FirewallRule]] = {}
     for rule in rules:
@@ -285,7 +331,10 @@ def build_firewall_plan(
     resolved: List[FirewallRule] = []
     for pair, pair_rules in grouped.items():
         errors = list(global_errors) + list((pair_errors or {}).get(pair, ())) + list(inventory.pair_errors.get(pair, ()))
-        warnings: List[str] = []
+        warnings: List[str] = list((pair_warnings or {}).get(pair, ()))
+        acl_names = {rule.acl for rule in pair_rules if rule.acl}
+        acl_dependencies = _resolve_acl_dependencies(acl_names, inventory, errors, warnings)
+        acl_inventory_fingerprint = fingerprint(_acl_snapshot(inventory.acls, acl_names)) if acl_names else ""
         for values in duplicate_keys.values():
             if len(values) > 1 and any(value.pair == pair for value in values):
                 errors.append("duplicate rule_key {}".format(values[0].rule_key))
@@ -381,6 +430,8 @@ def build_firewall_plan(
             errors=errors,
             warnings=warnings,
             target_states=dict(inventory.target_states),
+            acl_dependencies=acl_dependencies,
+            acl_inventory_fingerprint=acl_inventory_fingerprint,
         ))
     return FirewallPlan(pair_plans, errors=global_errors, resolved_rows=resolved)
 
@@ -396,12 +447,13 @@ def _check_dependencies(rule: FirewallRule, inventory: Inventory, errors: List[s
         (rule.application, inventory.applications, "application"),
         (rule.application_group, inventory.application_groups, "application group"),
     )
+    applications = {name.lower() for name in inventory.applications}
     for value, namespace, label in checks:
         for name in split_values(value):
             if label == "application group" and name.lower() == "any":
                 continue
-            if name not in namespace:
-                errors.append("row {} missing {} {}".format(rule.row, label, name))
+            if name.lower() not in applications if label == "application" else name not in namespace:
+                errors.append("row {} [DEP-01] missing {} {}".format(rule.row, label, name))
 
 
 class FirewallExecutor:
@@ -415,12 +467,24 @@ class FirewallExecutor:
             if not pair.eligible:
                 results.append(PairResult(pair.pair, "ineligible", "; ".join(pair.errors)))
                 continue
-            if not pair.created_priorities:
-                results.append(PairResult(pair.pair, "no_op"))
-                continue
+            if pair.acl_dependencies:
+                current_acls = self.gateway.get_central_acls(set(pair.acl_dependencies))
+                if fingerprint(_acl_snapshot(current_acls, pair.acl_dependencies)) != pair.acl_inventory_fingerprint:
+                    results.append(PairResult(pair.pair, "drift", "central ACL dependency changed before write"))
+                    continue
             current = self.gateway.get_policy(pair.segment_map)
             if fingerprint(current) != pair.baseline_fingerprint:
                 results.append(PairResult(pair.pair, "drift", "baseline changed before write"))
+                continue
+            if not pair.created_priorities:
+                if not pair.acl_dependencies:
+                    results.append(PairResult(pair.pair, "no_op"))
+                    continue
+                if hasattr(self.gateway, "targets"):
+                    self.gateway.targets = dict(pair.target_states)
+                targets = self.gateway.verify_targets(pair.segment_map, pair.candidate, reference, pair.acl_dependencies)
+                unresolved = any(status != "verified" for status in targets.values())
+                results.append(PairResult(pair.pair, "partial" if unresolved else "no_op", targets=targets))
                 continue
             try:
                 self.gateway.post_policy(pair.segment_map, pair.candidate, reference)
@@ -429,7 +493,7 @@ class FirewallExecutor:
                     raise DriftError("normalized readback differs from candidate")
                 if hasattr(self.gateway, "targets"):
                     self.gateway.targets = dict(pair.target_states)
-                targets = self.gateway.verify_targets(pair.segment_map, pair.candidate, reference)
+                targets = self.gateway.verify_targets(pair.segment_map, pair.candidate, reference, pair.acl_dependencies) if pair.acl_dependencies else self.gateway.verify_targets(pair.segment_map, pair.candidate, reference)
                 if not targets:
                     targets = {"expected_targets": "unknown"}
                 audit_verified = self.gateway.correlate_audit(pair.segment_map, reference) if hasattr(self.gateway, "correlate_audit") else True

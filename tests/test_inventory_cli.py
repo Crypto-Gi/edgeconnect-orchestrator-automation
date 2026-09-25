@@ -6,14 +6,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _discover_inventory, main
+from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _approve_template_acls, _discover_inventory, main
 from edgeconnect_automation.errors import ApprovalError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
-from edgeconnect_automation.workflows import APP_DEF_HEADERS
+from edgeconnect_automation.workflows import ACL_HEADERS as TEMPLATE_ACL_HEADERS, APP_DEF_HEADERS
 
 
 HEADERS = "rule_key,rule_name,description,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,source_address,source_address_group,destination_address,destination_address_group,either_address,either_address_group,application,application_group,protocol,source_port,destination_port,either_port,source_service_group,destination_service_group,either_service_group,action,logging,logging_level,broad_match_ack"
+ACL_HEADERS = HEADERS + ",acl"
 ROW = "rule,name,description,true,20000,Default,Default,INSIDE,OUTSIDE,10.0.0.0/24,,,,,,BuiltinApp,BuiltinGroup,tcp,,443,,,,,allow,true,2,false"
+ACL_ROW = "acl-rule,name,description,true,30000,Default,Default,INSIDE,OUTSIDE,,,,,,,,,,,,,,,,allow,true,2,false,lab25-test1"
 
 
 def baseline():
@@ -74,6 +76,17 @@ class InventoryGateway:
         self.security_reads.append(nepk)
         return {"map1": {"1_2": {"prio": {"20000": {"gms_marked": False}}}}}
 
+    def get_central_acls(self, names=None):
+        return {"lab25-test1": [{
+            "template_group": "test2",
+            "entries": {"1000": {"permit": True, "app_group": "Accounting"}},
+            "selected": True,
+            "associated_targets": ["0.NE"],
+        }]}
+
+    def get_appliance_acls(self, nepk):
+        return {"lab25-test1": {"1000": {"permit": True, "app_group": "Accounting"}}}
+
 
 class LiveInventoryTests(unittest.TestCase):
     def test_all_appliances_states_wildcards_and_local_priorities(self):
@@ -94,6 +107,13 @@ class LiveInventoryTests(unittest.TestCase):
         self.assertNotIn(rule.pair, inventory.pair_errors)
         self.assertEqual(inventory.zones[("Other", "OZONE")], 3)
         self.assertEqual(inventory.local_priorities[rule.scope], set())
+
+    def test_acl_inventory_is_discovered_only_for_acl_rules(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + ACL_ROW)[0]
+        inventory = _discover_inventory(InventoryGateway(), [rule], {rule.pair})
+        self.assertIn("lab25-test1", inventory.acls)
+        self.assertEqual(inventory.appliance_acls["0.NE"]["lab25-test1"]["1000"]["app_group"], "Accounting")
+        self.assertEqual(inventory.statuses["acls"], "complete")
 
 
 class DeployGateway:
@@ -121,7 +141,21 @@ class DeployGateway:
         return [{"vrfName": "Default", "zoneName": "INSIDE", "zoneId": 1}, {"vrfName": "Default", "zoneName": "OUTSIDE", "zoneId": 2}]
 
 
-class BulkDeployGateway:
+class NoReferences:
+    policy = {"data": {"map1": {}}}
+    acls = {}
+
+    def get_segments(self):
+        return {"0": {"id": 0, "name": "Default"}}
+
+    def get_policy(self, segment_map):
+        return copy.deepcopy(self.policy)
+
+    def get_central_acls(self, names=None):
+        return copy.deepcopy(self.acls)
+
+
+class BulkDeployGateway(NoReferences):
     def __init__(self):
         self.values = []
         self.uploads = 0
@@ -138,7 +172,7 @@ class BulkDeployGateway:
         self.values = [value for value in self.values if value["name"] != name]
 
 
-class AppDefinitionDeployGateway:
+class AppDefinitionDeployGateway(NoReferences):
     def __init__(self):
         self.inventories = {"portProtocolClassification": {}, "dnsClassification": [], "compoundClassification": {}}
         self.appexpress = {}
@@ -167,12 +201,68 @@ class AppDefinitionDeployGateway:
             self.inventories[base] = [value for value in self.inventories[base] if value.get("domain") != identity]
 
 
+class TemplateAclGateway:
+    def __init__(self):
+        self.groups = {
+            "Default Template Group": {"name": "Default Template Group", "selectedTemplateNames": [], "templates": [{"name": "acls", "value": {"data": {"NewACL": {"entry": {}}}, "options": {"merge": True, "delDependent": True}}}]},
+        }
+        self.selections = {"Default Template Group": []}
+        self.associations = {"0.NE": ["Default Template Group"]}
+        self.posts = []
+
+    def get_template_groups(self):
+        return copy.deepcopy(list(self.groups.values()))
+
+    def get_template_group(self, name):
+        return copy.deepcopy(self.groups.get(name))
+
+    def get_template_selection(self, name):
+        return copy.deepcopy(self.selections.get(name, []))
+
+    def get_template_associations(self):
+        return copy.deepcopy(self.associations)
+
+    def search_application(self, name):
+        return [{"name": name}]
+
+    def search_application_group(self, name):
+        return [{"group": name}]
+
+    def create_template_group(self, value):
+        name = value["name"]
+        self.posts.append(("create", name))
+        self.groups[name] = {"name": name, "selectedTemplateNames": [], "templates": [{"name": "acls", "value": copy.deepcopy(value["templates"][0]["valObject"])}]}
+        self.selections[name] = []
+
+    def post_template_group(self, name, value):
+        self.posts.append(("update", name))
+        next(item for item in self.groups[name]["templates"] if item["name"] == "acls")["value"] = copy.deepcopy(value["templates"][0]["valObject"])
+
+    def select_template_group(self, name, templates):
+        self.posts.append(("select", name))
+        self.selections[name] = list(templates)
+        self.groups[name]["selectedTemplateNames"] = list(templates)
+
+    def get_appliances(self):
+        return []
+
+    def get_actions(self, start, end):
+        return []
+
+
 class DeployCliTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         root = Path(self.directory.name)
         self.csv = root / "rules.csv"
         self.csv.write_text(HEADERS + "\n" + ROW + "\n", encoding="utf-8")
+        self.acl_csv = root / "acl-rules.csv"
+        self.acl_csv.write_text(ACL_HEADERS + "\n" + ACL_ROW + "\n", encoding="utf-8")
+        self.template_acl_csv = root / "template-acls.csv"
+        with self.template_acl_csv.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, TEMPLATE_ACL_HEADERS)
+            writer.writeheader()
+            writer.writerow({"TemplateGroup": "new-group", "ACLName": "new-acl", "ACLUpdateMode": "MERGE", "TemplateApplyMode": "MERGE", "Priority": "1000", "Permit": "TRUE", "Application": "", "ApplicationGroup": "", "Protocol": "", "EitherPort": "", "Comment": "", "BroadMatchAck": "TRUE"})
         self.address_csv = root / "address.csv"
         self.address_csv.write_text("Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment\nnew,10.0.0.0/24,,,\n", encoding="utf-8")
         self.application_csv = root / "applications.csv"
@@ -184,8 +274,6 @@ class DeployCliTests(unittest.TestCase):
             writer.writerow(application)
         self.app_group_csv = root / "application_groups.csv"
         self.app_group_csv.write_text("Name,Applications,ParentGroups\ntest-group,monitor-app,\n", encoding="utf-8")
-        self.appexpress_csv = root / "appexpress.csv"
-        self.appexpress_csv.write_text("Application,Mode\nmonitor-app,MONITOR\n", encoding="utf-8")
         self.inventory = root / "inventory.json"
         self.inventory.write_text(json.dumps({
             "segments": {"Default": 0},
@@ -207,6 +295,23 @@ class DeployCliTests(unittest.TestCase):
             code = main(["firewall", "deploy", "--csv", str(self.csv), "--inventory", str(self.inventory), "--dry-run"])
         self.assertEqual(code, 0)
         self.assertEqual(gateway.posts, 0)
+
+    def test_template_acl_creation_requires_exact_group_name_then_apply(self):
+        dry_gateway = TemplateAclGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway), patch("sys.stdin.isatty", return_value=False):
+            self.assertEqual(main(["template-acls", "deploy", "--csv", str(self.template_acl_csv), "--dry-run"]), 0)
+        self.assertEqual(dry_gateway.posts, [])
+
+        refused_gateway = TemplateAclGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=refused_gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value="wrong"):
+            self.assertEqual(main(["template-acls", "deploy", "--csv", str(self.template_acl_csv)]), 3)
+        self.assertEqual(refused_gateway.posts, [])
+
+        gateway = TemplateAclGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=["new-group", "APPLY"]):
+            self.assertEqual(main(["template-acls", "deploy", "--csv", str(self.template_acl_csv)]), 0)
+        self.assertEqual(gateway.posts, [("create", "new-group"), ("select", "new-group")])
+        self.assertNotIn("new-group", gateway.associations.get("0.NE", []))
 
     def test_auto_priority_requires_resolved_csv(self):
         auto_csv = Path(self.directory.name) / "auto.csv"
@@ -314,6 +419,11 @@ class DeployCliTests(unittest.TestCase):
         self.assertEqual(result["result"]["skipped_conflicts"][0]["name"], "conflict-app")
         self.assertEqual(result["result"]["skipped_conflicts"][0]["reason"], "existing domain identity has different semantics")
 
+    def test_template_acl_existing_group_changes_require_separate_confirmations(self):
+        preview = {"plan": {"groups": [{"eligible": True, "template_group": "test3", "create": False, "selection_change": True, "template_mode_change": True}]}}
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=["SELECT ACLS test3", "MERGE ACLS test3", "APPLY"]):
+            self.assertTrue(_approve_template_acls(preview, False))
+
     def test_delete_confirmation_requires_all_three_stages(self):
         rows = [("Service group", "test", "exact CSV semantic match")]
         with patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
@@ -349,10 +459,20 @@ class DeployCliTests(unittest.TestCase):
         gateway = DeployGateway(policy)
         with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
             self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
-        self.assertNotIn("20000", gateway.policy["data"]["map1"]["1_2"]["prio"])
+        self.assertNotIn("1_2", gateway.policy["data"]["map1"])
+
+    def test_firewall_delete_exact_acl_rule_does_not_manage_acl_definition(self):
+        rule = parse_firewall_text(ACL_HEADERS + "\n" + ACL_ROW)[0]
+        policy = baseline()
+        policy["data"]["map1"] = {"1_2": {"prio": {"30000": rule_payload(rule)}}}
+        gateway = DeployGateway(policy)
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.acl_csv)]), 0)
+        self.assertNotIn("1_2", gateway.policy["data"]["map1"])
+        self.assertFalse(hasattr(gateway, "delete_acl"))
 
     def test_application_group_delete_exact_collection_entry(self):
-        class Gateway:
+        class Gateway(NoReferences):
             def __init__(self):
                 self.value = {"test-group": {"apps": ["monitor-app"], "parentGroup": None}, "keep": {"apps": [], "parentGroup": None}}
 
@@ -376,14 +496,6 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["app-definitions", "delete", "--csv", str(self.application_csv)]), 0)
         self.assertFalse(gateway.inventories["dnsClassification"])
         self.assertFalse(gateway.appexpress)
-
-    def test_appexpress_delete_exact_monitor_entry(self):
-        gateway = AppDefinitionDeployGateway()
-        gateway.appexpress = {"monitor-app": {"id": 1, "name": "monitor-app", "monitor": True, "appExpressEnabled": False}, "keep": {"id": 2, "name": "Keep", "monitor": True, "appExpressEnabled": False}}
-        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
-            self.assertEqual(main(["appexpress", "delete", "--csv", str(self.appexpress_csv)]), 0)
-        self.assertNotIn("monitor-app", gateway.appexpress)
-        self.assertIn("keep", gateway.appexpress)
 
     def test_firewall_deploy_tty_apply_writes(self):
         gateway = DeployGateway(baseline())

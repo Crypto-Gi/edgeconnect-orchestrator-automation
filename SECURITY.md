@@ -12,6 +12,8 @@
 
 - Begin with read-only discovery and `--dry-run`.
 - Review the complete preview before typing `APPLY`.
+- Treat empty firewall match criteria as match-all. `broad_match_ack=TRUE` only acknowledges that intent; `FALSE` rejects the row and never means match-nothing.
+- Treat `acl` as an exclusive firewall match mode. Review its central definition and distribution warnings; missing or unreachable appliance copies can produce PARTIAL without blocking the global submission.
 - The tool refuses non-interactive writes and has no `--yes` bypass.
 - Never treat HTTP acceptance as appliance convergence; review verification results and exit codes.
 - Do not use the tool against production until the exact Orchestrator and ECOS release combination has been validated in a lab.

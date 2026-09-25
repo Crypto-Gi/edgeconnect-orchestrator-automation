@@ -1,6 +1,0 @@
-Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment
-lab25-bad-ag-ipv6,2001:db8:25::/64,,,INVALID IPv6 unsupported by native address-group importer
-lab25-bad-ag-missing,,,lab25-no-such-group,INVALID missing nested group
-lab25-bad-ag-self,,,lab25-bad-ag-self,INVALID self cycle
-lab25-bad-ag-cycle-a,,,lab25-bad-ag-cycle-b,INVALID cycle A
-lab25-bad-ag-cycle-b,,,lab25-bad-ag-cycle-a,INVALID cycle B

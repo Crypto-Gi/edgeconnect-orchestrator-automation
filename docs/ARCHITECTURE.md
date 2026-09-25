@@ -21,7 +21,7 @@ CLI
 | `gateway.py` | Version-matched Orchestrator endpoint adapter |
 | `models.py` | Typed firewall plans, inventories and run results |
 | `firewall.py` | CSV parsing, dependency checks, priorities, candidate generation, execution and recovery |
-| `workflows.py` | Zones, native groups, application groups, definitions and AppExpress |
+| `workflows.py` | Zones, native groups, application groups, and application definitions with integrated AppExpress desired state |
 | `cli.py` | Commands, preview, approval, reports and exit codes |
 | `util.py` | Canonical fingerprints, redaction, secure reports and graph checks |
 
@@ -30,7 +30,7 @@ CLI
 - Firewall API unit: source/destination segment pair
 - Zone API: complete collection replacement
 - Application groups: complete collection replacement
-- AppExpress: complete collection replacement
+- Application-definition AppExpress phase: complete collection replacement
 - Address/service groups: native multipart bulk import
 - Application definitions: sequential create-or-update endpoints used in create-only mode
 

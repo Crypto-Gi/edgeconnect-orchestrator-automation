@@ -1,3 +1,4 @@
-Name,Applications,ParentGroups
-Example_Applications,"Example_App_One,Example_App_Two",
-Example_Child,Example_App_Three,Example_Applications
+"Name","Applications","ParentGroups"
+"Example_Simple_Apps","example-icmp,example-tcp-8443,example-udp-5060,example-domain,example-multi-domain",""
+"Example_Compound_Apps","example-compound-sd,example-compound-either",""
+"Example_All_Apps","","Example_Simple_Apps,Example_Compound_Apps"

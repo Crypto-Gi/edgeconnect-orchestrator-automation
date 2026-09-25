@@ -1,0 +1,5 @@
+"Name","Applications","ParentGroups"
+"Example_Network_Apps","example-ip-protocol,example-domain,example-wildcard-domain",""
+"Example_Port_Apps","example-tcp-port,example-udp-port",""
+"Example_Compound_Apps","example-compound-directional,example-compound-either,example-compound-ipv4",""
+"Example_All_Apps","","Example_Network_Apps,Example_Port_Apps,Example_Compound_Apps"

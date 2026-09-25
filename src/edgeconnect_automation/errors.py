@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, List, Mapping, Optional, Sequence
 
 
 class EdgeConnectError(Exception):
@@ -11,6 +11,10 @@ class ConfigurationError(EdgeConnectError):
 
 class ValidationError(EdgeConnectError):
     exit_code = 2
+
+    def __init__(self, message: str = "", issues: Optional[Sequence[Mapping[str, Any]]] = None) -> None:
+        super().__init__(message)
+        self.issues: List[Mapping[str, Any]] = list(issues or [])
 
 
 class ApprovalError(EdgeConnectError):

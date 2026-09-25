@@ -1,0 +1,8 @@
+"TemplateGroup","ACLName","ACLUpdateMode","TemplateApplyMode","Priority","Permit","Application","ApplicationGroup","SourceIP","DestinationIP","EitherIP","SourcePort","DestinationPort","EitherPort","SourceDomain","DestinationDomain","EitherDomain","Protocol","Comment","BroadMatchAck"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","1000","TRUE","example-domain","","","","","","","","","","","","Application dependency","FALSE"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","2000","TRUE","","Example_All_Apps","","","","","","","","","","","Application-group dependency","FALSE"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","3000","TRUE","","","192.0.2.0/24","198.51.100.10/32","","1000-2000","443","","","","","tcp","Directional IPv4 and ports","FALSE"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","4000","TRUE","","","","","2001:db8::/32","","","443","","","example.net","tcp/udp","Either IPv6, port, and domain","FALSE"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","5000","TRUE","","","","","","","","","*.source.example.com","*destination.example.com","","","Directional domains","FALSE"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","6000","FALSE","","","10.0.0.0/255.255.0.0","","","","","","","","","icmp","Dotted mask and deny","FALSE"
+"EXISTING_OR_NEW_GROUP","example-acl","MERGE","MERGE","65535","FALSE","","","","","","","","","","","","","Intentional catch-all deny","TRUE"

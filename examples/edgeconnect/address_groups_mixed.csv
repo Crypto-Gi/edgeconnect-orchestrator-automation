@@ -1,0 +1,7 @@
+"Name","IncludedIPs","ExcludedIPs","IncludedGroups","Comment"
+"Example_AG_Valid","192.0.2.0/24","","","VALID row"
+"Example_AG_BadIPv6","2001:db8::/64","","","INVALID native address groups are IPv4-only"
+"Example_AG_Empty","","","","INVALID no included address or group"
+"Example_AG_Missing","","","No_Such_Group","INVALID missing nested group"
+"Example_AG_Overlap","198.51.100.0/24","198.51.100.0/24","","INVALID same value included and excluded"
+"Example_AG_Self","","","Example_AG_Self","INVALID self-reference"

@@ -1,3 +1,5 @@
 "Name","IncludedIPs","ExcludedIPs","IncludedGroups","Comment"
-"example-address-group","10.10.20.0/24,10.10.30.0/24","","","first rule"
-"example-address-group","192.0.2.10/32","","","second rule for same group"
+"Example_Networks","10.10.0.0/16,10.20.0.0/255.255.0.0,10.30.1.10-20,10.40.*.*","","","CIDR, dotted mask, range, and wildcard examples"
+"Example_Networks","192.0.2.10/32","","","Second native rule under the same group name"
+"Example_Servers","198.51.100.0/24","198.51.100.128/25","","Include a network and exclude one subnet"
+"Example_Nested","","","Example_Networks,Example_Servers","Nested group references"

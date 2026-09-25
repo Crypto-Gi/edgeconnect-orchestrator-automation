@@ -130,18 +130,14 @@ Without it, the command stops with:
 
 It is optional when every rule already has an explicit priority.
 
-For example, the comprehensive lab firewall CSV uses:
-
-```text
-30000, 30010, 30020, ... 30440
-```
+For example, the canonical firewall template uses explicit priorities such as `41000`, `41010`, and `41020`.
 
 This command is sufficient:
 
 ```bash
 edgeconnect-auto firewall deploy \
-  --csv examples/comprehensive_lab/firewall_rules_valid_45.csv \
-  --report reports/lab25-firewall-preview.json \
+  --csv templates/edgeconnect/firewall_rules.csv \
+  --report reports/firewall-preview.json \
   --dry-run
 ```
 
