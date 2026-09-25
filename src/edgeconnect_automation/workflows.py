@@ -81,6 +81,7 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
     rows = _read_exact_csv(path, ACL_HEADERS, issues)
     rules = []
     identities = set()
+    modes = {}
     for row in rows:
         number = int(row["_row"])
         start = len(issues)
@@ -91,7 +92,12 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
             issues.add("ACL-20", "invalid TemplateGroup", number, "TemplateGroup", fix="name the target template group")
         if not name or name == "NewACL":
             issues.add("ACL-20", "invalid or reserved ACLName", number, "ACLName", name, "use a real ACL name other than NewACL")
-        if row["ACLUpdateMode"].upper() != "MERGE" or row["TemplateApplyMode"].upper() != "MERGE":
+        mode = (row["ACLUpdateMode"].upper(), row["TemplateApplyMode"].upper())
+        if group and name:
+            first_mode, first_row = modes.setdefault((group, name), (mode, number))
+            if mode != first_mode:
+                issues.add("ACL-23", "rows for the same TemplateGroup + ACLName must use identical ACLUpdateMode and TemplateApplyMode values; row {} uses {}/{}".format(first_row, *first_mode), number, "ACLUpdateMode/TemplateApplyMode", "{}/{}".format(*mode), "use MERGE/MERGE on every row for this TemplateGroup + ACLName")
+        if mode != ("MERGE", "MERGE"):
             issues.add("ACL-21", "ACLUpdateMode and TemplateApplyMode must be MERGE", number, "ACLUpdateMode", row["ACLUpdateMode"], "REPLACE is not supported; use MERGE")
         priority = row["Priority"]
         if not priority.isdigit() or not 1 <= int(priority) <= 65535:

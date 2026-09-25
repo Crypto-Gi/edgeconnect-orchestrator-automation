@@ -96,6 +96,17 @@ class TemplateAclTests(unittest.TestCase):
         finally:
             fixture.close()
 
+    def test_parser_rejects_inconsistent_modes_for_same_group_and_acl(self):
+        fixture = TempCsv(ACL_HEADERS, [
+            self.row(Application="App"),
+            self.row(Priority="2000", ACLUpdateMode="REPLACE", Application="App"),
+        ])
+        try:
+            with self.assertRaisesRegex(ValidationError, r"ACL-23.*row 2 uses MERGE/MERGE"):
+                parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+
     def test_parser_rejects_replace_duplicates_missing_dependencies_and_unacknowledged_broad_rule(self):
         cases = [
             ([self.row(ACLUpdateMode="REPLACE", Application="App")], "MERGE"),

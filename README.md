@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.1` / package version `1.1.0` — stricter CSV validation, merge-only template ACL automation, safer firewall ACL dependency checks, and compact valid/invalid example sets.
+**Current release:** `v1.1.1` / package version `1.1.1` — stricter CSV validation, merge-only template ACL automation, safer firewall ACL dependency checks, and compact valid/invalid example sets.
 
 The tool implements:
 

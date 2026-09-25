@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-09-25
+
+- Reject template ACL CSV rows that reuse the same `TemplateGroup + ACLName` with inconsistent `ACLUpdateMode` or `TemplateApplyMode` values.
+
 ## 1.1.0 — 2026-09-25
 
 - Replaced the large generated comprehensive/pre-release corpus with a compact public example suite under `examples/edgeconnect`: one comprehensive valid CSV and one intentionally mixed valid/invalid CSV per workflow. The six clean starters remain under `templates/edgeconnect`; focused regression inputs remain generated in temporary test directories.

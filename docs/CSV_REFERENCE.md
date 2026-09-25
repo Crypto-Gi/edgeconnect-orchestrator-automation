@@ -136,7 +136,7 @@ Template: `templates/edgeconnect/template_acls.csv`
 | `Comment` | Optional rule comment |
 | `BroadMatchAck` | Must be TRUE when all four match fields are blank |
 
-Repeated `TemplateGroup + ACLName` rows create multiple rules. A duplicate priority in the same ACL is rejected. Merge replaces the complete matching-priority body, adds new priorities, and preserves omitted priorities, unrelated ACLs, and unrelated templates.
+Repeated `TemplateGroup + ACLName` rows create multiple rules. Every row for that pair must use the same `ACLUpdateMode` and `TemplateApplyMode`; a mismatch is rejected during CSV precheck and identifies the first conflicting row. A duplicate priority in the same ACL is rejected. Merge replaces the complete matching-priority body, adds new priorities, and preserves omitted priorities, unrelated ACLs, and unrelated templates.
 
 A missing group is proposed from the CSV and requires its exact name plus final `APPLY`. Existing Access Lists selection and native merge-mode changes have separate typed confirmations. No workflow associates groups with appliances. Groups sharing the same ACL name are reported; conflicting same-priority bodies on a shared appliance block that group. The IP, port, and domain families support either-direction or source/destination mode, never both in one row. Replace, groups inside IP/port selectors, address map, geo, interface, DSCP, segment, URL, web intelligence, traffic behavior, fabric/internet, and user selectors remain unsupported until their native ACL encodings are contract-tested.
 

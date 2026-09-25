@@ -216,6 +216,7 @@ Headers (exact order):
 | ID | Rule | Status |
 |---|---|---|
 | ACL-10 | Identity `TemplateGroup + ACLName + Priority` unique in CSV. | Done |
+| ACL-23 | Every row sharing `TemplateGroup + ACLName` must use the same normalized `ACLUpdateMode + TemplateApplyMode` pair; report the first conflicting row. | Done |
 | ACL-11 | Existing identical rule → no-op; different rule at same priority → **complete replacement** (not a field patch), shown as overwrite in the plan. | Done |
 | ACL-12 | Omitted priorities and unrelated ACLs/templates are preserved. | Done |
 | ACL-13 | Same `ACLName` defined differently in two template groups associated with the same appliance → conflicting definitions. Proposed: block both groups. | Gap |
@@ -753,7 +754,7 @@ Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edg
 | CSV structure | CSV-05, CSV-06, CSV-08, CSV-10; VAL-02, VAL-03, VAL-04 |
 | Value grammars | VAL-06 protocol vocabulary incl. `tcp/udp`; VAL-09 domains; policy IP (FW-14, ACL-08, D3 warning, D4, D14, compatibility warning); compound IPv4 (CMP-11) |
 | Firewall | FW-01..FW-06, FW-12..FW-19 (FW-17 domain columns, FW-18 D11, FW-19 D5), FW-05 warning, DIR-01 within-family exclusivity, D1 cross-family allowed, case-insensitive application dependencies |
-| Template ACL | ACL-02, ACL-03, ACL-07..ACL-10, ACL-20..ACL-22, explicit Permit (D13); ACL-13 (conflicting same-priority bodies on shared appliances) was already enforced by the planner |
+| Template ACL | ACL-02, ACL-03, ACL-07..ACL-10, ACL-20..ACL-23, explicit Permit (D13); ACL-13 (conflicting same-priority bodies on shared appliances) was already enforced by the planner |
 | Compound | CMP-02..CMP-11, CMP-13, CMP-14 comma payload; live resolution of geo (ISO), interface label (ID), address map (canonical name); DSCP normalization |
 | Application definitions | AD-01..AD-08 incl. type-specific names (dots allowed except COMPOUND), case-insensitive single spelling, AppExpress limit 50 |
 | Native groups | AG-01, AG-02, AG-05, AG-07, AG-11, AG-12, AG-15 (existing depth, enforced by the planner), AG-16 warning; SG-01, SG-02, SG-04, SG-05, SG-06 warning, SG-07, SG-11, SG-12, SG-13, SG-14 warning |
