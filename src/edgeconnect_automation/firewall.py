@@ -8,10 +8,10 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .errors import DriftError, ValidationError
+from .errors import DriftError, ResponseFormatError, ValidationError
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan, PairResult, RunResult, ScopeKey
 from .util import fingerprint, normalize_acl_entries, semantic_equal, split_values
-from .validation import PORT_PROTOCOLS, Issues, check_families, check_ports, control_characters, members, policy_ip, valid_domain, valid_protocol
+from .validation import PORT_PROTOCOLS, Issues, check_families, check_ip_duplicates, check_ports, control_characters, members, policy_ip, valid_domain, valid_protocol
 
 
 FAMILIES = (
@@ -75,12 +75,14 @@ def parse_firewall_csv(path: str) -> List[FirewallRule]:
 
 
 def parse_firewall_document(text: str) -> FirewallParseResult:
-    handle = io.StringIO(text, newline="")
-    reader = csv.reader(handle, strict=True)
+    reader = csv.reader(io.StringIO(text, newline=""), strict=True)
     try:
-        headers = next(reader)
-    except StopIteration as error:
-        raise ValidationError("firewall CSV is empty") from error
+        rows = list(reader)
+    except csv.Error as error:
+        raise ValidationError("[CSV-11] firewall CSV is not valid CSV near line {}: {}; fix: check for unbalanced quotes, NUL bytes, or a truncated file".format(reader.line_num, error)) from error
+    if not rows:
+        raise ValidationError("firewall CSV is empty")
+    headers = rows[0]
     normalized_headers = [header.strip() for header in headers]
     if len(normalized_headers) != len(set(normalized_headers)):
         raise ValidationError("firewall CSV contains duplicate headers")
@@ -92,7 +94,7 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
         raise ValidationError("missing firewall headers: {}".format(", ".join(sorted(missing))))
     result = FirewallParseResult()
     saw_row = False
-    for row_number, values in enumerate(reader, 2):
+    for row_number, values in enumerate(rows[1:], 2):
         if not values or all(not value.strip() for value in values):
             continue
         saw_row = True
@@ -114,6 +116,15 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
                 result.pair_warnings.setdefault(pair, []).extend(warnings.messages())
     if not saw_row:
         raise ValidationError("firewall CSV has no rules")
+    keys: Dict[str, List[FirewallRule]] = {}
+    for rule in result.rules:
+        keys.setdefault(rule.rule_key, []).append(rule)
+    for key, rules in keys.items():
+        if len(rules) > 1:
+            message = "rows {} [FW-21] rule_key {!r} is used {} times; fix: give every row a unique rule_key".format(",".join(str(rule.row) for rule in rules), key, len(rules))
+            for pair in {rule.pair for rule in rules}:
+                result.pair_errors.setdefault(pair, []).append(message)
+            result.issues.append({"rule": "FW-21", "row": rules[0].row, "field": "rule_key", "value": key, "message": message, "fix": "give every row a unique rule_key", "blocks": "segment pair {} -> {}".format(*rules[0].pair)})
     return result
 
 
@@ -146,6 +157,7 @@ def _parse_rule(number: int, row: Mapping[str, str], issues: Issues, warnings: I
     lists = {name: members(row.get(name, ""), issues, number, name) for name in ORDINARY_MATCH_FIELDS if name != "protocol"}
     check_families(row, FAMILIES, issues, number)
     for name in FAMILIES[0]:
+        check_ip_duplicates(lists[name], issues, number, name)
         for value in lists[name]:
             try:
                 warning = policy_ip(value)
@@ -186,7 +198,7 @@ def _parse_rule(number: int, row: Mapping[str, str], issues: Issues, warnings: I
             logging_level = int(level_text)
     if len(issues) != start:
         return None
-    values = {name: row.get(name, "") for name in ORDINARY_MATCH_FIELDS}
+    values = {name: "|".join(lists[name]) for name in ORDINARY_MATCH_FIELDS if name != "protocol"}
     values["protocol"] = protocol
     rule = FirewallRule(
         row=number, rule_key=row["rule_key"], rule_name=row.get("rule_name", ""), description=row.get("description", ""),
@@ -232,6 +244,9 @@ def rule_payload(rule: FirewallRule) -> Dict[str, Any]:
 
 def normalize_rule(value: Mapping[str, Any], appliance: bool = False) -> Dict[str, Any]:
     result = copy.deepcopy(dict(value))
+    match = result.get("match")
+    if isinstance(match, dict):
+        result["match"] = {key: "|".join(sorted(split_values(item))) if isinstance(item, str) else item for key, item in match.items()}
     if appliance:
         if result.get("match", {}).get("acl") == "":
             result.get("match", {}).pop("acl", None)
@@ -246,7 +261,11 @@ def is_catchall(value: Mapping[str, Any]) -> bool:
 
 
 def _policy_rules(policy: Mapping[str, Any], zone_key: str) -> Dict[str, Any]:
-    return dict(policy.get("data", {}).get("map1", {}).get(zone_key, {}).get("prio", {}))
+    container = policy.get("data", {}).get("map1", {}).get(zone_key, {})
+    rules = container.get("prio", {}) if isinstance(container, dict) else None
+    if not isinstance(rules, dict) or not all(isinstance(rule, dict) for rule in rules.values()):
+        raise ResponseFormatError("security policy zone pair {} has an invalid rule collection".format(zone_key))
+    return dict(rules)
 
 
 def _ensure_candidate_shape(baseline: Mapping[str, Any]) -> Dict[str, Any]:
@@ -369,11 +388,12 @@ def build_firewall_plan(
             priority = rule.priority
             if priority is None:
                 if not (not existing or set(existing) == {"65535"} and is_catchall(existing["65535"])):
-                    errors.append("row {} cannot auto-allocate priority in occupied zone pair".format(rule.row))
+                    errors.append("row {} cannot auto-allocate priority in occupied zone pair; set an explicit priority".format(rule.row))
                     continue
                 next_priority = allocated_by_scope.get(scope, 20000)
                 reserved = {item.priority for item in pair_rules if item.scope == scope and item.priority is not None}
-                while next_priority in reserved or str(next_priority) in existing:
+                local = inventory.local_priorities.get(scope, set())
+                while next_priority in reserved or str(next_priority) in existing or next_priority in local:
                     next_priority += 10
                 if next_priority >= 65535:
                     errors.append("row {} has no available automatic priority below 65535".format(rule.row))

@@ -1,5 +1,6 @@
 import copy
 import csv
+import ipaddress
 import io
 import json
 import re
@@ -11,14 +12,15 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 from .errors import DriftError, ValidationError
 from .firewall import parse_bool
 from .util import canonical_json, detect_cycle, fingerprint, normalize_acl_entries, semantic_equal
-from .validation import PORT_PROTOCOLS, Issues, address_group_ipv4, check_families, check_ports, compound_ipv4, control_characters, members, normalize_dscp, policy_ip, valid_domain, valid_protocol
+from .validation import NUMBER_PATTERN, PORT_PROTOCOLS, Issues, address_group_ipv4, check_families, check_ip_duplicates, check_ports, compound_ipv4, control_characters, members, normalize_dscp, policy_ip, valid_domain, valid_protocol
 
 
 ADDRESS_HEADERS = ["Name", "IncludedIPs", "ExcludedIPs", "IncludedGroups", "Comment"]
 SERVICE_HEADERS = ["Name", "Protocol", "IncludedPorts", "ExcludedPorts", "IncludedGroups", "ExcludedGroups", "IcmpTypes", "IcmpCodes", "Comment"]
 APP_GROUP_HEADERS = ["Name", "Applications", "ParentGroups"]
 APP_DEF_HEADERS = ["DefinitionType", "Name", "Notes", "Enabled", "Confidence", "ProtocolNumber", "Port", "Domain", "Protocol", "SourcePort", "DestinationPort", "EitherPort", "SourceIP", "DestinationIP", "EitherIP", "SourceGeo", "DestinationGeo", "EitherGeo", "SourceDomain", "DestinationDomain", "EitherDomain", "DSCP", "SourceAddressMap", "DestinationAddressMap", "EitherAddressMap", "Interface", "AppExpressMode"]
-ACL_HEADERS = ["TemplateGroup", "ACLName", "ACLUpdateMode", "TemplateApplyMode", "Priority", "Permit", "Application", "ApplicationGroup", "SourceIP", "DestinationIP", "EitherIP", "SourcePort", "DestinationPort", "EitherPort", "SourceDomain", "DestinationDomain", "EitherDomain", "Protocol", "Comment", "BroadMatchAck"]
+ACL_HEADERS_LEGACY = ["TemplateGroup", "ACLName", "ACLUpdateMode", "TemplateApplyMode", "Priority", "Permit", "Application", "ApplicationGroup", "SourceIP", "DestinationIP", "EitherIP", "SourcePort", "DestinationPort", "EitherPort", "SourceDomain", "DestinationDomain", "EitherDomain", "Protocol", "Comment", "BroadMatchAck"]
+ACL_HEADERS = ["TemplateGroup", "ACLName", "ACLUpdateMode", "TemplateApplyMode", "Priority", "Permit", "Application", "ApplicationGroup", "SourceIP", "DestinationIP", "EitherIP", "SourceAddressGroup", "DestinationAddressGroup", "EitherAddressGroup", "SourceSegment", "DestinationSegment", "EitherSegment", "SourcePort", "DestinationPort", "EitherPort", "SourceServiceGroup", "DestinationServiceGroup", "EitherServiceGroup", "SourceDomain", "DestinationDomain", "EitherDomain", "Protocol", "Comment", "BroadMatchAck"]
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 GROUP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 APP_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,31}$")
@@ -28,6 +30,11 @@ REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.&()+-]{0,63}$")
 ZONE_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 ICMP_TYPE_PATTERN = re.compile(r"^[0-9]{1,3}(?:-[0-9]{1,3})?$")
 ACL_FAMILIES = (("SourceIP", "DestinationIP", "EitherIP"), ("SourcePort", "DestinationPort", "EitherPort"), ("SourceDomain", "DestinationDomain", "EitherDomain"))
+ACL_GROUP_FAMILIES = (
+    (("SourceAddressGroup", "DestinationAddressGroup", "EitherAddressGroup"), ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups"), ACL_FAMILIES[0], "ip"),
+    (("SourceServiceGroup", "DestinationServiceGroup", "EitherServiceGroup"), ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups"), ACL_FAMILIES[1], "port"),
+)
+ACL_SEGMENTS = (("SourceSegment", "src_vrf"), ("DestinationSegment", "dst_vrf"), ("EitherSegment", "either_vrf"))
 ADDRESS_GROUP_LIMIT = 8 * 1024 * 1024
 SERVICE_GROUP_LIMIT = 4 * 1024 * 1024
 APPEXPRESS_LIMIT = 50
@@ -41,21 +48,27 @@ def _csv_members(value: str) -> List[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _read_exact_csv(path: str, expected: Sequence[str], issues: Optional[Issues] = None) -> List[Dict[str, str]]:
+def _read_exact_csv(path: str, expected: Sequence[str], issues: Optional[Issues] = None, legacy: Optional[Sequence[str]] = None) -> List[Dict[str, str]]:
     own = issues is None
     issues = Issues() if issues is None else issues
     with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle, strict=True)
-        if reader.fieldnames != list(expected):
-            raise ValidationError("[CSV-03] CSV headers must exactly match: {}".format(",".join(expected)))
+        try:
+            fieldnames = reader.fieldnames
+            if fieldnames != list(expected) and (legacy is None or fieldnames != list(legacy)):
+                raise ValidationError("[CSV-03] CSV headers must exactly match: {}".format(",".join(expected)))
+            raw_rows = list(reader)
+        except csv.Error as error:
+            raise ValidationError("[CSV-11] {} is not valid CSV near line {}: {}; fix: check for unbalanced quotes, NUL bytes, or a truncated file".format(Path(path).name, reader.line_num, error)) from error
         rows = []
-        for number, row in enumerate(reader, 2):
+        for number, row in enumerate(raw_rows, 2):
             if None in row:
                 issues.add("CSV-05", "row has extra fields", number, fix="remove the extra columns or quote values containing commas")
             if any(value is None for key, value in row.items() if key is not None):
                 issues.add("CSV-06", "row has fewer fields than the header", number, fix="add the missing empty columns")
             clean = {key: (value or "").strip() for key, value in row.items() if key is not None}
             if any(clean.values()):
+                clean.update({key: "" for key in expected if key not in clean})
                 control_characters(clean, issues, number)
                 clean["_row"] = str(number)
                 rows.append(clean)
@@ -74,11 +87,12 @@ class TemplateACLRule:
     priority: str
     entry: Dict[str, Any]
     warnings: List[str] = field(default_factory=list)
+    segments: Dict[str, str] = field(default_factory=dict)
 
 
 def parse_template_acls(path: str) -> List[TemplateACLRule]:
     issues = Issues()
-    rows = _read_exact_csv(path, ACL_HEADERS, issues)
+    rows = _read_exact_csv(path, ACL_HEADERS, issues, ACL_HEADERS_LEGACY)
     rules = []
     identities = set()
     modes = {}
@@ -90,8 +104,8 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
         name = row["ACLName"]
         if not group:
             issues.add("ACL-20", "invalid TemplateGroup", number, "TemplateGroup", fix="name the target template group")
-        if not name or name == "NewACL":
-            issues.add("ACL-20", "invalid or reserved ACLName", number, "ACLName", name, "use a real ACL name other than NewACL")
+        if not name or name == "NewACL" or "|" in name or "," in name:
+            issues.add("ACL-20", "invalid or reserved ACLName", number, "ACLName", name, "use a real ACL name other than NewACL, without '|' or ','")
         mode = (row["ACLUpdateMode"].upper(), row["TemplateApplyMode"].upper())
         if group and name:
             first_mode, first_row = modes.setdefault((group, name), (mode, number))
@@ -100,7 +114,7 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
         if mode != ("MERGE", "MERGE"):
             issues.add("ACL-21", "ACLUpdateMode and TemplateApplyMode must be MERGE", number, "ACLUpdateMode", row["ACLUpdateMode"], "REPLACE is not supported; use MERGE")
         priority = row["Priority"]
-        if not priority.isdigit() or not 1 <= int(priority) <= 65535:
+        if not re.fullmatch(r"[0-9]+", priority) or not 1 <= int(priority) <= 65535:
             issues.add("ACL-09", "Priority must be an integer 1-65535", number, "Priority", priority, "use 1-65535")
         else:
             priority = str(int(priority))
@@ -108,12 +122,31 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
             if identity in identities:
                 issues.add("ACL-10", "duplicates TemplateGroup + ACLName + Priority", number, "Priority", priority, "use a unique priority for this ACL")
             identities.add(identity)
+        if row["Application"].lower() == "any":
+            issues.add("ACL-28", "Application=any is not supported", number, "Application", row["Application"], "leave Application blank or use ApplicationGroup=any")
         for field_name in ("Application", "ApplicationGroup"):
             if "|" in row[field_name] or "," in row[field_name]:
                 issues.add("ACL-22", "{} must be a single name".format(field_name), number, field_name, row[field_name], "use one name per ACL rule")
         lists = {field_name: members(row[field_name], issues, number, field_name) for family in ACL_FAMILIES for field_name in family}
-        check_families(row, ACL_FAMILIES, issues, number)
+        group_lists = {field_name: members(row[field_name], issues, number, field_name) for fields, _, _, _ in ACL_GROUP_FAMILIES for field_name in fields}
+        check_families(row, ACL_FAMILIES[2:], issues, number)
+        for fields, _, literal_fields, _ in ACL_GROUP_FAMILIES:
+            either = [name for name in (literal_fields[2], fields[2]) if row[name]]
+            directional = [name for name in literal_fields[:2] + fields[:2] if row[name]]
+            if either and directional:
+                issues.add("DIR-01", "{} is mutually exclusive with {}".format("/".join(either), "/".join(directional)), number, either[0], row[either[0]], "use the Either column alone, or move the value to Source/Destination columns")
+            for group_field, literal_field in zip(fields, literal_fields):
+                if row[group_field] and row[literal_field]:
+                    issues.add("ACL-24", "{} and {} select the same side; the GUI stores either literal values or groups per side".format(literal_field, group_field), number, group_field, row[group_field], "use {} or {}, not both".format(literal_field, group_field))
+        for group_field, values in group_lists.items():
+            for value in values:
+                if not GROUP_NAME_PATTERN.fullmatch(value):
+                    issues.add("ACL-26", "invalid group name {}".format(value), number, group_field, value, "use an existing group name (letters, digits, '_', '.', '-'; max 64); separate several groups with '|'")
+        for segment_field, _ in ACL_SEGMENTS:
+            if "|" in row[segment_field] or "," in row[segment_field]:
+                issues.add("ACL-27", "{} must be a single segment name".format(segment_field), number, segment_field, row[segment_field], "use one Routing Segmentation segment name")
         for field_name in ACL_FAMILIES[0]:
+            check_ip_duplicates(lists[field_name], issues, number, field_name)
             for value in lists[field_name]:
                 try:
                     warning = policy_ip(value)
@@ -146,17 +179,25 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
         criteria = {"application": row["Application"], "app_group": row["ApplicationGroup"], "protocol": protocol}
         keys = (("src_ip", "dst_ip", "either_ip"), ("src_port", "dst_port", "either_port"), ("src_dns", "dst_dns", "either_dns"))
         for family, family_keys in zip(ACL_FAMILIES, keys):
-            criteria.update({key: row[field_name] for field_name, key in zip(family, family_keys) if row[field_name]})
+            criteria.update({key: "|".join(lists[field_name]) for field_name, key in zip(family, family_keys) if lists[field_name]})
+        for fields, family_keys, _, _ in ACL_GROUP_FAMILIES:
+            criteria.update({key: "|".join(group_lists[field_name]) for field_name, key in zip(fields, family_keys) if group_lists[field_name]})
         if not any(criteria.values()) and not broad_ack:
             issues.add("ACL-02", "unconditional ACL entry requires BroadMatchAck=TRUE", number, "BroadMatchAck", row["BroadMatchAck"], "add match criteria or set BroadMatchAck=TRUE")
             continue
         entry = {"permit": permit, "comment": row["Comment"]}
         entry.update({key: value for key, value in criteria.items() if value})
-        if any(row[field_name] for field_name in ACL_FAMILIES[0]):
-            entry["additionalSwitch_ip"] = "ips"
-        if any(row[field_name] for field_name in ACL_FAMILIES[1]):
-            entry["additionalSwitch_port"] = "ports"
-        rules.append(TemplateACLRule(number, group, name, priority, entry, warnings.messages()))
+        for fields, _, literal_fields, switch in ACL_GROUP_FAMILIES:
+            literal = "ips" if switch == "ip" else "ports"
+            for prefix, group_field in zip(("src_", "dst_"), fields[:2]):
+                if row[group_field]:
+                    entry["{}additionalSwitch_{}".format(prefix, switch)] = "groups"
+            if row[fields[2]]:
+                entry["additionalSwitch_{}".format(switch)] = "groups"
+            elif any(row[name] for name in literal_fields + fields[:2]):
+                entry["additionalSwitch_{}".format(switch)] = literal
+        segments = {key: row[field_name] for field_name, key in ACL_SEGMENTS if row[field_name]}
+        rules.append(TemplateACLRule(number, group, name, priority, entry, warnings.messages(), segments))
     issues.raise_if_any()
     return rules
 
@@ -198,11 +239,29 @@ def plan_template_acls(
     associations: Mapping[str, Sequence[str]],
     applications: Set[str],
     application_groups: Set[str],
+    address_groups: Optional[Set[str]] = None,
+    service_groups: Optional[Set[str]] = None,
+    segments: Optional[Mapping[str, int]] = None,
 ) -> Dict[str, Any]:
     current = {str(group.get("name")): group for group in groups}
     default = _template_acl_value(current.get("Default Template Group", {})) if "Default Template Group" in current else None
     grouped: Dict[str, List[TemplateACLRule]] = {}
+    dependency_errors: Dict[int, List[str]] = {}
+    resolved_rules = []
     for rule in rules:
+        entry = copy.deepcopy(rule.entry)
+        for key, segment in rule.segments.items():
+            if segments is None or segment not in segments:
+                dependency_errors.setdefault(rule.row, []).append("row {} [DEP-07] unknown segment {}".format(rule.row, segment))
+            else:
+                entry[key] = int(segments[segment])
+        for keys, inventory, label in ((("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups"), address_groups, "address group"), (("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups"), service_groups, "service group")):
+            for key in keys:
+                for value in _members(str(entry.get(key, ""))):
+                    if inventory is None or value not in inventory:
+                        dependency_errors.setdefault(rule.row, []).append("row {} [DEP-03] missing {} {}".format(rule.row, label, value))
+        resolved_rules.append(replace(rule, entry=entry))
+    for rule in resolved_rules:
         grouped.setdefault(rule.template_group, []).append(rule)
     plans = []
     for name, group_rules in grouped.items():
@@ -219,6 +278,22 @@ def plan_template_acls(
                 errors.append("row {} [DEP-03] missing application {}".format(rule.row, application))
             if application_group and application_group not in application_groups:
                 errors.append("row {} [DEP-03] missing application group {}".format(rule.row, application_group))
+            errors.extend(dependency_errors.get(rule.row, []))
+        if baseline is not None and "securityMaps" in selection:
+            security = next((template for template in baseline.get("templates", []) if template.get("name") == "securityMaps"), None)
+            value = (security or {}).get("valObject") or (security or {}).get("value") or {}
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    value = {}
+            if isinstance(value, dict) and value.get("options", {}).get("merge") is False:
+                rules_present = any(isinstance(zone, dict) and zone.get("prio") for zone in value.get("data", {}).get("map1", {}).values())
+                message = "[ACL-25] template group {} has the Security Policies template selected in replace mode (merge=false){}; associating or re-applying this group replaces appliance firewall policy".format(name, " with no rules" if not rules_present else "")
+                if rules_present:
+                    warnings.append(message)
+                else:
+                    errors.append(message + "; deselect Security Policies or switch it to merge before using this group")
         if baseline is None:
             if default is None:
                 errors.append("cannot create template group without default Access Lists template options")
@@ -253,7 +328,7 @@ def plan_template_acls(
             if before is None:
                 entries[rule.priority] = copy.deepcopy(rule.entry)
                 additions.append({"acl": rule.acl_name, "priority": rule.priority, "after": rule.entry})
-            elif semantic_equal(normalize_acl_entries({rule.priority: before})[rule.priority], rule.entry):
+            elif semantic_equal(normalize_acl_entries({rule.priority: before})[rule.priority], normalize_acl_entries({rule.priority: rule.entry})[rule.priority]):
                 no_ops.append({"acl": rule.acl_name, "priority": rule.priority})
             else:
                 entries[rule.priority] = copy.deepcopy(rule.entry)
@@ -312,6 +387,9 @@ def plan_template_acls(
         "eligible_groups": [plan["template_group"] for plan in plans if plan["eligible"]],
         "application_dependencies": sorted({str(rule.entry["application"]) for rule in rules if rule.entry.get("application")}),
         "application_group_dependencies": sorted({str(rule.entry["app_group"]) for rule in rules if rule.entry.get("app_group")}),
+        "address_group_dependencies": sorted({value for rule in rules for key in ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups") for value in _members(str(rule.entry.get(key, "")))}),
+        "service_group_dependencies": sorted({value for rule in rules for key in ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups") for value in _members(str(rule.entry.get(key, "")))}),
+        "segment_dependencies": sorted({segment for rule in rules for segment in rule.segments.values()}),
     }
 
 
@@ -536,6 +614,15 @@ def _native_group_warnings(kind: str, rows: Sequence[Mapping[str, str]], existin
             for low, high in _port_ranges([port for port in _csv_members(row["ExcludedPorts"]) if port != "*"]):
                 if not any(start <= low and high <= end for start, end in ranges):
                     warnings.add("SG-06", "excluded ports {}-{} are outside the included ports and have no effect".format(low, high) if low != high else "excluded port {} is outside the included ports and has no effect".format(low), row["_row"], "ExcludedPorts")
+    if kind == "address":
+        for row in rows:
+            included, excluded = _csv_members(row["IncludedIPs"]), _csv_members(row["ExcludedIPs"])
+            if row["IncludedGroups"] or not included or any("*" in value or "-" in value for value in included + excluded):
+                continue
+            networks = [ipaddress.ip_network(value, strict=False) for value in included]
+            for value in excluded:
+                if not any(ipaddress.ip_network(value, strict=False).subnet_of(network) for network in networks):
+                    warnings.add("AG-17", "excluded {} is outside the included addresses and has no effect".format(value), row["_row"], "ExcludedIPs")
     return warnings.messages()
 
 
@@ -702,10 +789,9 @@ def apply_zones(gateway: Any, plan: ZonePlan) -> Dict[str, Any]:
 
 
 def parse_application_groups(path: str) -> List[Dict[str, str]]:
-    rows = _read_exact_csv(path, APP_GROUP_HEADERS)
-    names = {row["Name"] for row in rows}
-    if len(names) != len(rows):
-        raise ValidationError("application group names must be unique")
+    rows, skipped = parse_application_groups_partial(path)
+    if skipped:
+        raise ValidationError("\n".join("row {} {}: {}".format(item["row"], item["name"], item["reason"]) for item in skipped))
     graph = {row["Name"]: _csv_members(row["ParentGroups"]) for row in rows}
     if detect_cycle(graph):
         raise ValidationError("application group parents contain a cycle")
@@ -734,6 +820,11 @@ def parse_application_groups_partial(path: str) -> Tuple[List[Dict[str, str]], L
         else:
             eligible.append(row)
     return eligible, skipped
+
+
+def _parent_list(value: Mapping[str, Any]) -> List[str]:
+    parents = value.get("parentGroup")
+    return [str(item) for item in parents] if isinstance(parents, list) else [str(parents)] if parents else []
 
 
 def _cycle_nodes(graph: Mapping[str, Sequence[str]]) -> Set[str]:
@@ -781,8 +872,9 @@ def plan_application_groups(rows: Sequence[Mapping[str, str]], existing: Mapping
         if reason:
             skipped[name] = {"row": int(row["_row"]), "name": name, "reason": reason}
         expected[name] = {"apps": apps, "parentGroup": parents or None}
-    graph = {name: list(value.get("parentGroup") or []) for name, value in expected.items()}
-    for name in _cycle_nodes(graph):
+    graph = {str(name): _parent_list(value) for name, value in existing.items() if isinstance(value, dict)}
+    graph.update({name: list(value.get("parentGroup") or []) for name, value in expected.items()})
+    for name in _cycle_nodes(graph) & set(row_map):
         row = row_map[name]
         skipped[name] = {"row": int(row["_row"]), "name": name, "reason": "application group parent cycle"}
     changed = True
@@ -877,7 +969,7 @@ def parse_application_definitions(path: str) -> List[ApplicationDefinition]:
         except ValidationError as error:
             issues.add("VAL-01", str(error), number, "Enabled", row["Enabled"], "use TRUE or FALSE")
         confidence_text = row["Confidence"] or "100"
-        if not confidence_text.isdigit() or not 1 <= int(confidence_text) <= 100:
+        if not re.fullmatch(r"[0-9]+", confidence_text) or not 1 <= int(confidence_text) <= 100:
             issues.add("AD-04", "Confidence must be 1..100", number, "Confidence", row["Confidence"], "use a whole number 1-100")
         mode = (row["AppExpressMode"] or "OFF").upper()
         if mode not in {"OFF", "MONITOR"}:
@@ -893,14 +985,14 @@ def parse_application_definitions(path: str) -> List[ApplicationDefinition]:
             payload: Optional[Dict[str, Any]] = dict(common, domain=row["Domain"])
             identity: Any = row["Domain"]
         elif definition_type == "IP_PROTOCOL":
-            if not row["ProtocolNumber"].isdigit() or int(row["ProtocolNumber"]) > 255:
+            if not NUMBER_PATTERN.fullmatch(row["ProtocolNumber"]) or int(row["ProtocolNumber"]) > 255:
                 issues.add("AD-06", "IP_PROTOCOL requires ProtocolNumber 0..255", number, "ProtocolNumber", row["ProtocolNumber"], "use 0-255")
             if row["Port"] not in {"", "0"}:
                 issues.add("AD-06", "IP_PROTOCOL Port must be blank or 0", number, "Port", row["Port"], "clear Port")
-            protocol = int(row["ProtocolNumber"]) if row["ProtocolNumber"].isdigit() else 0
+            protocol = int(row["ProtocolNumber"]) if NUMBER_PATTERN.fullmatch(row["ProtocolNumber"]) else 0
             payload, identity = dict(common, protocol=protocol, port="0"), ("0", protocol)
         elif definition_type in {"TCP_PORT", "UDP_PORT"}:
-            if not row["Port"].isdigit() or not 1 <= int(row["Port"]) <= 65535:
+            if not NUMBER_PATTERN.fullmatch(row["Port"]) or not 1 <= int(row["Port"]) <= 65535:
                 issues.add("AD-06", "{} requires one numeric Port from 1 to 65535".format(definition_type), number, "Port", row["Port"], "use one port; use COMPOUND for ranges or lists")
             protocol = 6 if definition_type == "TCP_PORT" else 17
             payload, identity = dict(common, protocol=protocol, port=row["Port"]), (row["Port"], protocol)

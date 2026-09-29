@@ -17,8 +17,11 @@ row 14 [DIR-01] either_port='443': either_port is mutually exclusive with source
 
 Shared rules for every CSV:
 
-- Rows with extra or missing fields, control characters or line breaks inside values, and files without data rows are rejected.
-- `|` separates multi-value cells in firewall, template ACL and application-definition CSVs; native group and application-group CSVs use commas inside quoted cells. The wrong separator, empty list members (`443||80`) and duplicate members (`443|443`) are rejected.
+- Rows with extra or missing fields, control characters or line breaks inside values, and files without data rows are rejected. Zero-width and non-breaking spaces are rejected everywhere except free-text columns (`Comment`, `description`, `Notes`, `rule_name`) (`CSV-10`). Broken CSV syntax such as an unbalanced quote, a NUL byte or a truncated file is reported as `CSV-11` with the line number.
+- `|` separates multi-value cells in firewall, template ACL and application-definition CSVs; native group and application-group CSVs use commas inside quoted cells. The wrong separator, empty list members (`443||80`) and duplicate members (`443|443`, `A|a`, `10.0.0.1|10.0.0.1/32`) are rejected. Spaces around `|` are removed before anything is sent, and list order never matters when comparing with existing configuration.
+- Numbers use plain ASCII digits without leading zeros (`443`, not `0443`, `４４３` or `006`); IP octets follow the same rule (`10.0.0.10`, not `10.0.0.010`). Priorities and confidence values are converted to integers, so `01` is still accepted there.
+- Domains reject labels that start or end with `-`, all-numeric names such as `10.0.0.1`, and the word `any`. IPv6 zone identifiers (`fe80::1%eth0`) are rejected.
+- `firewall validate` rejects a `rule_key` used on more than one row (`FW-21`).
 - Booleans accept `TRUE/FALSE`, `YES/NO`, `1/0`, `ENABLED/DISABLED`.
 - Domains accept `example.com`, `*.example.com`, or `*example.com`. A wildcard anywhere else, empty labels, leading or trailing dots, and labels over 63 characters are rejected.
 - Protocol values are `ip`, `tcp`, `udp`, `tcp/udp`, `icmp`, `icmpv6`, or a protocol number 0–255.
@@ -138,22 +141,57 @@ Template: `templates/edgeconnect/template_acls.csv`
 | Field | Requirement |
 |---|---|
 | `TemplateGroup` | Exact existing or proposed group name |
-| `ACLName` | ACL inside that exact group; `NewACL` is reserved |
+| `ACLName` | ACL inside that exact group; `NewACL` is reserved; `|` and `,` are rejected |
 | `ACLUpdateMode` | `MERGE` only |
 | `TemplateApplyMode` | `MERGE` only |
 | `Priority` | Required integer 1–65535 and rule identity inside the ACL |
 | `Permit` | Required explicit TRUE/FALSE; blank is rejected even though the GUI defaults to permit |
-| `Application`, `ApplicationGroup` | Optional single existing names; both may be set (criteria are ANDed). Applications match case-insensitively |
-| `SourceIP`, `DestinationIP`, `EitherIP` | Optional `|` lists of policy IP values (see firewall section); `EitherIP` is exclusive with source/destination |
-| `SourcePort`, `DestinationPort`, `EitherPort` | Optional `|` lists and ranges (`0` = any); `Protocol` must be blank, `tcp`, `udp`, `tcp/udp`, `6`, or `17`; `EitherPort` is exclusive with source/destination |
+| `Application`, `ApplicationGroup` | Optional single existing names; both may be set (criteria are ANDed). Applications match case-insensitively; `Application=any` is rejected (`ACL-28`), use `ApplicationGroup=any` |
+| `SourceIP`, `DestinationIP`, `EitherIP` | Optional `|` lists of policy IP values (see firewall section) |
+| `SourceAddressGroup`, `DestinationAddressGroup`, `EitherAddressGroup` | Optional `|` lists of existing native address-group names |
+| `SourceSegment`, `DestinationSegment`, `EitherSegment` | Optional single Routing Segmentation segment **name**, resolved at runtime to the segment ID stored as `src_vrf`/`dst_vrf`/`either_vrf` |
+| `SourcePort`, `DestinationPort`, `EitherPort` | Optional `|` lists and ranges (`0` = any); `Protocol` must be blank, `tcp`, `udp`, `tcp/udp`, `6`, or `17` |
+| `SourceServiceGroup`, `DestinationServiceGroup`, `EitherServiceGroup` | Optional `|` lists of existing native service-group names; may be combined with `Protocol` |
 | `SourceDomain`, `DestinationDomain`, `EitherDomain` | Optional `|` domain lists; `EitherDomain` is exclusive with source/destination |
 | `Protocol` | Optional; see the protocol vocabulary above |
 | `Comment` | Optional rule comment |
-| `BroadMatchAck` | Must be TRUE when all four match fields are blank |
+| `BroadMatchAck` | Must be TRUE when every match field is blank |
+
+CSV files written before the group columns existed (the original 20-column header) are still accepted; the missing columns are treated as blank.
+
+### Address and service groups in ACLs
+
+Think of each side of a rule as a selector with two positions: **literal values** or **groups**. The tool writes exactly what the Orchestrator GUI writes for the same choice, verified against GUI-created rules on 9.7.1.
+
+| Rule | Example | Result |
+|---|---|---|
+| One side uses literal values **or** groups, never both | `SourceIP=10.0.0.1` with `SourceAddressGroup=Servers` | Rejected, `ACL-24` |
+| Either-direction columns are exclusive with all Source/Destination columns of the same dimension (IPs with address groups, ports with service groups) | `EitherAddressGroup=Servers` with `DestinationIP=10.0.0.1` | Rejected, `DIR-01` |
+| Different dimensions can mix freely | `EitherAddressGroup=Servers` with `DestinationPort=80` | Valid |
+| Several groups in one cell use `|` | `DestinationAddressGroup=servers-a|servers-b` | Valid |
+| A comma is never a group separator | `servers-a,servers-b` | Rejected, `VAL-02`. On the appliance a comma splits the value and silently drops the second group. |
+| Group names must exist | `SourceAddressGroup=gone` | Plan blocked, `DEP-03` |
+| Segment names must exist | `SourceSegment=Nope` | Plan blocked, `DEP-07` |
+
+Generated encoding, for reference:
+
+| CSV | Stored ACL entry |
+|---|---|
+| `SourceAddressGroup=servers-a` | `src_addrgrp_groups=servers-a`, `src_additionalSwitch_ip=groups`, `additionalSwitch_ip=ips` |
+| `EitherAddressGroup=servers-a` | `either_addrgrp_groups=servers-a`, `additionalSwitch_ip=groups` |
+| `DestinationServiceGroup=web` | `dst_srvcgrp_groups=web`, `dst_additionalSwitch_port=groups`, `additionalSwitch_port=ports` |
+| `EitherServiceGroup=web` | `either_srvcgrp_groups=web`, `additionalSwitch_port=groups` |
+| `SourceSegment=Default` | `src_vrf=0` (the ID of segment `Default`) |
+
+Orchestrator and the appliance both accepted every malformed group payload in lab probes, including nonexistent groups, `any` and invalid switch values. The CSV checks above are therefore the only protection against a broken ACL.
 
 Repeated `TemplateGroup + ACLName` rows create multiple rules. Every row for that pair must use the same `ACLUpdateMode` and `TemplateApplyMode`; a mismatch is rejected during CSV precheck and identifies the first conflicting row. A duplicate priority in the same ACL is rejected. Merge replaces the complete matching-priority body, adds new priorities, and preserves omitted priorities, unrelated ACLs, and unrelated templates.
 
-A missing group is proposed from the CSV and requires its exact name plus final `APPLY`. Existing Access Lists selection and native merge-mode changes have separate typed confirmations. No workflow associates groups with appliances. Groups sharing the same ACL name are reported; conflicting same-priority bodies on a shared appliance block that group. The IP, port, and domain families support either-direction or source/destination mode, never both in one row. Replace, groups inside IP/port selectors, address map, geo, interface, DSCP, segment, URL, web intelligence, traffic behavior, fabric/internet, and user selectors remain unsupported until their native ACL encodings are contract-tested.
+A missing group is proposed from the CSV and requires its exact name plus final `APPLY`. Existing Access Lists selection and native merge-mode changes have separate typed confirmations. No workflow associates groups with appliances. Groups sharing the same ACL name are reported; conflicting same-priority bodies on a shared appliance block that group.
+
+**Replace-mode Security Policies guard (`ACL-25`).** If a target template group has the Security Policies template selected with `merge=false` and no rules, the plan is blocked; with rules it warns. Associating or re-applying such a group replaces the appliance firewall policy. A lab incident wiped 12 firewall rules exactly this way. Deselect Security Policies in that group, or switch it to merge, before using it for ACLs.
+
+Replace mode, address map, geo, interface, DSCP, URL, web intelligence, traffic behavior, fabric/internet, and user selectors remain unsupported until their native ACL encodings are contract-tested.
 
 ## Address groups
 
@@ -262,7 +300,7 @@ The same firewall, address-group, service-group, application-group, and applicat
 
 References also block deletion:
 
-- Address and service groups referenced by any global firewall rule.
+- Address and service groups referenced by any global firewall rule or a central template ACL (including `|` group lists).
 - Application groups referenced by a global firewall rule or a central template ACL.
 - Application definitions whose application name would disappear while a global firewall rule or a central template ACL still references it (matched case-insensitively).
 

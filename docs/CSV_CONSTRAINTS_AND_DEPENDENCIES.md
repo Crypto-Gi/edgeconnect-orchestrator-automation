@@ -207,7 +207,7 @@ Headers (exact order):
 | ACL-04 | `Application` and `ApplicationGroup` both set: allowed; all criteria are ANDed (vendor doc and existing readback). | Done |
 | ACL-08 | IP fields use compatibility grammar (§14.2), including dotted masks, ranges, wildcards, IPv6 CIDR and observed range+CIDR. All probe values had exact central readback; no appliance semantic claim because the group was unassociated. | Gap (API confirmed) |
 | ACL-09 | Priority remains `1..65535`: API stored priority `0`, but vendor docs explicitly define 1 as minimum. `65535` was accepted and read back exactly. | Gap (confirmed) |
-| ACL-05 | IP family uses `additionalSwitch_ip=ips`, port family `additionalSwitch_port=ports`. Group modes (address/service groups inside ACLs) are not supported and must stay rejected. | Done (no columns) |
+| ACL-05 | Literal IP selectors use `additionalSwitch_ip=ips` and port selectors `additionalSwitch_port=ports`. Group selectors follow GUI-created 9.7.1 rules: `{src,dst,either}_addrgrp_groups` / `_srvcgrp_groups`, `src_`/`dst_additionalSwitch_{ip,port}=groups` for directional groups, top-level switch `groups` for Either groups, otherwise `ips`/`ports`. | Done (GUI-verified 2026-09-29) |
 | ACL-06 | Duplicate/empty list members (VAL-03/04). | Gap |
 | ACL-07 | Host bits / IPv6 follow resolved VAL-07/08. | D3/D4 resolved |
 
@@ -217,6 +217,12 @@ Headers (exact order):
 |---|---|---|
 | ACL-10 | Identity `TemplateGroup + ACLName + Priority` unique in CSV. | Done |
 | ACL-23 | Every row sharing `TemplateGroup + ACLName` must use the same normalized `ACLUpdateMode + TemplateApplyMode` pair; report the first conflicting row. | Done |
+| ACL-24 | One side of a dimension uses literal values or groups, not both (`SourceIP`+`SourceAddressGroup`, `EitherPort`+`EitherServiceGroup`, …). The GUI stores one selector per side. | Done |
+| ACL-25 | Target template group with Security Policies selected in replace mode (`merge=false`): no rules → block; with rules → warn. Associating or re-applying such a group replaces the appliance firewall policy (lab incident 2026-09-29 removed 12 rules). | Done |
+| ACL-26 | Group names follow the native group-name grammar (1–64 of letters, digits, `_`, `.`, `-`); lists use `\|`. A comma is rejected (`VAL-02`): the appliance splits `a,b` into `a` plus an empty-named key and silently drops `b`. | Done |
+| ACL-27 | `SourceSegment`/`DestinationSegment`/`EitherSegment` hold one segment name, resolved at plan time to the segment ID stored as `src_vrf`/`dst_vrf`/`either_vrf` (integer centrally, string on the appliance; comparison normalizes both). | Done |
+| ACL-28 | `Application=any` is rejected, matching firewall `FW-18` (D11). | Done |
+| DIR-01 (ACL) | Either columns are exclusive with every Source/Destination column of the same dimension: IP literals with address groups, ports with service groups. Different dimensions mix freely. | Done |
 | ACL-11 | Existing identical rule → no-op; different rule at same priority → **complete replacement** (not a field patch), shown as overwrite in the plan. | Done |
 | ACL-12 | Omitted priorities and unrelated ACLs/templates are preserved. | Done |
 | ACL-13 | Same `ACLName` defined differently in two template groups associated with the same appliance → conflicting definitions. Proposed: block both groups. | Gap |
@@ -414,6 +420,8 @@ Application definitions (+ AppExpress) ─┬→ App groups ┤
 | DEP-04 | App-group applications must exist (built-in or user-defined). | Done |
 | DEP-05 | Address/service group nesting only within the same object type. | Done |
 | DEP-06 | Compound address maps must exist. | Test (CMP-10) |
+| DEP-03 (ACL groups) | Template ACL address and service groups must exist; re-checked before write. | Done |
+| DEP-07 | Template ACL segment names must exist in Routing Segmentation; re-checked before write. | Done |
 
 ### 9.2 Delete order
 
@@ -754,7 +762,7 @@ Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edg
 | CSV structure | CSV-05, CSV-06, CSV-08, CSV-10; VAL-02, VAL-03, VAL-04 |
 | Value grammars | VAL-06 protocol vocabulary incl. `tcp/udp`; VAL-09 domains; policy IP (FW-14, ACL-08, D3 warning, D4, D14, compatibility warning); compound IPv4 (CMP-11) |
 | Firewall | FW-01..FW-06, FW-12..FW-19 (FW-17 domain columns, FW-18 D11, FW-19 D5), FW-05 warning, DIR-01 within-family exclusivity, D1 cross-family allowed, case-insensitive application dependencies |
-| Template ACL | ACL-02, ACL-03, ACL-07..ACL-10, ACL-20..ACL-23, explicit Permit (D13); ACL-13 (conflicting same-priority bodies on shared appliances) was already enforced by the planner |
+| Template ACL | ACL-02, ACL-03, ACL-07..ACL-10, ACL-20..ACL-28, DEP-07, explicit Permit (D13); ACL-13 (conflicting same-priority bodies on shared appliances) was already enforced by the planner |
 | Compound | CMP-02..CMP-11, CMP-13, CMP-14 comma payload; live resolution of geo (ISO), interface label (ID), address map (canonical name); DSCP normalization |
 | Application definitions | AD-01..AD-08 incl. type-specific names (dots allowed except COMPOUND), case-insensitive single spelling, AppExpress limit 50 |
 | Native groups | AG-01, AG-02, AG-05, AG-07, AG-11, AG-12, AG-15 (existing depth, enforced by the planner), AG-16 warning; SG-01, SG-02, SG-04, SG-05, SG-06 warning, SG-07, SG-11, SG-12, SG-13, SG-14 warning |
@@ -802,3 +810,21 @@ Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edg
   - empty application groups
   - short rows, empty files, and control characters
 - Compound definitions deployed before this change with `|` lists, country names, interface names, or uppercase DSCP names will now compare as semantic conflicts. They are skipped, never overwritten; recreate them with exact delete plus redeploy if needed.
+
+## 18. v1.2.0 release hardening
+
+| ID | Rule | Status |
+|---|---|---|
+| CSV-10 (extended) | Zero-width, BOM and non-breaking/other Unicode space characters are rejected outside free-text columns. | Done |
+| CSV-11 | Malformed CSV syntax (unbalanced quote, NUL byte, truncated file) is a validation error with the line number, for every CSV. | Done |
+| VAL-03 (extended) | Duplicates are detected case-insensitively and, for IPs, by network (`10.0.0.1` = `10.0.0.1/32`). | Done |
+| VAL-05/06, octets | ASCII digits only, no leading zeros, for values sent verbatim (ports, protocol numbers, IP octets and masks, DSCP, application Port/ProtocolNumber). | Done |
+| VAL-09 (extended) | Domain labels cannot start/end with `-`; all-numeric names and `any` are rejected. | Done |
+| FW-14/ACL-08 (extended) | IPv6 zone identifiers are rejected. | Done |
+| FW-21 | Duplicate `rule_key` is reported by `firewall validate`, not only at plan time. | Done |
+| FW normalization | List members are trimmed before sending; existing-rule comparison ignores list order, so a reordered list is a no-op, not a conflict. | Done |
+| FW local priority | An appliance rule counts as appliance-local unless `gms_marked` is exactly `true`; appliances with unparseable software versions are treated as reachable, so collisions are still checked. Automatic priority allocation skips appliance-local priorities. | Done |
+| APG cycle | Parent cycles through existing Orchestrator groups are detected; the strict parser used by delete applies the deploy parser's validation. | Done |
+| AG-17 | Warning when an excluded address or CIDR lies outside every included address. | Done |
+| Response shapes | Unexpected nested discovery or policy shapes raise `ResponseFormatError` instead of a raw Python error; a malformed zone container is never treated as empty. `-vv` prints the traceback. | Done |
+| Reports | A blocked firewall or template-ACL deploy still writes `--report` with status `BLOCKED`. | Done |

@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.1.2` / package version `1.1.2` — stricter CSV validation, merge-only template ACL automation, safer firewall ACL dependency checks, compact valid/invalid example sets, and tolerant application-definition discovery.
+**Current release:** `v1.2.0` / package version `1.2.0` — template ACLs with address groups, service groups and segments (the same match fields as firewall rules), fail-closed collision detection, stricter value validation, and clear errors for malformed CSVs and unexpected API responses.
 
 The tool implements:
 
@@ -355,7 +355,7 @@ An unassociated source template is reported, but every reachable target must alr
 
 ### Template-group ACL creation and merge
 
-Use `templates/edgeconnect/template_acls.csv` with `template-acls deploy`. Existing groups and ACLs are merged by priority: matching priorities replace the complete rule, new priorities are added, and omitted priorities remain unchanged. Supported match criteria are application, application group, directional/either IP, directional/either port, directional/either domain, and protocol. Phase one accepts only `MERGE`; `REPLACE` is rejected.
+Use `templates/edgeconnect/template_acls.csv` with `template-acls deploy`. Existing groups and ACLs are merged by priority: matching priorities replace the complete rule, new priorities are added, and omitted priorities remain unchanged. Supported match criteria are application, application group, directional/either IP, address group, port, service group and domain, per-side segment (entered by name, resolved to its ID at runtime), and protocol, matching the firewall CSV's match fields. Group encodings copy what the Orchestrator GUI writes, verified against GUI-created rules on 9.7.1. Separate several groups with `|`, never with a comma. Phase one accepts only `MERGE`; `REPLACE` is rejected. A target group with the Security Policies template selected in replace mode is blocked (no rules) or warned (with rules), because associating it replaces the appliance firewall policy.
 
 ```bash
 edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/template-acls.json --dry-run
@@ -493,7 +493,7 @@ edgeconnect-auto -vv firewall deploy --csv rules.csv --dry-run
 
 - Default: plans, validation results, changes, and verification summary
 - `-v`: API method/path, status, and response size
-- `-vv`: sanitized payload details
+- `-vv`: sanitized payload details, plus a Python traceback for unexpected runtime errors
 
 `-v`, `--dotenv`, and `--allow-http` are global options: place them **before** the workflow name. `edgeconnect-auto firewall validate --csv rules.csv -v` fails with `unrecognized arguments: -v`. Verbosity only affects Orchestrator API calls, so local-only `validate` output looks the same at every level.
 

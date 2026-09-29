@@ -6,7 +6,7 @@ from pathlib import Path
 
 from edgeconnect_automation.errors import DriftError, ValidationError
 from edgeconnect_automation.firewall import parse_firewall_csv
-from edgeconnect_automation.workflows import ACL_HEADERS, ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acls, plan_zones
+from edgeconnect_automation.workflows import ACL_HEADERS, ACL_HEADERS_LEGACY, ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acls, plan_zones
 
 
 class TempCsv:
@@ -154,6 +154,89 @@ class TemplateAclTests(unittest.TestCase):
         self.assertFalse(plan["groups"][0]["eligible"])
         self.assertIn("conflicting priority 1000", " ".join(plan["groups"][0]["errors"]))
 
+    def parse(self, rows, headers=ACL_HEADERS):
+        fixture = TempCsv(headers, rows)
+        try:
+            return parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+
+    def test_group_and_segment_columns_reproduce_gui_created_entries(self):
+        gui = {
+            "1040": {"additionalSwitch_ip": "groups", "comment": "", "either_addrgrp_groups": "allowed-hosts", "permit": True},
+            "1050": {"additionalSwitch_ip": "ips", "comment": "", "dst_additionalSwitch_ip": "groups", "dst_addrgrp_groups": "servers-b", "dst_vrf": 0, "either_vrf": 0, "permit": False, "src_additionalSwitch_ip": "groups", "src_addrgrp_groups": "servers-a", "src_vrf": 0},
+            "1080": {"additionalSwitch_port": "ports", "comment": "", "dst_port": "80", "permit": False, "src_additionalSwitch_port": "groups", "src_srvcgrp_groups": "web-services"},
+            "1090": {"additionalSwitch_ip": "ips", "additionalSwitch_port": "ports", "comment": "", "dst_additionalSwitch_ip": "groups", "dst_additionalSwitch_port": "groups", "dst_addrgrp_groups": "isp-hosts", "dst_srvcgrp_groups": "web-services", "permit": True, "src_ip": "1.1.1.1/32", "src_port": "2-30"},
+            "1110": {"additionalSwitch_port": "groups", "comment": "", "either_srvcgrp_groups": "web-services", "permit": False},
+            "1120": {"additionalSwitch_ip": "groups", "additionalSwitch_port": "ports", "comment": "", "dst_port": "80", "either_addrgrp_groups": "servers-a", "either_vrf": 1, "permit": False, "src_additionalSwitch_port": "groups", "src_srvcgrp_groups": "web-services", "src_vrf": 1},
+            "1130": {"additionalSwitch_port": "ports", "comment": "", "dst_vrf": 2, "either_port": "20-35", "permit": True, "src_vrf": 0},
+        }
+        rules = self.parse([
+            self.row(Priority="1040", EitherAddressGroup="allowed-hosts"),
+            self.row(Priority="1050", Permit="FALSE", SourceAddressGroup="servers-a", DestinationAddressGroup="servers-b", SourceSegment="Default", DestinationSegment="Default", EitherSegment="Default"),
+            self.row(Priority="1080", Permit="FALSE", SourceServiceGroup="web-services", DestinationPort="80"),
+            self.row(Priority="1090", SourceIP="1.1.1.1/32", SourcePort="2-30", DestinationAddressGroup="isp-hosts", DestinationServiceGroup="web-services"),
+            self.row(Priority="1110", Permit="FALSE", EitherServiceGroup="web-services"),
+            self.row(Priority="1120", Permit="FALSE", EitherAddressGroup="servers-a", SourceServiceGroup="web-services", DestinationPort="80", EitherSegment="TEST5", SourceSegment="TEST5"),
+            self.row(Priority="1130", EitherPort="20-35", SourceSegment="Default", DestinationSegment="TEST6"),
+        ])
+        plan = plan_template_acls(rules, [acl_group("test2")], {"test2": ["acls"]}, {}, set(), set(), {"allowed-hosts", "servers-a", "servers-b", "isp-hosts"}, {"web-services"}, {"Default": 0, "TEST5": 1, "TEST6": 2})
+        group = plan["groups"][0]
+        self.assertTrue(group["eligible"], group["errors"])
+        self.assertEqual(group["candidate_acl_value"]["data"]["web-acl"]["entry"], gui)
+        self.assertEqual(plan["address_group_dependencies"], ["allowed-hosts", "isp-hosts", "servers-a", "servers-b"])
+        self.assertEqual(plan["segment_dependencies"], ["Default", "TEST5", "TEST6"])
+        appliance = {priority: dict(entry, gms_marked=False, self=int(priority), **{key: str(value) for key, value in entry.items() if key.endswith("_vrf")}) for priority, entry in gui.items()}
+        rerun = plan_template_acls(rules, [acl_group("test2", {"web-acl": {"entry": appliance}})], {"test2": ["acls"]}, {}, set(), set(), {"allowed-hosts", "servers-a", "servers-b", "isp-hosts"}, {"web-services"}, {"Default": 0, "TEST5": 1, "TEST6": 2})
+        self.assertEqual(len(rerun["groups"][0]["no_ops"]), 7)
+
+    def test_group_columns_reject_unverified_and_unsafe_shapes(self):
+        cases = [
+            (dict(SourceIP="10.0.0.1", SourceAddressGroup="servers-a"), "ACL-24"),
+            (dict(EitherPort="80", EitherServiceGroup="web"), "ACL-24"),
+            (dict(EitherAddressGroup="servers-a", SourceAddressGroup="servers-b"), "DIR-01"),
+            (dict(EitherAddressGroup="servers-a", DestinationIP="10.0.0.1"), "DIR-01"),
+            (dict(EitherIP="10.0.0.1", SourceAddressGroup="servers-a"), "DIR-01"),
+            (dict(EitherServiceGroup="web", SourcePort="80"), "DIR-01"),
+            (dict(SourceAddressGroup="servers-a,servers-b"), "VAL-02"),
+            (dict(SourceAddressGroup="servers-a|servers-a"), "VAL-03"),
+            (dict(SourceAddressGroup="bad name"), "ACL-26"),
+            (dict(SourceAddressGroup="servers-a", SourceSegment="Default|TEST5"), "ACL-27"),
+        ]
+        for values, code in cases:
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(ValidationError, code):
+                    self.parse([self.row(**values)])
+
+    def test_group_lists_are_normalized_and_legacy_headers_still_parse(self):
+        rule = self.parse([self.row(SourceAddressGroup=" servers-a | servers-b ", DestinationServiceGroup="web")])[0]
+        self.assertEqual(rule.entry["src_addrgrp_groups"], "servers-a|servers-b")
+        self.assertEqual(rule.entry["additionalSwitch_port"], "ports")
+        legacy = {key: value for key, value in self.row(Application="App").items() if key in ACL_HEADERS_LEGACY}
+        self.assertEqual(self.parse([legacy], ACL_HEADERS_LEGACY)[0].entry, {"permit": True, "comment": "", "application": "App"})
+
+    def test_group_and_segment_dependencies_block_plan(self):
+        rules = self.parse([self.row(SourceAddressGroup="servers-a|gone", DestinationServiceGroup="web", SourceSegment="Nope")])
+        plan = plan_template_acls(rules, [acl_group("test2")], {"test2": ["acls"]}, {}, set(), set(), {"servers-a"}, set(), {"Default": 0})
+        errors = " ".join(plan["groups"][0]["errors"])
+        self.assertFalse(plan["groups"][0]["eligible"])
+        for text in ("missing address group gone", "missing service group web", "unknown segment Nope"):
+            self.assertIn(text, errors)
+        self.assertFalse(plan_template_acls(rules, [acl_group("test2")], {"test2": ["acls"]}, {}, set(), set())["groups"][0]["eligible"])
+
+    def test_replace_mode_security_policies_template_is_guarded(self):
+        rules = self.parse([self.row(Application="App")])
+        group = acl_group("test2")
+        group["templates"].append({"name": "securityMaps", "value": {"data": {"map1": {}}, "options": {"merge": False}}})
+        plan = plan_template_acls(rules, [group], {"test2": ["acls", "securityMaps"]}, {}, {"App"}, set())
+        self.assertFalse(plan["groups"][0]["eligible"])
+        self.assertIn("ACL-25", " ".join(plan["groups"][0]["errors"]))
+        group["templates"][-1]["value"]["data"]["map1"]["1_2"] = {"prio": {"1000": {"match": {}, "set": {"action": "allow"}}}}
+        plan = plan_template_acls(rules, [group], {"test2": ["acls", "securityMaps"]}, {}, {"App"}, set())
+        self.assertTrue(plan["groups"][0]["eligible"])
+        self.assertIn("ACL-25", " ".join(plan["groups"][0]["warnings"]))
+        self.assertTrue(plan_template_acls(rules, [group], {"test2": ["acls"]}, {}, {"App"}, set())["groups"][0]["eligible"])
+
 
 class TemplateAclApplyGateway:
     def __init__(self, groups, selections, associations):
@@ -261,7 +344,7 @@ class RepositoryTemplateTests(unittest.TestCase):
         groups = parse_application_groups(str(root / "application_groups.csv"))
         acls = parse_template_acls(str(root / "template_acls.csv"))
         firewall = parse_firewall_csv(str(root / "firewall_rules.csv"))
-        self.assertEqual((len(addresses), len(services), len(definitions), len(groups), len(acls), len(firewall)), (4, 5, 8, 3, 6, 9))
+        self.assertEqual((len(addresses), len(services), len(definitions), len(groups), len(acls), len(firewall)), (4, 5, 8, 3, 9, 9))
         address_names = {row["Name"] for row in addresses}
         service_names = {row["Name"] for row in services}
         application_names = {item.name for item in definitions}
@@ -274,6 +357,8 @@ class RepositoryTemplateTests(unittest.TestCase):
         for rule in acls:
             self.assertTrue(not rule.entry.get("application") or rule.entry["application"] in application_names)
             self.assertTrue(not rule.entry.get("app_group") or rule.entry["app_group"] in group_names)
+            self.assertTrue({name for key in ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups") for name in rule.entry.get(key, "").split("|") if name} <= address_names)
+            self.assertTrue({name for key in ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups") for name in rule.entry.get(key, "").split("|") if name} <= service_names)
 
     def test_published_valid_and_mixed_examples(self):
         root = Path(__file__).resolve().parents[1] / "examples" / "edgeconnect"
@@ -292,7 +377,7 @@ class RepositoryTemplateTests(unittest.TestCase):
             with self.subTest(name=name, kind="mixed"):
                 with self.assertRaises(ValidationError):
                     parser(str(root / "{}_mixed.csv".format(name)))
-        self.assertEqual(tuple(len(parsed[name]) for name in parsers), (6, 10, 8, 4, 7, 9))
+        self.assertEqual(tuple(len(parsed[name]) for name in parsers), (6, 10, 8, 4, 15, 9))
         address_names = {row["Name"] for row in parsed["address_groups"]}
         service_names = {row["Name"] for row in parsed["service_groups"]}
         application_names = {item.name for item in parsed["application_definitions"]}
@@ -305,6 +390,8 @@ class RepositoryTemplateTests(unittest.TestCase):
         for rule in parsed["template_acls"]:
             self.assertTrue(not rule.entry.get("application") or rule.entry["application"] in application_names)
             self.assertTrue(not rule.entry.get("app_group") or rule.entry["app_group"] in group_names)
+            self.assertTrue({name for key in ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups") for name in rule.entry.get(key, "").split("|") if name} <= address_names)
+            self.assertTrue({name for key in ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups") for name in rule.entry.get(key, "").split("|") if name} <= service_names)
 
 
 class NativeGroupTests(unittest.TestCase):

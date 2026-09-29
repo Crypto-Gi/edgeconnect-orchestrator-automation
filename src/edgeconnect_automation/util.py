@@ -74,7 +74,7 @@ def normalize_acl_entries(entries: Mapping[str, Any]) -> Dict[str, Any]:
         if not isinstance(value, Mapping):
             result[str(priority)] = value
             continue
-        result[str(priority)] = {str(key): item for key, item in value.items() if key not in {"self", "gms_marked"}}
+        result[str(priority)] = {str(key): (str(item) if str(key).endswith("_vrf") else item) for key, item in value.items() if key not in {"self", "gms_marked"}}
     return result
 
 

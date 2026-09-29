@@ -1,4 +1,5 @@
 import copy
+import io
 import csv
 import json
 import tempfile
@@ -6,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _application_names, _approve_template_acls, _discover_inventory, main
+from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _application_names, _approve_template_acls, _available_applications, _discover_inventory, main
 from edgeconnect_automation.errors import ApprovalError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
 from edgeconnect_automation.workflows import ACL_HEADERS as TEMPLATE_ACL_HEADERS, APP_DEF_HEADERS
@@ -114,6 +115,16 @@ class LiveInventoryTests(unittest.TestCase):
         self.assertIn("lab25-test1", inventory.acls)
         self.assertEqual(inventory.appliance_acls["0.NE"]["lab25-test1"]["1000"]["app_group"], "Accounting")
         self.assertEqual(inventory.statuses["acls"], "complete")
+
+    def test_template_acl_applications_include_user_defined_missing_from_wildcard(self):
+        class Gateway:
+            def get_application_definitions(self, base):
+                return [{"name": "custom-app", "domain": "custom-app.example.com", "disabled": True}] if base == "dnsClassification" else {}
+
+            def search_application(self, name):
+                return [name] if name == "Builtin" else []
+
+        self.assertEqual(_available_applications(Gateway(), {"Custom-app", "Builtin", "gone"}), {"Custom-app", "Builtin"})
 
     def test_application_names_tolerate_nonlist_definition_shapes(self):
         port = {"443": [{"name": "web"}], "0": {"6": {"name": "nested"}}, "1": "none", "2": {"count": 0}}
@@ -449,6 +460,16 @@ class DeployCliTests(unittest.TestCase):
         with patch("edgeconnect_automation.cli._gateway", return_value=apply_gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
             self.assertEqual(main(["address-groups", "delete", "--csv", str(self.address_csv)]), 0)
         self.assertFalse(apply_gateway.values)
+
+    def test_address_group_delete_blocked_by_template_acl_group_list(self):
+        gateway = BulkDeployGateway()
+        gateway.values = [{"name": "new", "type": None, "rules": [{"includedIPs": ["10.0.0.0/24"], "excludedIPs": [], "includedGroups": [], "comment": None}]}]
+        gateway.acls = {"out": [{"template_group": "TEST-ACL", "entries": {"1000": {"permit": True, "src_addrgrp_groups": "other|new", "src_additionalSwitch_ip": "groups"}}}]}
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(main(["address-groups", "delete", "--csv", str(self.address_csv), "--dry-run"]), 2)
+        self.assertIn("DEL-05", stderr.getvalue())
+        self.assertIn("TEST-ACL ACL out priority 1000", stderr.getvalue())
+        self.assertEqual(len(gateway.values), 1)
 
     def test_delete_blocks_semantically_different_group(self):
         gateway = BulkDeployGateway()

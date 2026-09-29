@@ -3,16 +3,18 @@ import base64
 import copy
 import csv
 import json
+import re
 import secrets
 import sys
 import time
+import traceback
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .client import ApiClient
 from .config import load_config
-from .errors import ApprovalError, DriftError, EdgeConnectError, ValidationError
+from .errors import ApprovalError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
 from .firewall import FirewallExecutor, build_firewall_plan, normalize_rule, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
 from .gateway import OrchestratorGateway
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
@@ -332,6 +334,8 @@ def _firewall_deploy(args: argparse.Namespace) -> int:
     if args.resolved_csv and plan.resolved_rows:
         write_resolved_csv(args.resolved_csv, plan.resolved_rows)
     if not plan.eligible_pairs:
+        if args.report:
+            safe_report(args.report, {"preview": preview, "status": "BLOCKED", "report_fingerprint": fingerprint(preview)})
         _print(preview)
         return 2
     if not _approve(preview, args.dry_run):
@@ -485,15 +489,19 @@ def _inventory_from_dict(value: Mapping[str, Any]) -> Inventory:
     )
 
 
-def _version_at_least(value: str, minimum: Tuple[int, int]) -> bool:
-    try:
-        parts = tuple(int(part) for part in value.split("_")[0].split(".")[:2])
-    except ValueError:
-        return False
-    return len(parts) >= 2 and parts >= minimum
+def _version_below(value: str, minimum: Tuple[int, int]) -> bool:
+    match = re.search(r"(\d+)\.(\d+)", value)
+    return bool(match) and (int(match.group(1)), int(match.group(2))) < minimum
 
 
 def _discover_inventory(gateway: OrchestratorGateway, rules: Sequence[FirewallRule], pairs: Optional[Set[Tuple[str, str]]] = None) -> Inventory:
+    try:
+        return _read_inventory(gateway, rules, pairs)
+    except (KeyError, TypeError, AttributeError, ValueError, IndexError) as error:
+        raise ResponseFormatError("unexpected Orchestrator response shape during firewall discovery ({}: {}); rerun with -vv for the traceback".format(type(error).__name__, error)) from error
+
+
+def _read_inventory(gateway: OrchestratorGateway, rules: Sequence[FirewallRule], pairs: Optional[Set[Tuple[str, str]]] = None) -> Inventory:
     segmentation = gateway.get_segmentation()
     segment_raw = gateway.get_segments()
     segments = {str(item["name"]): int(item.get("id", key)) for key, item in segment_raw.items()}
@@ -536,7 +544,7 @@ def _discover_inventory(gateway: OrchestratorGateway, rules: Sequence[FirewallRu
         if nepk in paused_ids:
             state = "paused"
         elif int(reachability.get("state", appliance.get("state", 2))) == 1:
-            state = "reachable" if _version_at_least(str(appliance.get("softwareVersion", "")), (9, 5)) else "unsupported"
+            state = "unsupported" if _version_below(str(appliance.get("softwareVersion", "")), (9, 5)) else "reachable"
         else:
             state = "unreachable"
         target_states[nepk] = state
@@ -555,7 +563,7 @@ def _discover_inventory(gateway: OrchestratorGateway, rules: Sequence[FirewallRu
             priorities = local_priorities.setdefault(rule.scope, set())
             for security_map in security_maps.values():
                 entries = security_map.get("map1", {}).get(zone_key, {}).get("prio", {})
-                priorities.update(int(priority) for priority, value in entries.items() if value.get("gms_marked") is False)
+                priorities.update(int(priority) for priority, value in entries.items() if not isinstance(value, dict) or value.get("gms_marked") is not True)
     return Inventory(
         segments=segments,
         zones=zones,
@@ -662,9 +670,24 @@ def _discover_template_acl_plan(gateway: OrchestratorGateway, csv_path: str) -> 
     associations = gateway.get_template_associations()
     applications = {str(rule.entry["application"]) for rule in rules if rule.entry.get("application")}
     application_groups = {str(rule.entry["app_group"]) for rule in rules if rule.entry.get("app_group")}
-    available_apps = {name for name in applications if _wildcard_has_exact_name(gateway.search_application(name), name, casefold=True)}
+    available_apps = _available_applications(gateway, applications)
     available_groups = {name for name in application_groups if _wildcard_has_exact_name(gateway.search_application_group(name), name)}
-    return plan_template_acls(rules, groups, selections, associations, available_apps, available_groups)
+    uses = {key for rule in rules for key in rule.entry}
+    address_groups = {str(item.get("name")) for item in gateway.get_address_groups()} if uses & {"src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups"} else None
+    service_groups = {str(item.get("name")) for item in gateway.get_service_groups()} if uses & {"src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups"} else None
+    segments = _segment_ids(gateway) if any(rule.segments for rule in rules) else None
+    return plan_template_acls(rules, groups, selections, associations, available_apps, available_groups, address_groups, service_groups, segments)
+
+
+def _available_applications(gateway: OrchestratorGateway, names: Set[str]) -> Set[str]:
+    if not names:
+        return set()
+    user_defined = {name.lower() for name in _application_names(*(gateway.get_application_definitions(base) for base in ("portProtocolClassification", "dnsClassification", "compoundClassification")))}
+    return {name for name in names if name.lower() in user_defined or _wildcard_has_exact_name(gateway.search_application(name), name, casefold=True)}
+
+
+def _segment_ids(gateway: OrchestratorGateway) -> Dict[str, int]:
+    return {str(item["name"]): int(item.get("id", key)) for key, item in gateway.get_segments().items() if isinstance(item, dict) and "name" in item}
 
 
 def _template_acl_preview(plan: Mapping[str, Any]) -> Dict[str, Any]:
@@ -682,12 +705,21 @@ def _template_acl_result_code(plan: Mapping[str, Any], result: Optional[Mapping[
 
 
 def _validate_template_acl_dependencies(gateway: OrchestratorGateway, plan: Mapping[str, Any]) -> None:
-    for name in plan.get("application_dependencies", []):
-        if not _wildcard_has_exact_name(gateway.search_application(name), name, casefold=True):
-            raise DriftError("application dependency {} changed before write".format(name))
+    wanted = set(plan.get("application_dependencies", []))
+    for name in sorted(wanted - _available_applications(gateway, wanted)):
+        raise DriftError("application dependency {} changed before write".format(name))
     for name in plan.get("application_group_dependencies", []):
         if not _wildcard_has_exact_name(gateway.search_application_group(name), name):
             raise DriftError("application group dependency {} changed before write".format(name))
+    for key, loader in (("address_group_dependencies", "get_address_groups"), ("service_group_dependencies", "get_service_groups")):
+        if plan.get(key):
+            missing = set(plan[key]) - {str(item.get("name")) for item in getattr(gateway, loader)()}
+            if missing:
+                raise DriftError("{} {} changed before write".format(key.replace("_dependencies", "").replace("_", " "), ", ".join(sorted(missing))))
+    if plan.get("segment_dependencies"):
+        missing = set(plan["segment_dependencies"]) - set(_segment_ids(gateway))
+        if missing:
+            raise DriftError("segment {} changed before write".format(", ".join(sorted(missing))))
 
 
 def _template_acls_plan(args: argparse.Namespace) -> int:
@@ -725,6 +757,8 @@ def _template_acls_deploy(args: argparse.Namespace) -> int:
     plan = _discover_template_acl_plan(gateway, args.csv)
     preview = _template_acl_preview(plan)
     if not plan["eligible_groups"]:
+        if args.report:
+            safe_report(args.report, {"preview": preview, "status": "BLOCKED", "report_fingerprint": fingerprint(preview)})
         _print(preview)
         return 2
     if not _approve_template_acls(preview, args.dry_run):
@@ -850,9 +884,9 @@ def _template_acl_references(gateway: OrchestratorGateway, key: str, names: Set[
     for acl_name, occurrences in gateway.get_central_acls().items():
         for occurrence in occurrences:
             for priority, entry in (occurrence.get("entries") or {}).items():
-                value = str(entry.get(key, ""))
-                if value and (value.lower() if casefold else value) in wanted:
-                    hits.append("template group {} ACL {} priority {} ({}={})".format(occurrence.get("template_group"), acl_name, priority, key, value))
+                for value in split_values(str(entry.get(key, ""))):
+                    if (value.lower() if casefold else value) in wanted:
+                        hits.append("template group {} ACL {} priority {} ({}={})".format(occurrence.get("template_group"), acl_name, priority, key, value))
     return hits
 
 
@@ -898,7 +932,7 @@ def _bulk_delete(args: argparse.Namespace) -> int:
         if name not in targets and _group_references(value, args.bulk_kind) & targets:
             raise ValidationError("non-target group {} references a requested deletion".format(name))
     group_keys = ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups") if args.bulk_kind == "address" else ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups")
-    _block_referenced_deletion(_firewall_references(gateway, group_keys, targets), "firewall rules", "DEL-05")
+    _block_referenced_deletion(_firewall_references(gateway, group_keys, targets) + [hit for key in group_keys for hit in _template_acl_references(gateway, key, targets)], "firewall rules or template ACLs", "DEL-05")
     order = _group_delete_order(targets, current, args.bulk_kind)
     kind_label = "Address group" if args.bulk_kind == "address" else "Service group"
     table = [(kind_label, name, "exact CSV semantic match") for name in order]
@@ -1241,8 +1275,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except EdgeConnectError as error:
         print(str(redact(str(error))), file=sys.stderr)
         return error.exit_code
-    except (OSError, ValueError, TypeError, json.JSONDecodeError, csv.Error) as error:
-        print("error: {}".format(redact(str(error))), file=sys.stderr)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError, csv.Error) as error:
+        if args.verbose >= 2:
+            traceback.print_exc()
+        print("error: {}: {}".format(type(error).__name__, redact(str(error))), file=sys.stderr)
         return 1
 
 

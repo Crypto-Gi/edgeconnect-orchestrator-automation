@@ -1,13 +1,17 @@
 import ipaddress
 import re
+import unicodedata
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .errors import ValidationError
 
 PROTOCOLS = {"ip", "tcp", "udp", "tcp/udp", "icmp", "icmpv6"}
 PORT_PROTOCOLS = {"", "tcp", "udp", "tcp/udp", "6", "17"}
-PORT_PATTERN = re.compile(r"^[0-9]+(?:-[0-9]+)?$")
-DOMAIN_LABEL = re.compile(r"^[A-Za-z0-9_-]{1,63}$")
+NUMBER = r"(?:0|[1-9][0-9]*)"
+NUMBER_PATTERN = re.compile(NUMBER)
+PORT_PATTERN = re.compile(r"^{0}(?:-{0})?$".format(NUMBER))
+DOMAIN_LABEL = re.compile(r"^(?!-)[A-Za-z0-9_-]{1,63}(?<!-)$")
+FREE_TEXT_FIELDS = {"Comment", "description", "Notes", "rule_name"}
 IPV6_GROUP = re.compile(r"^(?:\*|[0-9A-Fa-f]{1,4}(?:-[0-9A-Fa-f]{1,4})?)$")
 DSCP_NAMES = {"be", "ef"} | {"cs{}".format(index) for index in range(8)} | {"af{}{}".format(klass, drop) for klass in range(1, 5) for drop in range(1, 4)}
 
@@ -59,7 +63,8 @@ def members(value: str, issues: Optional[Issues] = None, row: Any = None, field:
         other = "," if delimiter == "|" else "|"
         if other in value:
             issues.add("VAL-02", "uses {!r} as a separator".format(other), row, field, value, "separate values with {!r}".format(delimiter))
-        duplicates = sorted({part for part in result if result.count(part) > 1})
+        folded = [part.casefold() for part in result]
+        duplicates = sorted({part for part in result if folded.count(part.casefold()) > 1})
         if duplicates:
             issues.add("VAL-03", "contains duplicate values: {}".format(", ".join(duplicates)), row, field, value, "list each value once")
     return result
@@ -78,7 +83,7 @@ def check_ports(values: Sequence[str], issues: Issues, row: Any, field: str, all
                 issues.add("SG-04", "wildcard * must be the only port in the cell", row, field, member, "use * alone or list explicit ports")
             continue
         if not PORT_PATTERN.fullmatch(member):
-            issues.add("VAL-05", "invalid port {}".format(member), row, field, member, "use a port 0-65535 or a range such as 1000-2000")
+            issues.add("VAL-05", "invalid port {}".format(member), row, field, member, "use a port 0-65535 or a range such as 1000-2000, without leading zeros")
             continue
         ends = [int(part) for part in member.split("-")]
         if any(part > 65535 for part in ends) or len(ends) == 2 and ends[0] > ends[1]:
@@ -86,14 +91,15 @@ def check_ports(values: Sequence[str], issues: Issues, row: Any, field: str, all
 
 
 def valid_protocol(value: str) -> bool:
-    return value in PROTOCOLS or value.isdigit() and int(value) <= 255
+    return value in PROTOCOLS or bool(NUMBER_PATTERN.fullmatch(value)) and int(value) <= 255
 
 
 def valid_domain(value: str) -> bool:
     rest = value[2:] if value.startswith("*.") else value[1:] if value.startswith("*") else value
-    if len(value) > 253 or not rest or "*" in rest:
+    labels = rest.split(".")
+    if len(value) > 253 or not rest or "*" in rest or value.lower() == "any" or all(label.isdigit() for label in labels):
         return False
-    return all(DOMAIN_LABEL.fullmatch(label) for label in rest.split("."))
+    return all(DOMAIN_LABEL.fullmatch(label) for label in labels)
 
 
 def address_group_ipv4(value: str) -> None:
@@ -109,20 +115,20 @@ def address_group_ipv4(value: str) -> None:
         if octet == "*":
             continue
         ends = octet.split("-")
-        if len(ends) > 2 or any(not end.isdigit() for end in ends):
-            raise ValueError("invalid IPv4 octet")
+        if len(ends) > 2 or any(not NUMBER_PATTERN.fullmatch(end) for end in ends):
+            raise ValueError("invalid IPv4 octet (use 0-255 without leading zeros)")
         numbers = [int(end) for end in ends]
         if any(number > 255 for number in numbers) or len(numbers) == 2 and numbers[0] > numbers[1]:
             raise ValueError("IPv4 octet is out of range")
     if len(parts) == 1:
         return
     mask = parts[1]
-    if mask.isdigit():
+    if NUMBER_PATTERN.fullmatch(mask):
         if int(mask) > 32:
             raise ValueError("IPv4 prefix length is out of range")
         return
     mask_octets = mask.split(".")
-    if len(mask_octets) != 4 or any(not octet.isdigit() or int(octet) > 255 for octet in mask_octets):
+    if len(mask_octets) != 4 or any(not NUMBER_PATTERN.fullmatch(octet) or int(octet) > 255 for octet in mask_octets):
         raise ValueError("invalid dotted-decimal subnet mask")
     mask_value = sum(int(octet) << (24 - index * 8) for index, octet in enumerate(mask_octets))
     inverse = (~mask_value) & 0xFFFFFFFF
@@ -141,6 +147,8 @@ def _host_bits_warning(value: str) -> Optional[str]:
 
 def policy_ip(value: str) -> Optional[str]:
     """Validate a firewall/ACL IP value; return a warning for compatibility-only forms."""
+    if "%" in value:
+        raise ValueError("IPv6 zone identifiers are not supported")
     if ":" in value:
         if "*" in value or "-" in value:
             groups = value.split(":")
@@ -162,6 +170,20 @@ def policy_ip(value: str) -> Optional[str]:
     return _host_bits_warning(value)
 
 
+def check_ip_duplicates(values: Sequence[str], issues: Issues, row: Any, field: str) -> None:
+    seen: Dict[Any, str] = {}
+    for value in values:
+        if "*" in value or "-" in value:
+            continue
+        try:
+            key = ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            continue
+        if key in seen and seen[key] != value:
+            issues.add("VAL-03", "{} and {} are the same network".format(seen[key], value), row, field, value, "list each network once")
+        seen.setdefault(key, value)
+
+
 def compound_ipv4(value: str) -> None:
     if ":" in value:
         raise ValueError("compound applications support IPv4 only")
@@ -169,7 +191,7 @@ def compound_ipv4(value: str) -> None:
         raise ValueError("compound applications do not support wildcard octets")
     address_group_ipv4(value)
     address, _, mask = value.partition("/")
-    if mask and not mask.isdigit():
+    if mask and not NUMBER_PATTERN.fullmatch(mask):
         raise ValueError("use a prefix length instead of a dotted mask")
     if mask and "-" in address:
         raise ValueError("a range cannot be combined with a prefix")
@@ -177,7 +199,7 @@ def compound_ipv4(value: str) -> None:
 
 def normalize_dscp(value: str) -> str:
     normalized = value.strip().lower()
-    if normalized.isdigit() and int(normalized) <= 63:
+    if NUMBER_PATTERN.fullmatch(normalized) and int(normalized) <= 63:
         return str(int(normalized))
     if normalized in DSCP_NAMES:
         return normalized
@@ -186,5 +208,9 @@ def normalize_dscp(value: str) -> str:
 
 def control_characters(row: Mapping[str, Any], issues: Issues, number: Any) -> None:
     for field, value in row.items():
-        if isinstance(value, str) and field != "_row" and any(ord(character) < 32 for character in value):
+        if not isinstance(value, str) or field == "_row":
+            continue
+        if any(ord(character) < 32 for character in value):
             issues.add("CSV-10", "contains a control character or line break", number, field, fix="remove tabs, line breaks, and other control characters")
+        elif field not in FREE_TEXT_FIELDS and any(unicodedata.category(character) in {"Cf", "Zs", "Zl", "Zp"} and character != " " for character in value):
+            issues.add("CSV-10", "contains an invisible or non-standard space character", number, field, value, "retype the value; copied text often carries zero-width or non-breaking spaces")

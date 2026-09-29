@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0 — 2026-09-29
+
+### Template ACL parity
+
+
+- Template ACL CSV now matches the firewall CSV's match fields. New columns: `SourceAddressGroup`, `DestinationAddressGroup`, `EitherAddressGroup`, `SourceServiceGroup`, `DestinationServiceGroup`, `EitherServiceGroup`, and per-side `SourceSegment`, `DestinationSegment`, `EitherSegment` (segment names resolved to `*_vrf` IDs at runtime). Generated entries reproduce GUI-created 9.7.1 rules key for key. The original 20-column header is still accepted.
+- New checks: `ACL-24` (literal and group on the same side), dimension-wide `DIR-01` (Either versus Source/Destination across literals and groups), `ACL-26` (group-name grammar; comma lists rejected because the appliance silently drops the second group), `ACL-27` (single segment), `DEP-03` and `DEP-07` (groups and segments must exist, re-checked before write).
+- `ACL-25` guard: a target template group with Security Policies selected in replace mode is blocked when that template has no rules and warned when it has rules. A lab incident showed that associating such a group wipes the appliance firewall policy.
+- Address and service group deletion is now also blocked by template ACL references, including `|` group lists.
+- ACL no-op and appliance verification normalize `*_vrf` values (integer centrally, string on the appliance) and `|` list spacing.
+
+### Release hardening (from fuzz and operator testing)
+
+- Safety: collision detection no longer fails open when an appliance reports `gms_marked` as missing, `null`, a string, or `0`, or when its software version cannot be parsed. Automatic priorities skip appliance-local rules. Application-group parent cycles through existing groups are detected.
+- Payload correctness: `|` lists are trimmed before sending, and a reordered list is a no-op rather than a conflict. Non-ASCII digits and leading zeros are rejected in ports, protocols, IP octets and masks. The domain check is stricter. IPv6 zone IDs are rejected. `Application=any` is rejected in ACLs (`ACL-28`).
+- Validation: `firewall validate` catches duplicate `rule_key` (`FW-21`). Invisible Unicode characters are rejected outside free text. Duplicates are case-insensitive and network-aware. Malformed CSV syntax reports `CSV-11` with a line number. The strict application-group parser used by delete now matches deploy validation. New address-group warning `AG-17` for exclusions outside every inclusion.
+- Errors and reports: unexpected Orchestrator response shapes raise clear `ResponseFormatError` messages, and a malformed zone container is never treated as empty. `-vv` prints a traceback for runtime errors. A blocked deploy still writes its `--report` file (`status: BLOCKED`). The auto-priority error now says to set an explicit priority.
+- Template ACL application dependencies also accept disabled user-defined applications that the wildcard search omits.
+
 ## 1.1.2 — 2026-09-29
 
 - Fixed `string indices must be integers, not 'str'` during firewall discovery and application-definition planning when Orchestrator returns user-defined port/protocol, domain, or compound definitions in a shape other than the tested list-of-records layout. Non-record entries are skipped; missing referenced applications still fall back to exact wildcard search or block with `DEP-01`. The failure occurred before any write.
