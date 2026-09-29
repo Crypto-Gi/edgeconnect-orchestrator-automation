@@ -67,6 +67,21 @@ Policy IP values (firewall and template ACL) accept:
 - Range or wildcard combined with a mask (`192.168.0.1-127/24`) is accepted with a warning. The GUI stores it, but vendor documentation lists it as unsupported for policies.
 - Prefixes with host bits (`10.0.0.5/24`) are accepted with a warning that names the effective network.
 - Partial-octet wildcards (`10.13*.1.1`), reversed ranges, and out-of-range octets are rejected.
+- The keyword `any` is rejected (`FW-14`). Leave the cell blank instead.
+
+### Blank fields versus `any`
+
+A blank match field means "not used": it is omitted from the API payload and never sent as `any`. Only populated fields narrow the rule, and populated fields are ANDed.
+
+| CSV input | Sent `match` | Meaning |
+|---|---|---|
+| `destination_address` blank, `destination_address_group=Servers` | `dst_addrgrp_groups` only | Destination must be in `Servers`; the blank address does not widen it |
+| Both destination fields blank, `source_address=10.1.1.0/24` | `src_ip` only | No destination condition; every destination matches |
+| `destination_address` and `destination_address_group` both set | `dst_ip` and `dst_addrgrp_groups` | Destination must satisfy both |
+| Every match field and `acl` blank, `broad_match_ack=FALSE` | nothing | Rejected with `FW-04` before any API call |
+| Every match field and `acl` blank, `broad_match_ack=TRUE` | `{}` | Intentional Match Everything |
+
+Only `application_group` accepts `any`. For "all IPv4" or "all IPv6" as an explicit value use `0.0.0.0/0` or `::/0`.
 
 ### ACL match mode
 

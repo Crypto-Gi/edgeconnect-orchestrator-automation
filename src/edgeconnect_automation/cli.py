@@ -603,8 +603,14 @@ def _wildcard_has_exact_name(value: Any, name: str, casefold: bool = False) -> b
     return same(value)
 
 
+def _definition_records(value: Any) -> List[Mapping[str, Any]]:
+    items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
+    return [item for item in items if isinstance(item, dict) and "name" in item]
+
+
 def _application_name_list(port: Any, dns: Any, compound: Any) -> List[str]:
-    return [str(item["name"]) for entries in port.values() for item in entries] + [str(item["name"]) for item in dns] + [str(item["name"]) for item in compound.values() if isinstance(item, dict)]
+    port_items = [item for entries in (port.values() if isinstance(port, dict) else []) for item in _definition_records(entries)]
+    return [str(item["name"]) for item in port_items + _definition_records(dns) + _definition_records(compound)]
 
 
 def _application_names(port: Any, dns: Any, compound: Any) -> Set[str]:

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2 — 2026-09-29
+
+- Fixed `string indices must be integers, not 'str'` during firewall discovery and application-definition planning when Orchestrator returns user-defined port/protocol, domain, or compound definitions in a shape other than the tested list-of-records layout. Non-record entries are skipped; missing referenced applications still fall back to exact wildcard search or block with `DEP-01`. The failure occurred before any write.
+- Documented that `-v`, `--dotenv`, and `--allow-http` must precede the workflow name, and how to capture a full traceback with a read-only dry run.
+
 ## 1.1.1 — 2026-09-25
 
 - Reject template ACL CSV rows that reuse the same `TemplateGroup + ACLName` with inconsistent `ACLUpdateMode` or `TemplateApplyMode` values.

@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.1.1` / package version `1.1.1` — stricter CSV validation, merge-only template ACL automation, safer firewall ACL dependency checks, and compact valid/invalid example sets.
+**Current release:** `v1.1.2` / package version `1.1.2` — stricter CSV validation, merge-only template ACL automation, safer firewall ACL dependency checks, compact valid/invalid example sets, and tolerant application-definition discovery.
 
 The tool implements:
 
@@ -495,6 +495,8 @@ edgeconnect-auto -vv firewall deploy --csv rules.csv --dry-run
 - `-v`: API method/path, status, and response size
 - `-vv`: sanitized payload details
 
+`-v`, `--dotenv`, and `--allow-http` are global options: place them **before** the workflow name. `edgeconnect-auto firewall validate --csv rules.csv -v` fails with `unrecognized arguments: -v`. Verbosity only affects Orchestrator API calls, so local-only `validate` output looks the same at every level.
+
 Credentials and authorization headers are never logged.
 
 ## Exit codes
@@ -583,6 +585,16 @@ Do not disable TLS verification. Add the approved CA chain:
 
 ```dotenv
 orchestrator_ca_bundle=/absolute/path/to/ca-bundle.pem
+```
+
+### `error: string indices must be integers, not 'str'`
+
+Versions before `1.1.2` crashed during firewall discovery when an Orchestrator returned user-defined port/protocol or compound application definitions in a shape other than a list of records per key. The crash happened before any write. Update to `1.1.2` or later (`pip show edgeconnect-automation` shows the installed version). Unrecognized entries are now skipped; a referenced application that still cannot be found is resolved through exact wildcard search or blocked with `DEP-01`.
+
+To see the full Python traceback for any unexpected runtime error, call the handler directly with a read-only dry run:
+
+```bash
+python -c "from edgeconnect_automation.cli import build_parser; a=build_parser().parse_args(['firewall','deploy','--csv','rules.csv','--dry-run']); a.handler(a)"
 ```
 
 ### Routing Segmentation is disabled

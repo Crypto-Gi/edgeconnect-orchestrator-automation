@@ -957,7 +957,7 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
                 add_conflict(definition, "duplicate domain identity in CSV")
                 continue
             seen_identities.add(identity_key)
-            matches = [item for item in inventory if item.get("domain") == definition.identity]
+            matches = [item for item in inventory if isinstance(item, dict) and item.get("domain") == definition.identity]
             if not matches:
                 new.append(definition)
             elif any(_simple_definition_equal(item, definition.payload) for item in matches):
@@ -971,7 +971,8 @@ def plan_application_definitions(definitions: Sequence[ApplicationDefinition], i
                 continue
             seen_identities.add(identity_key)
             entries = inventory.get(str(definition.identity[0]), []) if isinstance(inventory, dict) else []
-            matches = [item for item in entries if int(item.get("protocol", -1)) == definition.identity[1]]
+            entries = entries.values() if isinstance(entries, dict) else entries if isinstance(entries, list) else []
+            matches = [item for item in entries if isinstance(item, dict) and int(item.get("protocol", -1)) == definition.identity[1]]
             if not matches:
                 new.append(definition)
             elif any(_simple_definition_equal(item, definition.payload) for item in matches):

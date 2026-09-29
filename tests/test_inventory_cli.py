@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _approve_template_acls, _discover_inventory, main
+from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _application_names, _approve_template_acls, _discover_inventory, main
 from edgeconnect_automation.errors import ApprovalError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
 from edgeconnect_automation.workflows import ACL_HEADERS as TEMPLATE_ACL_HEADERS, APP_DEF_HEADERS
@@ -114,6 +114,11 @@ class LiveInventoryTests(unittest.TestCase):
         self.assertIn("lab25-test1", inventory.acls)
         self.assertEqual(inventory.appliance_acls["0.NE"]["lab25-test1"]["1000"]["app_group"], "Accounting")
         self.assertEqual(inventory.statuses["acls"], "complete")
+
+    def test_application_names_tolerate_nonlist_definition_shapes(self):
+        port = {"443": [{"name": "web"}], "0": {"6": {"name": "nested"}}, "1": "none", "2": {"count": 0}}
+        compound = {"1": {"name": "cmp"}, "meta": "x"}
+        self.assertEqual(_application_names(port, [{"name": "dns"}, "junk"], compound), {"web", "nested", "dns", "cmp"})
 
 
 class DeployGateway:
