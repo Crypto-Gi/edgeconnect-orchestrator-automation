@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.2 — 2026-09-29
+
+- Consolidated the two example folders into `examples/edgeconnect`. The lab suite's valid and invalid rows are merged into the `*_valid.csv` and `*_mixed.csv` files (firewall rules use placeholder zones and are disabled).
+- Every object the examples and starter templates create now has a `test-51-` name (`test-51-ag-*`, `test-51-sg-*`, `test-51-*` applications and application groups, ACLs `test-51-acl` and `test-51-matrix`, firewall keys `test-51-fw-*`), so test objects are easy to find and clean up.
+- Added `template_acls_test3_valid.csv` (55 valid entries for template group `test3`) and `template_acls_test3_invalid.csv` (40 rows with one deliberate mistake each) for manual template ACL testing. The valid file was deployed to a lab appliance and verified.
+- Fixed the merged application-definition example: two rows reused an existing protocol and TCP port identity and were skipped at plan time. A new test requires every valid example to plan with no conflicts.
+- Fixed `ApplicationGroup=any` in template ACLs, which was treated as a missing group.
+- Fixed a false `PARTIAL` after template ACL deploys: the appliance reachability check ran right after the write, saw a brief "unreachable" while the template was applying, and gave up. It now retries until the verification timeout.
+
 ## 1.2.1 — 2026-09-29
 
 - Fixed a 1.2.0 regression: deletion reference checks, and any other workflow that reads every segment pair, failed with `security policy response for map X has an invalid shape` when a segment pair had no firewall policy. Orchestrator returns `"data": null` for such pairs; it is now read as an empty policy, while genuinely malformed responses are still rejected.

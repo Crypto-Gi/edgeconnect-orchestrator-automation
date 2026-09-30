@@ -224,6 +224,12 @@ class TemplateAclTests(unittest.TestCase):
             self.assertIn(text, errors)
         self.assertFalse(plan_template_acls(rules, [acl_group("test2")], {"test2": ["acls"]}, {}, set(), set())["groups"][0]["eligible"])
 
+    def test_application_group_any_needs_no_dependency(self):
+        rules = self.parse([self.row(ApplicationGroup="any")])
+        plan = plan_template_acls(rules, [acl_group("test2")], {"test2": ["acls"]}, {}, set(), set())
+        self.assertTrue(plan["groups"][0]["eligible"], plan["groups"][0]["errors"])
+        self.assertEqual(plan["application_group_dependencies"], [])
+
     def test_replace_mode_security_policies_template_is_guarded(self):
         rules = self.parse([self.row(Application="App")])
         group = acl_group("test2")
@@ -377,7 +383,7 @@ class RepositoryTemplateTests(unittest.TestCase):
             with self.subTest(name=name, kind="mixed"):
                 with self.assertRaises(ValidationError):
                     parser(str(root / "{}_mixed.csv".format(name)))
-        self.assertEqual(tuple(len(parsed[name]) for name in parsers), (6, 10, 8, 4, 15, 9))
+        self.assertEqual(tuple(len(parsed[name]) for name in parsers), (27, 31, 48, 11, 15, 54))
         address_names = {row["Name"] for row in parsed["address_groups"]}
         service_names = {row["Name"] for row in parsed["service_groups"]}
         application_names = {item.name for item in parsed["application_definitions"]}
@@ -387,11 +393,45 @@ class RepositoryTemplateTests(unittest.TestCase):
             self.assertTrue(set(filter(None, (rule.source_service_group, rule.destination_service_group, rule.either_service_group))) <= service_names)
             self.assertTrue(not rule.application or rule.application in application_names)
             self.assertTrue(not rule.application_group or rule.application_group == "any" or rule.application_group in group_names)
+        empty = {"portProtocolClassification": {}, "dnsClassification": [], "compoundClassification": {}}
+        self.assertEqual(plan_application_definitions(parsed["application_definitions"], empty).conflicts, [])
+        self.assertEqual(plan_native_groups("address", parsed["address_groups"], []).conflicts, [])
+        self.assertEqual(plan_native_groups("service", parsed["service_groups"], []).conflicts, [])
+        self.assertEqual(plan_application_groups(parsed["application_groups"], {}, application_names)["skipped_conflicts"], [])
         for rule in parsed["template_acls"]:
             self.assertTrue(not rule.entry.get("application") or rule.entry["application"] in application_names)
             self.assertTrue(not rule.entry.get("app_group") or rule.entry["app_group"] in group_names)
             self.assertTrue({name for key in ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups") for name in rule.entry.get(key, "").split("|") if name} <= address_names)
             self.assertTrue({name for key in ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups") for name in rule.entry.get(key, "").split("|") if name} <= service_names)
+
+
+class Test3AclExampleTests(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parents[1] / "examples" / "edgeconnect"
+
+    def test_test3_valid_file_plans_against_the_example_dependencies(self):
+        rules = parse_template_acls(str(self.ROOT / "template_acls_test3_valid.csv"))
+        self.assertGreaterEqual(len(rules), 50)
+        self.assertEqual({rule.template_group for rule in rules}, {"test3"})
+        addresses = {row["Name"] for row in parse_address_groups(str(self.ROOT / "address_groups_valid.csv"))}
+        services = {row["Name"] for row in parse_service_groups(str(self.ROOT / "service_groups_valid.csv"))}
+        applications = {item.name for item in parse_application_definitions(str(self.ROOT / "application_definitions_valid.csv"))}
+        groups = {row["Name"] for row in parse_application_groups(str(self.ROOT / "application_groups_valid.csv"))}
+        plan = plan_template_acls(rules, [acl_group("test3")], {"test3": ["acls"]}, {}, applications, groups, addresses, services, {"Default": 0, "TEST5": 1, "TEST6": 2})
+        self.assertTrue(plan["groups"][0]["eligible"], plan["groups"][0]["errors"])
+        self.assertEqual(len(plan["groups"][0]["additions"]), len(rules))
+
+    def test_test3_invalid_file_reports_the_expected_rule_for_every_row(self):
+        with open(self.ROOT / "template_acls_test3_invalid.csv", encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        with self.assertRaises(ValidationError) as caught:
+            parse_template_acls(str(self.ROOT / "template_acls_test3_invalid.csv"))
+        found = {}
+        for issue in caught.exception.issues:
+            found.setdefault(issue["row"], set()).add(issue["rule"])
+        self.assertGreaterEqual(len(rows), 30)
+        for number, row in enumerate(rows, 2):
+            expected = row["Comment"].split()[1].rstrip(":")
+            self.assertIn(expected, found.get(number, set()), row["Comment"])
 
 
 class NativeGroupTests(unittest.TestCase):

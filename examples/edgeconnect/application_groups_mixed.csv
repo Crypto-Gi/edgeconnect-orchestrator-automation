@@ -1,5 +1,5 @@
 "Name","Applications","ParentGroups"
-"Example_Valid_Group","example-valid-app",""
+"test-51-Valid_Group","test-51-valid-app",""
 "Example Empty Group","",""
-"Example_Missing_App","No_Such_Application",""
-"Example_Self_Cycle","","Example_Self_Cycle"
+"test-51-Missing_App","No_Such_Application",""
+"test-51-Self_Cycle","","test-51-Self_Cycle"

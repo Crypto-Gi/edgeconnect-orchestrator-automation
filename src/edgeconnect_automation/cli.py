@@ -669,7 +669,7 @@ def _discover_template_acl_plan(gateway: OrchestratorGateway, csv_path: str) -> 
     selections = {str(group["name"]): gateway.get_template_selection(str(group["name"])) for group in groups}
     associations = gateway.get_template_associations()
     applications = {str(rule.entry["application"]) for rule in rules if rule.entry.get("application")}
-    application_groups = {str(rule.entry["app_group"]) for rule in rules if rule.entry.get("app_group")}
+    application_groups = {str(rule.entry["app_group"]) for rule in rules if rule.entry.get("app_group") and str(rule.entry["app_group"]).lower() != "any"}
     available_apps = _available_applications(gateway, applications)
     available_groups = {name for name in application_groups if _wildcard_has_exact_name(gateway.search_application_group(name), name)}
     uses = {key for rule in rules for key in rule.entry}

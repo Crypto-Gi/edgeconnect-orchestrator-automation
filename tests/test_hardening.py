@@ -168,6 +168,35 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertEqual(len(_native_group_warnings("address", rows, [], b"")), 1)
 
 
+class AclTargetVerificationTests(unittest.TestCase):
+    PLAN = {"associations": ["0.NE"], "touched_acls": ["a"], "candidate_acl_value": {"data": {"a": {"entry": {"1": {"permit": True}}}}}}
+
+    class Gateway:
+        client = type("Client", (), {"config": type("Config", (), {"verification_timeout": 5.0, "poll_interval": 0.0})()})()
+
+        def __init__(self, states):
+            self.states = list(states)
+
+        def get_appliances(self):
+            return [{"nePk": "0.NE"}]
+
+        def get_reachability(self, target):
+            return {"state": self.states.pop(0) if len(self.states) > 1 else self.states[0]}
+
+        def get_appliance_acls(self, target):
+            return {"a": {"1": {"permit": True, "self": 1}}}
+
+    def test_transient_unreachable_reading_is_retried_until_verified(self):
+        from edgeconnect_automation.workflows import _verify_template_acl_targets
+        self.assertEqual(_verify_template_acl_targets(self.Gateway([2, 2, 1]), self.PLAN), {"0.NE": "verified"})
+
+    def test_persistently_unreachable_target_is_reported_unreachable(self):
+        from edgeconnect_automation.workflows import _verify_template_acl_targets
+        gateway = self.Gateway([2])
+        gateway.client.config.verification_timeout = 0.05
+        self.assertEqual(_verify_template_acl_targets(gateway, self.PLAN), {"0.NE": "unreachable"})
+
+
 class PolicyShapeTests(unittest.TestCase):
     def test_empty_segment_pair_policy_with_null_data_is_accepted(self):
         from edgeconnect_automation.gateway import OrchestratorGateway

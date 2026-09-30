@@ -276,7 +276,7 @@ def plan_template_acls(
             application_group = rule.entry.get("app_group")
             if application and application.lower() not in known_applications:
                 errors.append("row {} [DEP-03] missing application {}".format(rule.row, application))
-            if application_group and application_group not in application_groups:
+            if application_group and application_group.lower() != "any" and application_group not in application_groups:
                 errors.append("row {} [DEP-03] missing application group {}".format(rule.row, application_group))
             errors.extend(dependency_errors.get(rule.row, []))
         if baseline is not None and "securityMaps" in selection:
@@ -386,7 +386,7 @@ def plan_template_acls(
         "errors": [],
         "eligible_groups": [plan["template_group"] for plan in plans if plan["eligible"]],
         "application_dependencies": sorted({str(rule.entry["application"]) for rule in rules if rule.entry.get("application")}),
-        "application_group_dependencies": sorted({str(rule.entry["app_group"]) for rule in rules if rule.entry.get("app_group")}),
+        "application_group_dependencies": sorted({str(rule.entry["app_group"]) for rule in rules if rule.entry.get("app_group") and str(rule.entry["app_group"]).lower() != "any"}),
         "address_group_dependencies": sorted({value for rule in rules for key in ("src_addrgrp_groups", "dst_addrgrp_groups", "either_addrgrp_groups") for value in _members(str(rule.entry.get(key, "")))}),
         "service_group_dependencies": sorted({value for rule in rules for key in ("src_srvcgrp_groups", "dst_srvcgrp_groups", "either_srvcgrp_groups") for value in _members(str(rule.entry.get(key, "")))}),
         "segment_dependencies": sorted({segment for rule in rules for segment in rule.segments.values()}),
@@ -404,6 +404,7 @@ def _verify_template_acl_targets(gateway: Any, plan: Mapping[str, Any]) -> Dict[
     deadline = time.monotonic() + getattr(timeout, "verification_timeout", 120.0)
     poll = getattr(timeout, "poll_interval", 5.0)
     pending = set(targets)
+    latest = {target: "unverified" for target in pending}
     while pending and time.monotonic() < deadline:
         for target in list(pending):
             appliance = appliances.get(target, {})
@@ -414,8 +415,7 @@ def _verify_template_acl_targets(gateway: Any, plan: Mapping[str, Any]) -> Dict[
                 pending.remove(target)
                 continue
             if int(reachability.get("state", appliance.get("state", 2))) != 1:
-                results[target] = "unreachable"
-                pending.remove(target)
+                latest[target] = "unreachable"
                 continue
             try:
                 actual = gateway.get_appliance_acls(target)
@@ -433,7 +433,7 @@ def _verify_template_acl_targets(gateway: Any, plan: Mapping[str, Any]) -> Dict[
         if pending:
             time.sleep(poll)
     for target in pending:
-        results[target] = "unverified"
+        results[target] = latest[target]
     return results
 
 

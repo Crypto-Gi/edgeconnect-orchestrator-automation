@@ -1,4 +1,4 @@
 "Name","Applications","ParentGroups"
-"Example_Simple_Apps","example-icmp,example-tcp-8443,example-udp-5060,example-domain,example-multi-domain",""
-"Example_Compound_Apps","example-compound-sd,example-compound-either",""
-"Example_All_Apps","","Example_Simple_Apps,Example_Compound_Apps"
+"test-51-Simple_Apps","test-51-icmp,test-51-tcp-8443,test-51-udp-5060,test-51-domain,test-51-multi-domain",""
+"test-51-Compound_Apps","test-51-compound-sd,test-51-compound-either",""
+"test-51-All_Apps","","test-51-Simple_Apps,test-51-Compound_Apps"
