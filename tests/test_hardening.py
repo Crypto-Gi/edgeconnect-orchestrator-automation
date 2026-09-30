@@ -168,6 +168,24 @@ class WorkflowHardeningTests(unittest.TestCase):
         self.assertEqual(len(_native_group_warnings("address", rows, [], b"")), 1)
 
 
+class PolicyShapeTests(unittest.TestCase):
+    def test_empty_segment_pair_policy_with_null_data_is_accepted(self):
+        from edgeconnect_automation.gateway import OrchestratorGateway
+
+        class Client:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self, path, query=None):
+                return copy.deepcopy(self.value)
+
+        empty = {"data": None, "settings": {"map1": {"logging": {"imp_fw_drop": "2"}}}, "options": {"merge": False, "templateApply": False}}
+        self.assertEqual(OrchestratorGateway(Client(empty)).get_policy("0_1")["data"], {"map1": {}})
+        for broken in ({"data": []}, {"data": {"map1": []}}, {"data": {}, "options": []}, []):
+            with self.assertRaises(ResponseFormatError):
+                OrchestratorGateway(Client(broken)).get_policy("0_1")
+
+
 class BlockedPlanReportTests(unittest.TestCase):
     def test_blocked_firewall_deploy_still_writes_report(self):
         with tempfile.TemporaryDirectory() as directory:

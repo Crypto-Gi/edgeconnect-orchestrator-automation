@@ -113,7 +113,12 @@ class OrchestratorGateway:
 
     def get_policy(self, segment_map: str) -> Mapping[str, Any]:
         value = self.client.get("/vrf/config/securityPolicies", {"map": segment_map})
-        if not isinstance(value, dict) or not isinstance(value.get("data", {}), dict) or not isinstance(value.get("data", {}).get("map1", {}), dict) or not isinstance(value.get("options") or {}, dict):
+        if isinstance(value, dict):
+            if value.get("data") is None:
+                value["data"] = {}
+            if isinstance(value["data"], dict) and value["data"].get("map1") is None:
+                value["data"]["map1"] = {}
+        if not isinstance(value, dict) or not isinstance(value.get("data", {}), dict) or not isinstance(value.get("data", {}).get("map1", {}), dict) or not isinstance(value.get("options", {}) if value.get("options") is not None else {}, dict):
             raise ResponseFormatError("security policy response for map {} has an invalid shape".format(segment_map))
         return value
 

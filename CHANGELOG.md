@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 — 2026-09-29
+
+- Fixed a 1.2.0 regression: deletion reference checks, and any other workflow that reads every segment pair, failed with `security policy response for map X has an invalid shape` when a segment pair had no firewall policy. Orchestrator returns `"data": null` for such pairs; it is now read as an empty policy, while genuinely malformed responses are still rejected.
+
 ## 1.2.0 — 2026-09-29
 
 ### Template ACL parity
