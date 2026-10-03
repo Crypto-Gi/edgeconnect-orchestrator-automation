@@ -110,6 +110,13 @@ class ClientTests(unittest.TestCase):
 
 
 class ConfigAndCliTests(unittest.TestCase):
+    def setUp(self):
+        workdir = tempfile.TemporaryDirectory()
+        previous = os.getcwd()
+        os.chdir(workdir.name)
+        self.addCleanup(workdir.cleanup)
+        self.addCleanup(os.chdir, previous)
+
     def test_config_aliases_and_https(self):
         config = load_config(environ={"EC_BASE_URL": "https://unit.invalid", "EC_API_KEY": "secret"})
         self.assertEqual(config.base_url, "https://unit.invalid/gms/rest")
@@ -139,6 +146,51 @@ class ConfigAndCliTests(unittest.TestCase):
                 self.assertEqual(environment.api_key, "environment-key")
             finally:
                 os.chdir(previous)
+
+    def test_named_orchestrator_profiles_selection_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dotenv = Path(directory) / "multi.env"
+            base = (
+                "orch_1=prod\norch_2=Test\nORCH_3=half\n"
+                "prod_base_url=https://prod.invalid\nprod_api_key=prod-key\n"
+                "TEST_BASE_URL=https://test.invalid\ntest_api_key=test-key\n"
+                "half_base_url=https://half.invalid\n"
+            )
+            dotenv.write_text(base, encoding="utf-8")
+            path = str(dotenv)
+            refuse = lambda _: self.fail("must not prompt")
+            self.assertEqual(load_config(path, environ={}, orchestrator="TEST", prompt=refuse).api_key, "test-key")
+            self.assertEqual(load_config(path, environ={}, orchestrator="orch_1", prompt=refuse).name, "prod")
+            with self.assertRaisesRegex(ConfigurationError, "prod, test, half"):
+                load_config(path, environ={}, interactive=False)
+            chosen = load_config(path, environ={}, interactive=True, prompt=lambda _: "2")
+            self.assertEqual((chosen.name, chosen.base_url), ("test", "https://test.invalid/gms/rest"))
+            self.assertEqual(load_config(path, environ={}, interactive=True, prompt=lambda _: "prod").name, "prod")
+            with self.assertRaisesRegex(ConfigurationError, "unknown Orchestrator choice"):
+                load_config(path, environ={}, interactive=True, prompt=lambda _: "9")
+            with self.assertRaisesRegex(ConfigurationError, "half_api_key"):
+                load_config(path, environ={}, orchestrator="half")
+            with self.assertRaisesRegex(ConfigurationError, "unknown Orchestrator 'nope'"):
+                load_config(path, environ={}, orchestrator="nope")
+            for default in ("prod", "orch_1"):
+                dotenv.write_text(base + "orch_default={}\n".format(default), encoding="utf-8")
+                self.assertEqual(load_config(path, environ={}, prompt=refuse).name, "prod")
+                self.assertEqual(load_config(path, environ={}, orchestrator="test", prompt=refuse).name, "test")
+            self.assertEqual(load_config(path, environ={"ORCH_DEFAULT": "test", "TEST_API_KEY": "env-key"}, prompt=refuse).api_key, "env-key")
+            for bad in ("orch_4=prod\n", "orch_4=default\n", "orch_4=bad-name\n"):
+                dotenv.write_text(base + bad, encoding="utf-8")
+                with self.assertRaises(ConfigurationError):
+                    load_config(path, environ={}, orchestrator="prod")
+        self.assertEqual(load_config(environ={"orch_1": "only", "only_base_url": "https://only.invalid", "only_api_key": "k"}, prompt=refuse).name, "only")
+        legacy_and_named = {"orchestrator_base_url": "https://old.invalid", "orchestrator_api_key": "old", "orch_1": "ge", "ge_base_url": "https://ge.invalid", "ge_api_key": "g"}
+        with self.assertRaisesRegex(ConfigurationError, "ge, orchestrator"):
+            load_config(environ=legacy_and_named, interactive=False)
+        self.assertEqual(load_config(environ=legacy_and_named, orchestrator="orchestrator").api_key, "old")
+        self.assertEqual(load_config(environ=legacy_and_named, interactive=True, prompt=lambda _: "1").name, "ge")
+        with self.assertRaisesRegex(ConfigurationError, "orch_x=semir: Orchestrator slots must be numbered, for example orch_2=semir with semir_base_url"):
+            load_config(environ=dict(legacy_and_named, orch_x="semir"))
+        with self.assertRaisesRegex(ConfigurationError, "no named Orchestrators"):
+            load_config(environ={"EC_BASE_URL": "https://unit.invalid", "EC_API_KEY": "secret"}, orchestrator="lab")
 
     def test_default_dotenv_does_not_search_parent_directories(self):
         with tempfile.TemporaryDirectory() as directory:

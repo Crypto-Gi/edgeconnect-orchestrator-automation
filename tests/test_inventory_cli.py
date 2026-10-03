@@ -7,10 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _application_names, _approve_template_acls, _available_applications, _discover_inventory, main
+from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _application_names, _approve_template_acls, _available_applications, _discover_inventory, _discover_template_acl_delete_plan, _template_acl_external_references, main
 from edgeconnect_automation.errors import ApprovalError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
-from edgeconnect_automation.workflows import ACL_HEADERS as TEMPLATE_ACL_HEADERS, APP_DEF_HEADERS
+from edgeconnect_automation.models import Inventory
+from edgeconnect_automation.workflows import ACL_HEADERS as TEMPLATE_ACL_HEADERS, APP_DEF_HEADERS, parse_template_acls
 
 
 HEADERS = "rule_key,rule_name,description,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,source_address,source_address_group,destination_address,destination_address_group,either_address,either_address_group,application,application_group,protocol,source_port,destination_port,either_port,source_service_group,destination_service_group,either_service_group,action,logging,logging_level,broad_match_ack"
@@ -225,6 +226,7 @@ class TemplateAclGateway:
         self.selections = {"Default Template Group": []}
         self.associations = {"0.NE": ["Default Template Group"]}
         self.posts = []
+        self.appliance_acls = {"0.NE": {}}
 
     def get_template_groups(self):
         return copy.deepcopy(list(self.groups.values()))
@@ -264,6 +266,19 @@ class TemplateAclGateway:
 
     def get_actions(self, start, end):
         return []
+
+    def get_reachability(self, target):
+        return {"state": 1}
+
+    def get_appliance_acls(self, target):
+        return copy.deepcopy(self.appliance_acls[target])
+
+    def get_appliance_acl_details(self, target):
+        return {name: {"entry": copy.deepcopy(entries), "rmap": {}} for name, entries in self.appliance_acls[target].items()}
+
+    def delete_appliance_acl(self, target, name):
+        self.posts.append(("delete-appliance-acl", target, name))
+        self.appliance_acls[target].pop(name, None)
 
 
 class DeployCliTests(unittest.TestCase):
@@ -312,6 +327,14 @@ class DeployCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(gateway.posts, 0)
 
+    def test_invalid_firewall_csv_never_offers_to_create_missing_zones(self):
+        invalid = Path(self.directory.name) / "invalid-missing-zone.csv"
+        invalid.write_text(HEADERS + "\n" + ROW.replace("INSIDE,OUTSIDE", "MISSING,OUTSIDE").replace(",tcp,", ",sctp,") + "\n", encoding="utf-8")
+        inventory = Inventory(segments={"Default": 0}, zones={("Default", "OUTSIDE"): 2}, policies={("Default", "Default"): baseline()}, statuses={"all": "complete"}, segmentation_enabled=True)
+        with patch("edgeconnect_automation.cli._gateway", return_value=object()), patch("edgeconnect_automation.cli._discover_inventory", return_value=inventory), patch("edgeconnect_automation.cli._handle_firewall_missing_zones") as missing_zones:
+            self.assertEqual(main(["firewall", "deploy", "--csv", str(invalid), "--dry-run"]), 2)
+        missing_zones.assert_not_called()
+
     def test_template_acl_creation_requires_exact_group_name_then_apply(self):
         dry_gateway = TemplateAclGateway()
         with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway), patch("sys.stdin.isatty", return_value=False):
@@ -328,6 +351,102 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["template-acls", "deploy", "--csv", str(self.template_acl_csv)]), 0)
         self.assertEqual(gateway.posts, [("create", "new-group"), ("select", "new-group")])
         self.assertNotIn("new-group", gateway.associations.get("0.NE", []))
+
+    def test_template_acl_delete_dry_run_and_confirmed_apply_preserve_group(self):
+        rule = parse_template_acls(str(self.template_acl_csv))[0]
+
+        def gateway():
+            value = TemplateAclGateway()
+            value.groups["new-group"] = {
+                "name": "new-group",
+                "selectedTemplateNames": ["acls", "hostname"],
+                "templates": [
+                    {"name": "acls", "value": {"data": {"new-acl": {"entry": {"1000": copy.deepcopy(rule.entry)}}, "keep": {"entry": {"9000": {"permit": False}}}}, "options": {"merge": True, "delDependent": True}}},
+                    {"name": "hostname", "value": {"hostname": "unchanged"}},
+                ],
+            }
+            value.selections["new-group"] = ["acls", "hostname"]
+            value.associations["0.NE"].append("new-group")
+            value.appliance_acls["0.NE"] = {"new-acl": {"1000": copy.deepcopy(rule.entry)}, "keep": {"9000": {"permit": False}}}
+            return value
+
+        dry_gateway = gateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway), patch("edgeconnect_automation.cli._template_acl_external_references", return_value=[]):
+            self.assertEqual(main(["template-acls", "delete", "--csv", str(self.template_acl_csv), "--dry-run"]), 0)
+        self.assertFalse(dry_gateway.posts)
+
+        apply_gateway = gateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=apply_gateway), patch("edgeconnect_automation.cli._template_acl_external_references", return_value=[]), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["template-acls", "delete", "--csv", str(self.template_acl_csv)]), 0)
+        self.assertEqual(apply_gateway.posts, [("update", "new-group"), ("delete-appliance-acl", "0.NE", "new-acl")])
+        self.assertIn("new-group", apply_gateway.groups)
+        self.assertIn("new-group", apply_gateway.associations["0.NE"])
+        self.assertNotIn("new-acl", apply_gateway.appliance_acls["0.NE"])
+        self.assertIn("keep", apply_gateway.appliance_acls["0.NE"])
+        self.assertEqual(apply_gateway.selections["new-group"], ["acls", "hostname"])
+        data = apply_gateway.groups["new-group"]["templates"][0]["value"]["data"]
+        self.assertNotIn("new-acl", data)
+        self.assertIn("keep", data)
+        self.assertEqual(apply_gateway.groups["new-group"]["templates"][1]["value"], {"hostname": "unchanged"})
+
+    def test_template_acl_deploy_reports_entries_the_appliance_rejects(self):
+        class Rejecting(TemplateAclGateway):
+            def post_template_group(self, name, value):
+                super().post_template_group(name, value)
+                for acl, body in value["templates"][0]["valObject"]["data"].items():
+                    self.appliance_acls["0.NE"][acl] = copy.deepcopy(body["entry"])
+
+            def policy_compile_alarms(self, targets, since_ms, priorities):
+                self.alarm_query = (list(targets), sorted(int(priority) for priority in priorities))
+                return {"0.NE": [1000]}
+
+        gateway = Rejecting()
+        gateway.groups["new-group"] = {"name": "new-group", "selectedTemplateNames": ["acls"], "templates": [{"name": "acls", "value": {"data": {}, "options": {"merge": True, "delDependent": True}}}]}
+        gateway.selections["new-group"] = ["acls"]
+        gateway.associations["0.NE"].append("new-group")
+        stderr = io.StringIO()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=["APPLY"]), patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", stderr):
+            self.assertEqual(main(["--report-dir", "", "template-acls", "deploy", "--csv", str(self.template_acl_csv)]), 5)
+        self.assertEqual(gateway.alarm_query, (["0.NE"], [1000]))
+        text = stderr.getvalue()
+        self.assertIn("FAILED", text)
+        self.assertIn("appliance 0.NE rejected this rule with 'ACL rule has invalid syntax'", text)
+        self.assertIn("Rows marked FAILED were rejected by the appliance", text)
+
+    def test_template_acl_delete_recovers_centrally_absent_appliance_orphan(self):
+        rule = parse_template_acls(str(self.template_acl_csv))[0]
+        gateway = TemplateAclGateway()
+        gateway.groups["new-group"] = {"name": "new-group", "selectedTemplateNames": ["acls"], "templates": [{"name": "acls", "value": {"data": {"keep": {"entry": {"9000": {"permit": False}}}}, "options": {"merge": True, "delDependent": True}}}]}
+        gateway.selections["new-group"] = ["acls"]
+        gateway.associations["0.NE"].append("new-group")
+        gateway.appliance_acls["0.NE"] = {"new-acl": {"1000": copy.deepcopy(rule.entry)}, "keep": {"9000": {"permit": False}}}
+        group = _discover_template_acl_delete_plan(gateway, str(self.template_acl_csv))["groups"][0]
+        self.assertTrue(group["eligible"], group["errors"])
+        self.assertEqual(group["appliance_only_deletions"], [{"target": "0.NE", "acl": "new-acl"}])
+        self.assertEqual(group["deleted_acls"], ["new-acl"])
+
+    def test_template_acl_delete_checks_firewall_route_map_and_unreachable_references(self):
+        class Gateway:
+            def get_segments(self):
+                return {"0": {"id": 0, "name": "Default"}}
+
+            def get_policy(self, segment_map):
+                return {"data": {"map1": {"1_2": {"prio": {"100": {"match": {"acl": "new-acl"}}}}}}}
+
+            def get_template_groups(self):
+                return []
+
+            def get_reachability(self, target):
+                return {"state": 1 if target == "0.NE" else 2}
+
+            def get_appliance_acl_details(self, target):
+                return {"new-acl": {"entry": {}, "rmap": {"route-map-1": {"prio": 10}}}}
+
+        plan = {"groups": [{"deleted_acls": ["new-acl"], "associations": ["0.NE", "1.NE"]}]}
+        references = _template_acl_external_references(Gateway(), plan)
+        self.assertTrue(any("global firewall" in item for item in references))
+        self.assertTrue(any("route-map-1" in item for item in references))
+        self.assertTrue(any("unreachable associated appliance 1.NE" in item for item in references))
 
     def test_auto_priority_requires_resolved_csv(self):
         auto_csv = Path(self.directory.name) / "auto.csv"
@@ -461,6 +580,29 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["address-groups", "delete", "--csv", str(self.address_csv)]), 0)
         self.assertFalse(apply_gateway.values)
 
+    def test_service_group_delete_dry_run_and_confirmed_apply(self):
+        service_csv = Path(self.directory.name) / "service.csv"
+        service_csv.write_text("Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment\nweb,TCP,443,,,,,,\n", encoding="utf-8")
+
+        class Gateway(NoReferences):
+            def __init__(self):
+                self.values = [{"name": "web", "type": None, "rules": [{"protocol": "TCP", "includedPorts": ["443"], "excludedPorts": [], "includedGroups": [], "excludedGroups": [], "icmpTypes": [], "icmpCodes": [], "comment": None}]}]
+
+            def get_service_groups(self):
+                return copy.deepcopy(self.values)
+
+            def delete_service_group(self, name):
+                self.values = [value for value in self.values if value["name"] != name]
+
+        dry_gateway = Gateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway):
+            self.assertEqual(main(["service-groups", "delete", "--csv", str(service_csv), "--dry-run"]), 0)
+        self.assertTrue(dry_gateway.values)
+        apply_gateway = Gateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=apply_gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["service-groups", "delete", "--csv", str(service_csv)]), 0)
+        self.assertFalse(apply_gateway.values)
+
     def test_address_group_delete_blocked_by_template_acl_group_list(self):
         gateway = BulkDeployGateway()
         gateway.values = [{"name": "new", "type": None, "rules": [{"includedIPs": ["10.0.0.0/24"], "excludedIPs": [], "includedGroups": [], "comment": None}]}]
@@ -482,6 +624,19 @@ class DeployCliTests(unittest.TestCase):
         rule = parse_firewall_text(HEADERS + "\n" + ROW)[0]
         policy = baseline()
         policy["data"]["map1"] = {"1_2": {"prio": {"20000": rule_payload(rule)}}}
+        gateway = DeployGateway(policy)
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
+        self.assertNotIn("1_2", gateway.policy["data"]["map1"])
+
+    def test_firewall_delete_matches_a_live_rule_written_without_prefix(self):
+        bare = ROW.replace("10.0.0.0/24", "10.0.0.1")
+        self.csv.write_text(HEADERS + "\n" + bare + "\n", encoding="utf-8")
+        rule = parse_firewall_text(HEADERS + "\n" + bare)[0]
+        live = rule_payload(rule)
+        live["match"]["src_ip"] = "10.0.0.1"
+        policy = baseline()
+        policy["data"]["map1"] = {"1_2": {"prio": {"20000": live}}}
         gateway = DeployGateway(policy)
         with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
             self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)

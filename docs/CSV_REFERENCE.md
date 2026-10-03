@@ -65,6 +65,7 @@ Different families may use different modes. For example `destination_address` wi
 Policy IP values (firewall and template ACL) accept:
 
 - IPv4 addresses, prefixes (`10.0.0.0/24`), dotted masks (`10.0.0.0/255.255.0.0`), and `0.0.0.0/0`.
+- A single address is sent as `/32` (IPv6 `/128`) and a dotted mask as a prefix length (`10.0.0.0/255.255.0.0` becomes `10.0.0.0/16`), with warning `FW-33` / `ACL-29`. Appliances (9.6.4) reject the unconverted forms with the alarm "ACL rule has invalid syntax" even though Orchestrator stores them and its audit log reports success; one such value in a list rejects the whole rule. Prefer writing `/32` and prefix lengths in the CSV.
 - Octet ranges and whole-octet wildcards such as `10.10.10.10-20`, `10.10.10.*`, and `10.136-137.*.64-95`.
 - IPv6 addresses and prefixes, plus eight-group IPv6 wildcard or range forms such as `2001:db8:*:*:*:*:*:*`.
 - Range or wildcard combined with a mask (`192.168.0.1-127/24`) is accepted with a warning. The GUI stores it, but vendor documentation lists it as unsupported for policies.

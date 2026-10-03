@@ -1,7 +1,7 @@
 import copy
 import json
 import time
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from .client import ApiClient
 from .errors import ResponseFormatError, ValidationError
@@ -102,14 +102,20 @@ class OrchestratorGateway:
                     })
         return result
 
+    def get_appliance_acl_details(self, nepk: str) -> Dict[str, Any]:
+        return self._shape(self.client.get("/acls", {"nePk": nepk, "cached": "false"}), dict, "appliance ACLs")
+
     def get_appliance_acls(self, nepk: str) -> Dict[str, Any]:
-        value = self._shape(self.client.get("/acls", {"nePk": nepk, "cached": "false"}), dict, "appliance ACLs")
+        value = self.get_appliance_acl_details(nepk)
         result = {}
         for name, body in value.items():
             if not isinstance(body, dict) or not isinstance(body.get("entry", {}), dict):
                 raise ResponseFormatError("appliance ACL {} has an invalid entry collection".format(name))
             result[str(name)] = normalize_acl_entries(body.get("entry", {}))
         return result
+
+    def delete_appliance_acl(self, nepk: str, name: str) -> None:
+        self.client.request("DELETE", "/appliance/rest", query={"nePk": nepk, "url": "acls/" + name}, expected_status=(200, 204), expect_json=False)
 
     def get_policy(self, segment_map: str) -> Mapping[str, Any]:
         value = self.client.get("/vrf/config/securityPolicies", {"map": segment_map})
@@ -159,6 +165,31 @@ class OrchestratorGateway:
                 time.sleep(getattr(getattr(self.client, "config", None), "poll_interval", 5.0))
         for target in pending:
             results[target] = latest[target]
+        return results
+
+    def verify_rules_absent(self, removed: Sequence[Mapping[str, Any]]) -> Dict[str, str]:
+        """Poll reachable appliances until every deleted (zone pair, priority) is gone from their security map."""
+        results = {target: state for target, state in self.targets.items() if state != "reachable"}
+        pending = {target for target, state in self.targets.items() if state == "reachable"}
+        latest = {target: "unverified" for target in pending}
+        config = getattr(self.client, "config", None)
+        deadline = time.monotonic() + getattr(config, "verification_timeout", 120.0)
+        while pending and time.monotonic() < deadline:
+            for target in list(pending):
+                try:
+                    value = self.client.get("/securityMaps", {"nePk": target, "cached": "false"})
+                except Exception:
+                    continue
+                maps = value.get("data", {}).get("map1", value.get("map1", {})) if isinstance(value, dict) else {}
+                left = sorted(str(item["priority"]) for item in removed if str(item["priority"]) in (maps.get(item["zone_key"]) or {}).get("prio", {}))
+                if left:
+                    latest[target] = "still_present:" + ",".join(left)
+                else:
+                    results[target] = "verified"
+                    pending.remove(target)
+            if pending:
+                time.sleep(getattr(config, "poll_interval", 5.0))
+        results.update({target: latest[target] for target in pending})
         return results
 
     @staticmethod
@@ -305,6 +336,36 @@ class OrchestratorGateway:
     def get_actions(self, start_time: int, end_time: int) -> Any:
         return self.client.get("/action", {"startTime": start_time, "endTime": end_time})
 
+    POLICY_ALARM_SOURCE = "/policyEngine/acl/"
+
+    def policy_compile_alarms(self, targets: Iterable[str], since_ms: int, priorities: Iterable[Any]) -> Dict[str, List[int]]:
+        """Appliance alarms 'ACL rule has invalid syntax' raised after since_ms for the given rule/entry priorities.
+
+        Orchestrator and the appliance both store a rule the appliance policy engine cannot compile; the only
+        signal is this read-only alarm, keyed by priority. Polls for alarm_wait seconds because the alarm
+        appears some seconds after the configuration converges.
+        """
+        targets = sorted(set(targets))
+        wanted = {int(priority) for priority in priorities}
+        found: Dict[str, Set[int]] = {}
+        if not targets or not wanted:
+            return {}
+        config = getattr(self.client, "config", None)
+        deadline = time.monotonic() + getattr(config, "alarm_wait", 30.0)
+        # ponytail: alarms carry only the appliance timestamp; a 60 s skew allowance plus the priority filter limits misattribution.
+        query = {"view": "active", "maxAlarms": 10000, "from": since_ms - 60000}
+        while True:
+            alarms = self.client.request("POST", "/alarm/appliance", query=query, json_body={"nePks": targets}, expected_status=(200,), expect_json=True)
+            for alarm in alarms if isinstance(alarms, list) else []:
+                source = str(alarm.get("source", ""))
+                if source.startswith(self.POLICY_ALARM_SOURCE) and source[len(self.POLICY_ALARM_SOURCE):].isdigit():
+                    priority = int(source[len(self.POLICY_ALARM_SOURCE):])
+                    if priority in wanted and str(alarm.get("applianceId")) in targets:
+                        found.setdefault(str(alarm["applianceId"]), set()).add(priority)
+            if time.monotonic() >= deadline:
+                return {target: sorted(values) for target, values in found.items()}
+            time.sleep(getattr(config, "poll_interval", 5.0))
+
     def correlate_audit(self, segment_map: str, run_reference: str) -> bool:
         start_time = int(time.time() * 1000) - 300000
         deadline = time.monotonic() + getattr(getattr(self.client, "config", None), "verification_timeout", 120.0)
@@ -317,3 +378,24 @@ class OrchestratorGateway:
                         return action.get("taskStatus") == "COMPLETED" and action.get("completionStatus") is True
             time.sleep(getattr(getattr(self.client, "config", None), "poll_interval", 5.0))
         return False
+
+
+def appliance_rejections(gateway: Any, targets: Dict[str, str], since_ms: int, priorities: Sequence[Any]) -> str:
+    """Mark verified targets whose policy engine refused rules written in this run; return a summary message.
+
+    Orchestrator and the appliance both store a rule the appliance cannot compile, so readback verification
+    passes. The only signal is the appliance alarm 'ACL rule has invalid syntax' keyed by priority.
+    """
+    verified = [target for target, status in targets.items() if status == "verified"]
+    if not verified or not priorities or not hasattr(gateway, "policy_compile_alarms"):
+        return ""
+    try:
+        rejected = gateway.policy_compile_alarms(verified, since_ms, priorities)
+    except Exception as error:
+        targets.update({target: "alarm_check_failed" for target in verified})
+        return "appliance alarm check failed ({}); confirm on the appliances that no 'ACL rule has invalid syntax' alarm was raised".format(error)
+    targets.update({target: "rejected:" + ",".join(map(str, values)) for target, values in rejected.items()})
+    if not rejected:
+        return ""
+    return "appliance policy engine rejected {} with 'ACL rule has invalid syntax'; the configuration is stored but not enforced".format(
+        "; ".join("{} priorities {}".format(target, ",".join(map(str, values))) for target, values in sorted(rejected.items())))

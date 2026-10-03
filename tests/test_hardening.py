@@ -12,7 +12,7 @@ from edgeconnect_automation.cli import _discover_inventory, main
 from edgeconnect_automation.errors import ResponseFormatError, ValidationError
 from edgeconnect_automation.firewall import FIREWALL_HEADERS, _policy_rules, build_firewall_plan, parse_firewall_document, rule_payload
 from edgeconnect_automation.models import Inventory
-from edgeconnect_automation.validation import Issues, members, policy_ip, valid_domain, valid_protocol
+from edgeconnect_automation.validation import Issues, canonical_policy_ip, members, policy_ip, valid_domain, valid_protocol
 from edgeconnect_automation.workflows import _native_group_warnings, parse_application_groups, parse_template_acls, plan_application_groups
 from tests.test_inventory_cli import InventoryGateway
 from tests import test_workflows
@@ -69,13 +69,29 @@ class FirewallHardeningTests(unittest.TestCase):
         return Inventory(segments={"Default": 0}, zones={("Default", "INSIDE"): 1, ("Default", "OUTSIDE"): 2}, policies={("Default", "Default"): policy}, statuses={"x": "complete"}, local_priorities=local or {})
 
     def test_list_members_are_normalized_in_payload(self):
-        self.assertEqual(payload(source_address=" 10.0.0.1 | 10.0.0.2 ", protocol="tcp", destination_port="80 | 443")[1], [{"src_ip": "10.0.0.1|10.0.0.2", "protocol": "tcp", "dst_port": "80|443"}])
+        self.assertEqual(payload(source_address=" 10.0.0.1/32 | 10.0.0.2/32 ", protocol="tcp", destination_port="80 | 443")[1], [{"src_ip": "10.0.0.1/32|10.0.0.2/32", "protocol": "tcp", "dst_port": "80|443"}])
 
     def test_reordered_lists_are_a_no_op_not_a_conflict(self):
-        document = parse_firewall_document(firewall_text({"priority": "41000", "source_address": "10.0.0.2|10.0.0.1"}))
-        existing = dict(rule_payload(document.rules[0]), match={"src_ip": "10.0.0.1|10.0.0.2"})
+        document = parse_firewall_document(firewall_text({"priority": "41000", "source_address": "10.0.0.2/32|10.0.0.1/32"}))
+        existing = dict(rule_payload(document.rules[0]), match={"src_ip": "10.0.0.1/32|10.0.0.2/32"})
         plan = build_firewall_plan(document.rules, self.inventory({"41000": existing}))
         self.assertEqual((plan.pairs[0].errors, plan.pairs[0].no_op_rows), ([], [2]))
+
+    def test_addresses_are_written_the_way_appliances_accept_them(self):
+        cases = {"10.0.0.1": "10.0.0.1/32", "10.1.0.0/255.255.0.0": "10.1.0.0/16", "2001:db8::1": "2001:db8::1/128",
+                 "10.0.0.0/24": "10.0.0.0/24", "10.0.0.1/32": "10.0.0.1/32", "2001:db8::/32": "2001:db8::/32", "10.0.0.10-20": "10.0.0.10-20", "10.20.*.*": "10.20.*.*"}
+        for value, expected in cases.items():
+            self.assertEqual(canonical_policy_ip(value), expected, value)
+        document = parse_firewall_document(firewall_text({"priority": "1", "source_address": "198.18.0.5|198.18.0.6/32", "destination_address": "198.18.1.0/255.255.255.0"}))
+        self.assertEqual(rule_payload(document.rules[0])["match"], {"src_ip": "198.18.0.5/32|198.18.0.6/32", "dst_ip": "198.18.1.0/24"})
+        self.assertEqual(sum("[FW-33]" in warning for warning in document.warnings), 2)
+
+    def test_existing_rule_without_prefix_is_named_as_the_rejected_form(self):
+        document = parse_firewall_document(firewall_text({"priority": "41000", "source_address": "10.0.0.1"}))
+        existing = dict(rule_payload(document.rules[0]), match={"src_ip": "10.0.0.1"})
+        plan = build_firewall_plan(document.rules, self.inventory({"41000": existing}))
+        self.assertIn("[FW-34]", " ".join(plan.pairs[0].errors))
+        self.assertNotIn("[FW-24]", " ".join(plan.pairs[0].errors))
 
     def test_duplicate_rule_key_is_caught_by_validate(self):
         document = parse_firewall_document(firewall_text({"priority": "1", "source_address": "10.0.0.1"}, {"priority": "2", "source_address": "10.0.0.2"}))
@@ -189,6 +205,19 @@ class AclTargetVerificationTests(unittest.TestCase):
     def test_transient_unreachable_reading_is_retried_until_verified(self):
         from edgeconnect_automation.workflows import _verify_template_acl_targets
         self.assertEqual(_verify_template_acl_targets(self.Gateway([2, 2, 1]), self.PLAN), {"0.NE": "verified"})
+
+    def test_deleted_acl_must_be_absent_on_the_appliance(self):
+        from edgeconnect_automation.workflows import _verify_template_acl_targets
+
+        class Gateway(self.Gateway):
+            def get_appliance_acls(self, target):
+                return {}
+
+        plan = {"associations": ["0.NE"], "touched_acls": ["a"], "deleted_acls": ["a"], "candidate_acl_value": {"data": {}}}
+        self.assertEqual(_verify_template_acl_targets(Gateway([1]), plan), {"0.NE": "verified"})
+        still_present = self.Gateway([1])
+        still_present.client.config.verification_timeout = 0.01
+        self.assertEqual(_verify_template_acl_targets(still_present, plan), {"0.NE": "acl_still_present:a"})
 
     def test_persistently_unreachable_target_is_reported_unreachable(self):
         from edgeconnect_automation.workflows import _verify_template_acl_targets

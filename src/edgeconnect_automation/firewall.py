@@ -3,15 +3,17 @@ import csv
 import io
 import os
 import re
+import time
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .errors import DriftError, ResponseFormatError, ValidationError
+from .gateway import appliance_rejections
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan, PairResult, RunResult, ScopeKey
 from .util import fingerprint, normalize_acl_entries, semantic_equal, split_values
-from .validation import PORT_PROTOCOLS, Issues, check_families, check_ip_duplicates, check_ports, control_characters, members, policy_ip, valid_domain, valid_protocol
+from .validation import PORT_PROTOCOLS, Issues, canonical_ip_fields, canonical_ip_values, canonical_note, check_families, check_ip_duplicates, check_ports, control_characters, members, policy_ip, valid_domain, valid_protocol
 
 
 FAMILIES = (
@@ -166,6 +168,7 @@ def _parse_rule(number: int, row: Mapping[str, str], issues: Issues, warnings: I
             else:
                 if warning:
                     warnings.add("FW-12", warning, number, name, value)
+        lists[name] = canonical_ip_values(lists[name], lambda value, canonical: warnings.add("FW-33", canonical_note(value, canonical), number, name, value))
     for name in FAMILIES[2]:
         check_ports(lists[name], issues, number, name)
     for name in FAMILIES[4]:
@@ -256,6 +259,14 @@ def normalize_rule(value: Mapping[str, Any], appliance: bool = False) -> Dict[st
     return result
 
 
+def canonical_rule(value: Mapping[str, Any]) -> Dict[str, Any]:
+    """The rule with every address written as the appliance accepts it (see canonical_policy_ip)."""
+    result = copy.deepcopy(dict(value))
+    if isinstance(result.get("match"), dict):
+        result["match"] = canonical_ip_fields(result["match"])
+    return result
+
+
 def is_catchall(value: Mapping[str, Any]) -> bool:
     return not value.get("match") and value.get("set", {}).get("action") in {"allow", "deny"}
 
@@ -297,7 +308,7 @@ def _resolve_acl_dependencies(names: Iterable[str], inventory: Inventory, errors
         occurrences = list(inventory.acls.get(name, []))
         usable = [item for item in occurrences if item.get("selected") is True and item.get("entries")]
         if not usable:
-            errors.append("missing central ACL {} in a selected Access Lists template with at least one entry".format(name))
+            errors.append("[FW-28] missing central ACL {} in a selected Access Lists template with at least one entry; fix: deploy the template ACL first (template-acls deploy) or correct the acl column".format(name))
             continue
         definitions: Dict[str, Mapping[str, Any]] = {}
         for occurrence in usable:
@@ -305,7 +316,7 @@ def _resolve_acl_dependencies(names: Iterable[str], inventory: Inventory, errors
             definitions.setdefault(fingerprint(entries), entries)
         if len(definitions) != 1:
             groups = sorted(str(item.get("template_group", "")) for item in usable)
-            errors.append("ACL {} has conflicting central definitions in template groups: {}".format(name, ", ".join(groups)))
+            errors.append("[FW-28] ACL {} has conflicting central definitions in template groups: {}; fix: make the definitions identical or rename one".format(name, ", ".join(groups)))
             continue
         dependencies[name] = next(iter(definitions.values()))
         groups = sorted({str(item.get("template_group", "")) for item in usable})
@@ -325,6 +336,24 @@ def _resolve_acl_dependencies(names: Iterable[str], inventory: Inventory, errors
     return dependencies
 
 
+def _zones(rule: FirewallRule) -> str:
+    return "{} -> {}".format(rule.source_zone, rule.destination_zone)
+
+
+def _rule_brief(rule: Mapping[str, Any]) -> str:
+    match = rule.get("match") or {}
+    criteria = ", ".join("{}={}".format(key, value) for key, value in sorted(match.items()) if value not in ("", None)) or "any traffic"
+    state = (rule.get("misc") or {}).get("rule", "enable")
+    return "{} {}, match {}".format((rule.get("set") or {}).get("action", "?"), "disabled" if state == "disable" else "enabled", criteria)
+
+
+def _free_priority(start: int, existing: Mapping[str, Any], reserved: Set[Any], local: Set[int]) -> str:
+    for candidate in range(start + 1, 65535):
+        if str(candidate) not in existing and candidate not in reserved and candidate not in local:
+            return str(candidate)
+    return "none below 65535"
+
+
 def build_firewall_plan(
     rules: Sequence[FirewallRule],
     inventory: Inventory,
@@ -342,10 +371,10 @@ def build_firewall_plan(
         duplicate_keys.setdefault(rule.rule_key, []).append(rule)
     global_errors = list(parse_global_errors)
     if not inventory.segmentation_enabled:
-        global_errors.append("routing segmentation is disabled")
+        global_errors.append("[FW-29] routing segmentation is disabled; fix: enable Routing Segmentation (VRF) in Orchestrator")
     incomplete = sorted(name for name, status in inventory.statuses.items() if status != "complete")
     if incomplete:
-        global_errors.append("required inventories are incomplete: {}".format(", ".join(incomplete)))
+        global_errors.append("[FW-29] required inventories are incomplete: {}; fix: rerun, and check the API account can read them".format(", ".join(incomplete)))
     pair_plans: List[PairPlan] = []
     resolved: List[FirewallRule] = []
     for pair, pair_rules in grouped.items():
@@ -356,18 +385,18 @@ def build_firewall_plan(
         acl_inventory_fingerprint = fingerprint(_acl_snapshot(inventory.acls, acl_names)) if acl_names else ""
         for values in duplicate_keys.values():
             if len(values) > 1 and any(value.pair == pair for value in values):
-                errors.append("duplicate rule_key {}".format(values[0].rule_key))
+                errors.append("[FW-20] duplicate rule_key {} in rows {}; fix: give every row its own rule_key".format(values[0].rule_key, ", ".join(str(value.row) for value in values)))
         source_id = inventory.segments.get(pair[0])
         destination_id = inventory.segments.get(pair[1])
         if source_id is None or destination_id is None:
-            errors.append("unknown segment pair {} -> {}".format(*pair))
+            errors.append("[FW-31] unknown segment pair {} -> {}; fix: use segment names that exist in Routing Segmentation".format(*pair))
             segment_map = "unresolved"
         else:
             segment_map = "{}_{}".format(source_id, destination_id)
         baseline = copy.deepcopy(dict(inventory.policies.get(pair, {})))
         options = baseline.get("options")
         if options is not None and (options.get("merge") is not False or options.get("templateApply") is not False):
-            errors.append("baseline options are incompatible with the contract-tested merge=false/templateApply=false adapter")
+            errors.append("[FW-30] baseline options are incompatible with the contract-tested merge=false/templateApply=false adapter; fix: review this segment pair's Security Policies settings in Orchestrator")
         candidate = _ensure_candidate_shape(baseline)
         seen: Dict[Tuple[str, str], Set[int]] = {}
         allocated_by_scope: Dict[ScopeKey, int] = {}
@@ -377,9 +406,9 @@ def build_firewall_plan(
             source_zone_id = inventory.zones.get((rule.source_segment, rule.source_zone))
             destination_zone_id = inventory.zones.get((rule.destination_segment, rule.destination_zone))
             if source_zone_id is None:
-                errors.append("row {} missing source zone {} in segment {}".format(rule.row, rule.source_zone, rule.source_segment))
+                errors.append("row {} [FW-32] missing source zone {} in segment {}; fix: create the zone and map it to the segment, or correct the name".format(rule.row, rule.source_zone, rule.source_segment))
             if destination_zone_id is None:
-                errors.append("row {} missing destination zone {} in segment {}".format(rule.row, rule.destination_zone, rule.destination_segment))
+                errors.append("row {} [FW-32] missing destination zone {} in segment {}; fix: create the zone and map it to the segment, or correct the name".format(rule.row, rule.destination_zone, rule.destination_segment))
             _check_dependencies(rule, inventory, errors)
             if source_zone_id is None or destination_zone_id is None:
                 continue
@@ -388,7 +417,7 @@ def build_firewall_plan(
             priority = rule.priority
             if priority is None:
                 if not (not existing or set(existing) == {"65535"} and is_catchall(existing["65535"])):
-                    errors.append("row {} cannot auto-allocate priority in occupied zone pair; set an explicit priority".format(rule.row))
+                    errors.append("row {} [FW-23] cannot auto-allocate priority in occupied zone pair {}; fix: set an explicit priority".format(rule.row, _zones(rule)))
                     continue
                 next_priority = allocated_by_scope.get(scope, 20000)
                 reserved = {item.priority for item in pair_rules if item.scope == scope and item.priority is not None}
@@ -396,16 +425,16 @@ def build_firewall_plan(
                 while next_priority in reserved or str(next_priority) in existing or next_priority in local:
                     next_priority += 10
                 if next_priority >= 65535:
-                    errors.append("row {} has no available automatic priority below 65535".format(rule.row))
+                    errors.append("row {} [FW-23] has no available automatic priority below 65535 in zone pair {}; fix: set an explicit priority".format(rule.row, _zones(rule)))
                     continue
                 priority = next_priority
                 allocated_by_scope[scope] = next_priority + 10
             used = seen.setdefault((zone_key, segment_map), set())
             if priority in used:
-                errors.append("row {} duplicates CSV priority {} in its scope".format(rule.row, priority))
+                errors.append("row {} [FW-21] duplicates CSV priority {} in its scope (zone pair {}); fix: give each row in a zone pair its own priority".format(rule.row, priority, _zones(rule)))
             used.add(priority)
             if priority in inventory.local_priorities.get(scope, set()):
-                errors.append("row {} priority {} collides with an appliance-local rule".format(rule.row, priority))
+                errors.append("row {} [FW-25] priority {} collides with an appliance-local rule in zone pair {}; fix: choose another priority or remove the local rule on the appliance".format(rule.row, priority, _zones(rule)))
             resolved_rule = replace(rule, priority=priority)
             resolved_pair.append(resolved_rule)
         if not errors:
@@ -420,7 +449,13 @@ def build_firewall_plan(
                 if key in priorities:
                     if semantic_equal(normalize_rule(priorities[key]), normalize_rule(payload)):
                         continue
-                    errors.append("row {} priority {} conflicts with a different existing rule".format(rule.row, rule.priority))
+                    if semantic_equal(normalize_rule(canonical_rule(priorities[key])), normalize_rule(payload)):
+                        errors.append("row {} [FW-34] rule_key {} priority {} in zone pair {}: the existing rule is this rule written without a /32 prefix or with a dotted mask, which appliances reject ('ACL rule has invalid syntax'); fix: remove it with firewall delete using the CSV it was deployed from, then deploy this CSV".format(
+                            rule.row, rule.rule_key, rule.priority, _zones(rule)))
+                        continue
+                    errors.append("row {} [FW-24] rule_key {} priority {} conflicts with a different existing rule in zone pair {} (existing: {}; this row: {}); fix: use a free priority such as {}, or remove the existing rule first".format(
+                        rule.row, rule.rule_key, rule.priority, _zones(rule), _rule_brief(priorities[key]), _rule_brief(payload),
+                        _free_priority(int(rule.priority), priorities, {item.priority for item in pair_rules if item.scope == rule.scope}, inventory.local_priorities.get(rule.scope, set()))))
                     continue
                 priorities[key] = payload
         created: List[Tuple[str, int]] = []
@@ -507,6 +542,7 @@ class FirewallExecutor:
                 results.append(PairResult(pair.pair, "partial" if unresolved else "no_op", targets=targets))
                 continue
             try:
+                written_at = int(time.time() * 1000)
                 self.gateway.post_policy(pair.segment_map, pair.candidate, reference)
                 readback = self.gateway.get_policy(pair.segment_map)
                 if not semantic_equal(readback, pair.candidate):
@@ -517,8 +553,9 @@ class FirewallExecutor:
                 if not targets:
                     targets = {"expected_targets": "unknown"}
                 audit_verified = self.gateway.correlate_audit(pair.segment_map, reference) if hasattr(self.gateway, "correlate_audit") else True
-                unresolved = any(status != "verified" for status in targets.values()) or not audit_verified
                 message = "audit correlation unresolved" if not audit_verified else ""
+                message = "; ".join(filter(None, [message, appliance_rejections(self.gateway, targets, written_at, [priority for _, priority in pair.created_priorities])]))
+                unresolved = any(status != "verified" for status in targets.values()) or not audit_verified
                 results.append(PairResult(pair.pair, "partial" if unresolved else "success", message, targets=targets))
             except Exception as error:
                 rollback = self._rollback(pair, reference)

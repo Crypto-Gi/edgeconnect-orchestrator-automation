@@ -1,7 +1,7 @@
 import ipaddress
 import re
 import unicodedata
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .errors import ValidationError
 
@@ -168,6 +168,51 @@ def policy_ip(value: str) -> Optional[str]:
     if "*" in address or "-" in address:
         return "range/wildcard with a mask is a GUI-compatibility form that the vendor documentation lists as unsupported for policies" if mask else None
     return _host_bits_warning(value)
+
+
+def canonical_policy_ip(value: str) -> str:
+    """Write a validated firewall/ACL address the way the appliance policy engine accepts it.
+
+    Appliances (9.6.4 lab and production evidence) reject single addresses without a prefix length and
+    dotted-decimal masks with "ACL rule has invalid syntax", although Orchestrator stores them.
+    """
+    if "*" in value or "-" in value:
+        return value
+    address, _, mask = value.partition("/")
+    if not mask:
+        return "{}/{}".format(address, 128 if ":" in address else 32)
+    if "." in mask:
+        return "{}/{}".format(address, ipaddress.IPv4Network("0.0.0.0/" + mask).prefixlen)
+    return value
+
+
+def canonical_note(value: str, canonical: str) -> str:
+    return "{} is written as {}; appliances reject {} with 'ACL rule has invalid syntax'".format(
+        value, canonical, "a single address without a prefix length" if "/" not in value else "a dotted-decimal mask")
+
+
+def canonical_ip_values(values: Sequence[str], warn: Callable[[str, str], None]) -> List[str]:
+    """Canonicalize valid addresses; invalid ones are left for the caller's validation to report."""
+    result = []
+    for value in values:
+        try:
+            policy_ip(value)
+            canonical = canonical_policy_ip(value)
+        except ValueError:
+            canonical = value
+        if canonical != value:
+            warn(value, canonical)
+        result.append(canonical)
+    return result
+
+
+def canonical_ip_fields(value: Mapping[str, Any]) -> Dict[str, Any]:
+    """Copy of a firewall match or ACL entry with src_ip/dst_ip/either_ip canonicalized."""
+    result = dict(value)
+    for key in ("src_ip", "dst_ip", "either_ip"):
+        if isinstance(result.get(key), str) and result[key]:
+            result[key] = "|".join(canonical_ip_values([item.strip() for item in result[key].split("|") if item.strip()], lambda *_: None))
+    return result
 
 
 def check_ip_duplicates(values: Sequence[str], issues: Issues, row: Any, field: str) -> None:

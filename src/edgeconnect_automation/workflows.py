@@ -11,8 +11,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 
 from .errors import DriftError, ValidationError
 from .firewall import parse_bool
+from .gateway import appliance_rejections
 from .util import canonical_json, detect_cycle, fingerprint, normalize_acl_entries, semantic_equal
-from .validation import NUMBER_PATTERN, PORT_PROTOCOLS, Issues, address_group_ipv4, check_families, check_ip_duplicates, check_ports, compound_ipv4, control_characters, members, normalize_dscp, policy_ip, valid_domain, valid_protocol
+from .validation import NUMBER_PATTERN, PORT_PROTOCOLS, Issues, address_group_ipv4, canonical_ip_fields, canonical_ip_values, canonical_note, check_families, check_ip_duplicates, check_ports, compound_ipv4, control_characters, members, normalize_dscp, policy_ip, valid_domain, valid_protocol
 
 
 ADDRESS_HEADERS = ["Name", "IncludedIPs", "ExcludedIPs", "IncludedGroups", "Comment"]
@@ -155,6 +156,7 @@ def parse_template_acls(path: str) -> List[TemplateACLRule]:
                 else:
                     if warning:
                         warnings.add("ACL-07", warning, number, field_name, value)
+            lists[field_name] = canonical_ip_values(lists[field_name], lambda value, canonical: warnings.add("ACL-29", canonical_note(value, canonical), number, field_name, value))
         for field_name in ACL_FAMILIES[1]:
             check_ports(lists[field_name], issues, number, field_name)
         for field_name in ACL_FAMILIES[2]:
@@ -327,12 +329,12 @@ def plan_template_acls(
             before = entries.get(rule.priority)
             if before is None:
                 entries[rule.priority] = copy.deepcopy(rule.entry)
-                additions.append({"acl": rule.acl_name, "priority": rule.priority, "after": rule.entry})
+                additions.append({"row": rule.row, "acl": rule.acl_name, "priority": rule.priority, "after": rule.entry})
             elif semantic_equal(normalize_acl_entries({rule.priority: before})[rule.priority], normalize_acl_entries({rule.priority: rule.entry})[rule.priority]):
-                no_ops.append({"acl": rule.acl_name, "priority": rule.priority})
+                no_ops.append({"row": rule.row, "acl": rule.acl_name, "priority": rule.priority})
             else:
                 entries[rule.priority] = copy.deepcopy(rule.entry)
-                overwrites.append({"acl": rule.acl_name, "priority": rule.priority, "before": before, "after": rule.entry})
+                overwrites.append({"row": rule.row, "acl": rule.acl_name, "priority": rule.priority, "before": before, "after": rule.entry})
         requested = {(rule.acl_name, rule.priority) for rule in group_rules}
         preserved = []
         for acl_name, body in baseline_value.get("data", {}).items():
@@ -393,13 +395,99 @@ def plan_template_acls(
     }
 
 
+def plan_template_acl_deletions(
+    rules: Sequence[TemplateACLRule],
+    groups: Sequence[Mapping[str, Any]],
+    selections: Mapping[str, Sequence[str]],
+    associations: Mapping[str, Sequence[str]],
+    segments: Optional[Mapping[str, int]] = None,
+) -> Dict[str, Any]:
+    current = {str(group.get("name")): group for group in groups}
+    grouped: Dict[str, List[TemplateACLRule]] = {}
+    for rule in rules:
+        grouped.setdefault(rule.template_group, []).append(rule)
+    plans = []
+    for name, group_rules in grouped.items():
+        baseline = current.get(name)
+        selection = list(selections.get(name, []))
+        targets = _group_associations(name, associations)
+        errors = []
+        baseline_value = _template_acl_value(baseline or {})
+        if baseline is None:
+            baseline_value = {"data": {}, "options": {}}
+        elif baseline_value is None:
+            errors.append("template group {} has no Access Lists template".format(name))
+            baseline_value = {"data": {}, "options": {}}
+        candidate = copy.deepcopy(baseline_value)
+        candidate.setdefault("data", {})
+        by_acl: Dict[str, List[TemplateACLRule]] = {}
+        for rule in group_rules:
+            entry = copy.deepcopy(rule.entry)
+            for key, segment in rule.segments.items():
+                if segments is None or segment not in segments:
+                    errors.append("row {} [DEP-07] unknown segment {}".format(rule.row, segment))
+                else:
+                    entry[key] = int(segments[segment])
+            by_acl.setdefault(rule.acl_name, []).append(replace(rule, entry=entry))
+        deletions = []
+        absent = []
+        deleted_acls = []
+        requested_acl_entries = {acl_name: {rule.priority: rule.entry for rule in acl_rules} for acl_name, acl_rules in by_acl.items()}
+        for acl_name, acl_rules in by_acl.items():
+            body = baseline_value.get("data", {}).get(acl_name)
+            if body is None:
+                absent.extend({"row": rule.row, "acl": acl_name, "priority": rule.priority} for rule in acl_rules)
+                continue
+            if not isinstance(body, Mapping) or not isinstance(body.get("entry"), Mapping) or set(body) - {"entry"}:
+                errors.append("ACL {} in template group {} has unsupported metadata; exact deletion is blocked".format(acl_name, name))
+                continue
+            requested = {rule.priority: rule.entry for rule in acl_rules}
+            if not semantic_equal(normalize_acl_entries({priority: canonical_ip_fields(entry) if isinstance(entry, Mapping) else entry for priority, entry in body["entry"].items()}), normalize_acl_entries(requested)):
+                errors.append("ACL {} in template group {} differs from the complete CSV definition; exact deletion is blocked".format(acl_name, name))
+                continue
+            deletions.extend({"row": rule.row, "acl": acl_name, "priority": rule.priority} for rule in acl_rules)
+            deleted_acls.append(acl_name)
+            candidate["data"].pop(acl_name, None)
+        plans.append({
+            "template_group": name,
+            "eligible": not errors,
+            "errors": errors,
+            "warnings": [],
+            "create": False,
+            "baseline_group": copy.deepcopy(baseline),
+            "baseline_acl_value": baseline_value,
+            "candidate_acl_value": candidate,
+            "baseline_selection": selection,
+            "candidate_selection": selection,
+            "associations": targets,
+            "baseline_fingerprint": _template_group_snapshot(baseline, selection, targets),
+            "unrelated_templates": _unrelated_templates(baseline) if baseline else [],
+            "payload": {"name": name, "templates": [{"name": "acls", "valObject": candidate}]},
+            "selection_change": False,
+            "template_mode_change": False,
+            "additions": [],
+            "overwrites": [],
+            "no_ops": [],
+            "deletions": deletions,
+            "absent": absent,
+            "preserved": sorted(({"acl": acl, "priority": str(priority)} for acl, value in baseline_value.get("data", {}).items() if acl not in deleted_acls and isinstance(value, Mapping) and isinstance(value.get("entry"), Mapping) for priority in value["entry"]), key=lambda item: (item["acl"], item["priority"])),
+            "selection_activates_acls": [],
+            "touched_acls": sorted(deleted_acls),
+            "deleted_acls": sorted(deleted_acls),
+            "requested_acl_entries": requested_acl_entries,
+            "appliance_only_deletions": [],
+        })
+    return {"groups": plans, "errors": [], "eligible_groups": [plan["template_group"] for plan in plans if plan["eligible"]]}
+
+
 def _verify_template_acl_targets(gateway: Any, plan: Mapping[str, Any]) -> Dict[str, str]:
     targets = set(plan["associations"])
     if not targets:
         return {}
     appliances = {str(item.get("nePk") or item.get("id")): item for item in gateway.get_appliances()}
     results = {}
-    expected = {name: plan["candidate_acl_value"]["data"][name]["entry"] for name in plan["touched_acls"]}
+    expected = {name: plan["candidate_acl_value"]["data"][name]["entry"] for name in plan["touched_acls"] if name in plan["candidate_acl_value"]["data"]}
+    deleted = set(plan.get("deleted_acls", []))
     timeout = getattr(getattr(gateway, "client", None), "config", None)
     deadline = time.monotonic() + getattr(timeout, "verification_timeout", 120.0)
     poll = getattr(timeout, "poll_interval", 5.0)
@@ -423,10 +511,13 @@ def _verify_template_acl_targets(gateway: Any, plan: Mapping[str, Any]) -> Dict[
                 continue
             missing = [name for name in expected if name not in actual]
             mismatched = [name for name in expected if name in actual and not semantic_equal(normalize_acl_entries(actual[name]), normalize_acl_entries(expected[name]))]
+            still_present = sorted(deleted & set(actual))
             if missing:
-                results[target] = "acl_missing:{}".format(",".join(sorted(missing)))
+                latest[target] = "acl_missing:{}".format(",".join(sorted(missing)))
             elif mismatched:
-                results[target] = "acl_mismatch:{}".format(",".join(sorted(mismatched)))
+                latest[target] = "acl_mismatch:{}".format(",".join(sorted(mismatched)))
+            elif still_present:
+                latest[target] = "acl_still_present:{}".format(",".join(still_present))
             else:
                 results[target] = "verified"
                 pending.remove(target)
@@ -475,14 +566,32 @@ def apply_template_acls(gateway: Any, plan: Mapping[str, Any]) -> Dict[str, Any]
         selection_verified = set(selected) == set(group["candidate_selection"])
         associations_verified = current_associations == group["associations"]
         unrelated_verified = group["create"] or semantic_equal(_unrelated_templates(readback or {}), group["unrelated_templates"])
-        targets = _verify_template_acl_targets(gateway, dict(group, associations=current_associations)) if central_verified else {}
+        appliance_error = ""
+        if central_verified and group.get("deleted_acls"):
+            try:
+                for target in current_associations:
+                    actual = gateway.get_appliance_acls(target)
+                    for acl_name in group["deleted_acls"]:
+                        if acl_name not in actual:
+                            continue
+                        expected = group["requested_acl_entries"][acl_name]
+                        if not semantic_equal(normalize_acl_entries(actual[acl_name]), normalize_acl_entries(expected)):
+                            raise DriftError("appliance {} ACL {} changed before exact deletion".format(target, acl_name))
+                        gateway.delete_appliance_acl(target, acl_name)
+                        wrote = group_wrote = True
+            except Exception as error:
+                appliance_error = str(error)
+        targets = _verify_template_acl_targets(gateway, dict(group, associations=current_associations)) if central_verified and not appliance_error else {}
+        rejection = appliance_rejections(gateway, targets, start, [item["priority"] for item in group.get("additions", []) + group.get("overwrites", [])]) if group_wrote else ""
+        appliance_error = "; ".join(filter(None, [appliance_error, rejection]))
         actions = gateway.get_actions(start, int(time.time() * 1000)) if group_wrote else []
         audit = [item for item in actions if name in json.dumps(item, sort_keys=True)] if isinstance(actions, list) else []
         failed_audit = any(item.get("completionStatus") is False or item.get("taskStatus") == "FAILED" for item in audit)
-        unresolved = not all((central_verified, selection_verified, associations_verified, unrelated_verified)) or any(status != "verified" for status in targets.values()) or failed_audit
+        unresolved = not all((central_verified, selection_verified, associations_verified, unrelated_verified)) or bool(appliance_error) or any(status != "verified" for status in targets.values()) or failed_audit
         results.append({
             "template_group": name,
-            "status": "partial" if unresolved else "no_op" if not changed and not group["selection_change"] else "success",
+            "status": "partial" if unresolved else "no_op" if not group_wrote and not changed and not group["selection_change"] else "success",
+            "error": appliance_error,
             "central_verified": central_verified,
             "selection_verified": selection_verified,
             "associations_verified": associations_verified,

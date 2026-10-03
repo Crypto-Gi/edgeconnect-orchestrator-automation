@@ -8,6 +8,7 @@ import secrets
 import sys
 import time
 import traceback
+from urllib.parse import urlsplit
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
@@ -15,18 +16,22 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from .client import ApiClient
 from .config import load_config
 from .errors import ApprovalError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
-from .firewall import FirewallExecutor, build_firewall_plan, normalize_rule, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
+from .firewall import FirewallExecutor, build_firewall_plan, canonical_rule, normalize_rule, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
 from .gateway import OrchestratorGateway
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
-from .util import fingerprint, redact, safe_report, semantic_equal, split_values
-from .workflows import ApplicationDefinition, BulkPlan, ZonePlan, _address_semantic, _service_semantic, apply_application_groups, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions_with_appexpress, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_application_groups_partial, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acls, plan_zones, resolve_compound_references
+from .reporting import RunRecorder, finish, preview_text, render, summaries_from_file, write_rows_csv
+from .util import fingerprint, normalize_acl_entries, redact, safe_report, semantic_equal, split_values
+from .validation import canonical_ip_fields
+from .workflows import ApplicationDefinition, BulkPlan, ZonePlan, _address_semantic, _service_semantic, apply_application_groups, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions_with_appexpress, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_application_groups_partial, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acl_deletions, plan_template_acls, plan_zones, resolve_compound_references
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edgeconnect-auto", description="Safety-focused EdgeConnect Orchestrator automation")
     parser.add_argument("--dotenv", help="dotenv path override; defaults to ./.env when present")
+    parser.add_argument("--orchestrator", metavar="NAME", help="Orchestrator nickname from .env (orch_<N>=<NAME>); overrides orch_default")
     parser.add_argument("--allow-http", action="store_true", help="allow HTTP for isolated test fixtures only")
     parser.add_argument("-v", "--verbose", action="count", default=0)
+    parser.add_argument("--report-dir", help="folder for the automatic per-workflow report log (default ./reports or $EDGECONNECT_REPORT_DIR; '' disables it)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     discovery = subparsers.add_parser("discovery", help="read-only Orchestrator inventory")
@@ -82,6 +87,9 @@ def build_parser() -> argparse.ArgumentParser:
     template_acl_deploy.add_argument("--report")
     template_acl_deploy.add_argument("--dry-run", action="store_true")
     template_acl_deploy.set_defaults(handler=_template_acls_deploy)
+    template_acl_delete = template_acl_sub.add_parser("delete", help="strictly delete complete CSV-matched ACLs while preserving their template groups")
+    _add_delete_args(template_acl_delete)
+    template_acl_delete.set_defaults(handler=_template_acls_delete)
 
     zones = subparsers.add_parser("zones")
     zone_sub = zones.add_subparsers(dest="zone_command", required=True)
@@ -145,7 +153,25 @@ def build_parser() -> argparse.ArgumentParser:
     _add_delete_args(definition_delete)
     definition_delete.set_defaults(handler=_definitions_delete)
 
+    report = subparsers.add_parser("report", help="read saved reports; no Orchestrator access")
+    report_sub = report.add_subparsers(dest="report_command", required=True)
+    summarize = report_sub.add_parser("summarize", help="print the run summary and per-row table of a saved report, plan, or report log")
+    summarize.add_argument("file", help="a --report JSON file, a plan file, or a reports/<workflow>.jsonl log")
+    summarize.add_argument("--last", type=int, default=1, help="for a .jsonl log: number of most recent runs to show (0 = all)")
+    summarize.add_argument("--rows-csv", help="also write the per-row outcome table to this CSV file")
+    summarize.set_defaults(handler=_report_summarize, no_run_log=True)
+
     return parser
+
+
+def _report_summarize(args: argparse.Namespace) -> int:
+    summaries = summaries_from_file(args.file, args.last)
+    for summary in summaries:
+        print(render(summary, title="RUN SUMMARY (from {})".format(args.file), row_limit=None))
+    if args.rows_csv:
+        write_rows_csv(args.rows_csv, [row for summary in summaries for row in summary.get("rows", [])])
+        print("Row table written to {}".format(args.rows_csv))
+    return 0
 
 
 def _add_bulk_commands(subparsers: Any, name: str, kind: str) -> None:
@@ -177,7 +203,17 @@ def _add_delete_args(parser: Any) -> None:
 
 
 def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
-    config = load_config(args.dotenv, allow_http=args.allow_http)
+    global _TARGET, _TARGET_NAME, _TARGET_URL
+    cached = getattr(args, "_gateway_cache", None)
+    if cached is not None:
+        return cached
+    config = load_config(args.dotenv, allow_http=args.allow_http, orchestrator=args.orchestrator)
+    parts = urlsplit(config.base_url)
+    url = "{}://{}".format(parts.scheme, parts.netloc)
+    _TARGET = "{} ({})".format(config.name, url) if config.name else url
+    _TARGET_NAME, _TARGET_URL = config.name, url
+    if _RUN is not None:
+        _RUN.orchestrator_target, _RUN.orchestrator_name, _RUN.orchestrator_url = _TARGET, config.name, url
     gateway = OrchestratorGateway(ApiClient(config, verbosity=args.verbose))
     release = str(gateway.get_version().get("release", ""))
     try:
@@ -186,11 +222,72 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
         raise ValidationError("unable to parse Orchestrator release {}".format(release)) from error
     if len(parts) < 2 or parts < (9, 3):
         raise ValidationError("Orchestrator 9.3 or later is required; found {}".format(release or "unknown"))
+    recorder = _RUN
+    if recorder is not None:
+        recorder.orchestrator_release = release
+        list_appliances = gateway.get_appliances
+
+        def get_appliances() -> Any:
+            items = list_appliances()
+            recorder.note_appliances(items)
+            return items
+
+        gateway.get_appliances = get_appliances  # type: ignore[method-assign]
+    args._gateway_cache = gateway
     return gateway
 
 
+_RUN: Optional[RunRecorder] = None
+_TARGET = ""
+_TARGET_NAME = ""
+_TARGET_URL = ""
+
+
+def _stamp(value: Dict[str, Any], source: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+    """Record which Orchestrator an inventory or plan file belongs to (inherited from its inventory when offline)."""
+    stamp = {"name": _TARGET_NAME, "url": _TARGET_URL} if _TARGET_URL else (source or {}).get("orchestrator")
+    if stamp:
+        value["orchestrator"] = stamp
+    return value
+
+
+def _require_plan_orchestrator(args: argparse.Namespace, value: Mapping[str, Any], what: str = "plan") -> None:
+    """Refuse to use a plan or inventory file against an Orchestrator other than the one it was made for."""
+    stamp = value.get("orchestrator")
+    if not isinstance(stamp, Mapping) or not stamp.get("url"):
+        return
+    _gateway(args)
+    if _TARGET_URL and _TARGET_URL != stamp["url"]:
+        name = stamp.get("name") or ""
+        label = "{} ({})".format(name, stamp["url"]) if name else stamp["url"]
+        hint = " with --orchestrator {}".format(name) if name else ""
+        raise ValidationError("this {} is for Orchestrator {}; rerun{} to use it".format(what, label, hint))
+
+
+def _print_target() -> None:
+    if _TARGET:
+        print("Target Orchestrator: {}".format(_TARGET))
+_BULKY_KEYS = ("preview", "plan", "baseline", "candidate")
+
+
 def _print(value: Any) -> None:
+    if _RUN is not None:
+        _RUN.capture(value)
+        if not _RUN.verbose and isinstance(value, Mapping) and any(key in value for key in _BULKY_KEYS):
+            return
     print(json.dumps(redact(value), indent=2, sort_keys=True, ensure_ascii=False))
+
+
+def _save(path: str, value: Any) -> None:
+    if _RUN is not None:
+        _RUN.saved_report(path, value)
+    safe_report(path, value)
+
+
+def _show_preview(value: Mapping[str, Any], dry_run: bool) -> None:
+    _print(value)
+    if not dry_run:
+        print(preview_text(value))
 
 
 def _load_json(path: str) -> Any:
@@ -198,7 +295,7 @@ def _load_json(path: str) -> Any:
 
 
 def _approve(preview: Any, dry_run: bool, zone_names: Sequence[str] = ()) -> bool:
-    _print({"preview": preview, "impact": "configuration write", "validation": "fresh readback and normalized comparison", "recovery": "workflow-specific preservation or rollback"})
+    _show_preview({"preview": preview, "impact": "configuration write", "validation": "fresh readback and normalized comparison", "recovery": "workflow-specific preservation or rollback"}, dry_run)
     if dry_run:
         return False
     if not sys.stdin.isatty():
@@ -207,6 +304,7 @@ def _approve(preview: Any, dry_run: bool, zone_names: Sequence[str] = ()) -> boo
         expected = "CREATE {}".format(name)
         if input("Type {} to confirm this zone: ".format(expected)) != expected:
             raise ApprovalError("zone confirmation refused")
+    _print_target()
     if input("Type APPLY to execute the exact preview: ") != "APPLY":
         raise ApprovalError("write approval refused")
     return True
@@ -216,7 +314,7 @@ DELETE_ACKNOWLEDGMENT = "I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION"
 
 
 def _approve_template_acls(preview: Mapping[str, Any], dry_run: bool) -> bool:
-    _print({"preview": preview, "impact": "template-group Access Lists write", "validation": "fresh central and associated-appliance readback", "recovery": "no automatic rollback; exact recovery requires separate review"})
+    _show_preview({"preview": preview, "impact": "template-group Access Lists write", "validation": "fresh central and associated-appliance readback", "recovery": "no automatic rollback; exact recovery requires separate review"}, dry_run)
     if dry_run:
         return False
     if not sys.stdin.isatty():
@@ -235,6 +333,7 @@ def _approve_template_acls(preview: Mapping[str, Any], dry_run: bool) -> bool:
             expected = "MERGE ACLS {}".format(name)
             if input("Type {} to change appliance template mode: ".format(expected)) != expected:
                 raise ApprovalError("template merge-mode confirmation refused")
+    _print_target()
     if input("Type APPLY to execute the exact preview: ") != "APPLY":
         raise ApprovalError("write approval refused")
     return True
@@ -257,6 +356,7 @@ def _deletion_table(rows: Sequence[Tuple[str, str, str]]) -> str:
 def _approve_delete(rows: Sequence[Tuple[str, str, str]], dry_run: bool) -> bool:
     print("\nWARNING 1 OF 3 — COMPLETE DELETION TABLE ({} resources)\n".format(len(rows)))
     print(_deletion_table(rows))
+    _print_target()
     if dry_run or not rows:
         return False
     if not sys.stdin.isatty():
@@ -278,15 +378,16 @@ def _delete_output(args: argparse.Namespace, preview: Mapping[str, Any], result:
     value = {"preview": preview, "status": "DRY_RUN"} if result is None else {"preview": preview, "result": result}
     value["report_fingerprint"] = fingerprint(value)
     if args.report:
-        safe_report(args.report, value)
+        _save(args.report, value)
     _print(value)
 
 
 def _discovery(args: argparse.Namespace) -> int:
     result = _gateway(args).discover()
+    _stamp(result)
     result["fingerprint"] = fingerprint(result)
     if args.output:
-        safe_report(args.output, result)
+        _save(args.output, result)
     _print(result)
     return 0
 
@@ -301,16 +402,18 @@ def _firewall_validate(args: argparse.Namespace) -> int:
 def _firewall_plan(args: argparse.Namespace) -> int:
     document = parse_firewall_document(Path(args.csv).read_text(encoding="utf-8-sig"))
     pairs = set(document.pair_errors) | {rule.pair for rule in document.rules}
+    source: Mapping[str, Any] = {}
     if args.inventory:
-        inventory = _inventory_from_dict(_load_json(args.inventory))
+        source = _load_json(args.inventory)
+        inventory = _inventory_from_dict(source)
     else:
         inventory = _discover_inventory(_gateway(args), document.rules, pairs)
     plan = build_firewall_plan(document.rules, inventory, document.pair_errors, document.global_errors, document.pair_warnings)
     auto_allocated = any(rule.priority is None for rule in document.rules if any(resolved.row == rule.row for resolved in plan.resolved_rows))
     if auto_allocated and not args.resolved_csv:
         raise ValidationError("--resolved-csv is required when priorities are automatically allocated")
-    report = {"kind": "firewall", "plan": plan.to_dict(), "fingerprint": fingerprint(plan.to_dict())}
-    safe_report(args.output, report)
+    report = _stamp({"kind": "firewall", "plan": plan.to_dict(), "fingerprint": fingerprint(plan.to_dict())}, source)
+    _save(args.output, report)
     if args.resolved_csv and plan.resolved_rows:
         write_resolved_csv(args.resolved_csv, plan.resolved_rows)
     _print({"output": args.output, "eligible_pairs": len(plan.eligible_pairs), "ineligible_pairs": sum(not pair.eligible for pair in plan.pairs), "warnings": [warning for pair in plan.pairs for warning in pair.warnings]})
@@ -321,8 +424,13 @@ def _firewall_deploy(args: argparse.Namespace) -> int:
     document = parse_firewall_document(Path(args.csv).read_text(encoding="utf-8-sig"))
     pairs = set(document.pair_errors) | {rule.pair for rule in document.rules}
     gateway = _gateway(args)
-    inventory = _inventory_from_dict(_load_json(args.inventory)) if args.inventory else _discover_inventory(gateway, document.rules, pairs)
-    if not args.inventory:
+    if args.inventory:
+        source = _load_json(args.inventory)
+        _require_plan_orchestrator(args, source, "inventory file")
+        inventory = _inventory_from_dict(source)
+    else:
+        inventory = _discover_inventory(gateway, document.rules, pairs)
+    if not args.inventory and not document.errors:
         zone_result = _handle_firewall_missing_zones(gateway, document.rules, inventory, args.dry_run, args.report)
         if zone_result is not None:
             return zone_result
@@ -335,18 +443,18 @@ def _firewall_deploy(args: argparse.Namespace) -> int:
         write_resolved_csv(args.resolved_csv, plan.resolved_rows)
     if not plan.eligible_pairs:
         if args.report:
-            safe_report(args.report, {"preview": preview, "status": "BLOCKED", "report_fingerprint": fingerprint(preview)})
+            _save(args.report, {"preview": preview, "status": "BLOCKED", "report_fingerprint": fingerprint(preview)})
         _print(preview)
         return 2
     if not _approve(preview, args.dry_run):
         if args.report:
-            safe_report(args.report, {"preview": preview, "status": "DRY_RUN", "report_fingerprint": fingerprint(preview)})
+            _save(args.report, {"preview": preview, "status": "DRY_RUN", "report_fingerprint": fingerprint(preview)})
         return 0
     result = FirewallExecutor(gateway).apply(plan)
     report = {"preview": preview, "result": asdict(result)}
     report["report_fingerprint"] = fingerprint(report)
     if args.report:
-        safe_report(args.report, report)
+        _save(args.report, report)
     _print(report)
     return result.exit_code
 
@@ -388,7 +496,7 @@ def _firewall_delete(args: argparse.Namespace) -> int:
             actual = priorities.get(str(rule.priority))
             if actual is None:
                 absent.append(rule.rule_key)
-            elif not semantic_equal(normalize_rule(actual), normalize_rule(rule_payload(rule))):
+            elif not semantic_equal(normalize_rule(canonical_rule(actual)), normalize_rule(rule_payload(rule))):
                 conflicts.append("row {} priority {} contains a semantically different live rule".format(rule.row, rule.priority))
             else:
                 del priorities[str(rule.priority)]
@@ -415,11 +523,25 @@ def _firewall_delete(args: argparse.Namespace) -> int:
         gateway.post_policy(plan["segment_map"], plan["candidate"], reference)
         verified = semantic_equal(gateway.get_policy(plan["segment_map"]), plan["candidate"])
         audit = gateway.correlate_audit(plan["segment_map"], reference) if hasattr(gateway, "correlate_audit") else True
-        results.append({"pair": plan["pair"], "deleted": plan["removed"], "readback_verified": verified, "audit_verified": audit})
-    success = all(item["readback_verified"] and item["audit_verified"] for item in results)
+        if hasattr(gateway, "verify_rules_absent"):
+            gateway.targets = _appliance_target_states(gateway)
+            targets = gateway.verify_rules_absent(plan["removed"]) if verified else {}
+        else:
+            targets = {}
+        results.append({"pair": plan["pair"], "deleted": plan["removed"], "readback_verified": verified, "audit_verified": audit, "targets": targets})
+    success = all(item["readback_verified"] and item["audit_verified"] and all(state == "verified" for state in item["targets"].values()) for item in results)
     result = {"status": "success" if success else "partial", "pairs": results}
     _delete_output(args, preview, result)
     return 0 if success else 5
+
+
+def _appliance_target_states(gateway: OrchestratorGateway) -> Dict[str, str]:
+    paused = _collect_ids(gateway.get_paused_orchestration())
+    states = {}
+    for appliance in gateway.get_appliances():
+        nepk = str(appliance.get("nePk") or appliance.get("id"))
+        states[nepk] = "paused" if nepk in paused else "reachable" if int(gateway.get_reachability(nepk).get("state", appliance.get("state", 2))) == 1 else "unreachable"
+    return states
 
 
 def _handle_firewall_missing_zones(
@@ -441,7 +563,7 @@ def _handle_firewall_missing_zones(
         preview["status"] = "BLOCKED_SEGMENT_MAPPING"
         _print(preview)
         if report_path:
-            safe_report(report_path, preview)
+            _save(report_path, preview)
         return 2
     all_vrf = gateway.get_all_vrf_zones()
     mappings = gateway.get_zone_mappings()
@@ -449,12 +571,12 @@ def _handle_firewall_missing_zones(
     preview.update({"baseline": plan.baseline, "candidate": plan.candidate, "baseline_fingerprint": plan.baseline_fingerprint, "created": plan.created, "all_vrf_fingerprint": plan.all_vrf_fingerprint, "mappings_fingerprint": plan.mappings_fingerprint, "next_step": "Rerun the firewall command after zone creation verification"})
     if not _approve(preview, dry_run, list(plan.created)):
         if report_path:
-            safe_report(report_path, {"preview": preview, "status": "DRY_RUN_MISSING_ZONES"})
+            _save(report_path, {"preview": preview, "status": "DRY_RUN_MISSING_ZONES"})
         return 2
     result = apply_zones(gateway, plan)
     output = {"preview": preview, "result": result, "firewall_status": "NOT_ATTEMPTED_RERUN_REQUIRED"}
     if report_path:
-        safe_report(report_path, output)
+        _save(report_path, output)
     _print(output)
     return 2 if result["status"] in {"success", "no_op"} else 5
 
@@ -639,6 +761,7 @@ def _firewall_apply(args: argparse.Namespace) -> int:
     report = _load_json(args.approved_plan)
     if report.get("kind") != "firewall" or fingerprint(report["plan"]) != report.get("fingerprint"):
         raise ValidationError("approved firewall plan is invalid or changed")
+    _require_plan_orchestrator(args, report)
     plan = _firewall_plan_from_dict(report["plan"])
     if not _approve(report, args.dry_run):
         return 0
@@ -646,7 +769,7 @@ def _firewall_apply(args: argparse.Namespace) -> int:
     if args.report:
         report_value = asdict(result)
         report_value["report_fingerprint"] = fingerprint(report_value)
-        safe_report(args.report, report_value)
+        _save(args.report, report_value)
     _print(asdict(result))
     return result.exit_code
 
@@ -658,7 +781,7 @@ def _firewall_verify(args: argparse.Namespace) -> int:
     result = {"run_reference": args.run_id, "audit_matches": matches, "note": "audit evidence supports but does not prove appliance convergence"}
     if args.output:
         result["report_fingerprint"] = fingerprint(result)
-        safe_report(args.output, result)
+        _save(args.output, result)
     _print(result)
     return 0 if matches else 5
 
@@ -733,6 +856,7 @@ def _template_acls_plan(args: argparse.Namespace) -> int:
 def _template_acls_apply(args: argparse.Namespace) -> int:
     value = _load_json(args.approved_plan)
     _validate_report(value, "template-acls")
+    _require_plan_orchestrator(args, value)
     preview = {"kind": value["kind"], "plan": value["plan"], "fingerprint": value.get("fingerprint")}
     if fingerprint(value["plan"]) != value.get("fingerprint"):
         raise ValidationError("approved template ACL plan is invalid or changed")
@@ -747,7 +871,7 @@ def _template_acls_apply(args: argparse.Namespace) -> int:
     report = {"preview": preview, "result": result}
     report["report_fingerprint"] = fingerprint(report)
     if args.report:
-        safe_report(args.report, report)
+        _save(args.report, report)
     _print(report)
     return _template_acl_result_code(value["plan"], result)
 
@@ -758,19 +882,116 @@ def _template_acls_deploy(args: argparse.Namespace) -> int:
     preview = _template_acl_preview(plan)
     if not plan["eligible_groups"]:
         if args.report:
-            safe_report(args.report, {"preview": preview, "status": "BLOCKED", "report_fingerprint": fingerprint(preview)})
+            _save(args.report, {"preview": preview, "status": "BLOCKED", "report_fingerprint": fingerprint(preview)})
         _print(preview)
         return 2
     if not _approve_template_acls(preview, args.dry_run):
         if args.report:
-            safe_report(args.report, {"preview": preview, "status": "DRY_RUN", "report_fingerprint": fingerprint(preview)})
+            _save(args.report, {"preview": preview, "status": "DRY_RUN", "report_fingerprint": fingerprint(preview)})
         return _template_acl_result_code(plan)
     _validate_template_acl_dependencies(gateway, plan)
     result = apply_template_acls(gateway, plan)
     report = {"preview": preview, "result": result}
     report["report_fingerprint"] = fingerprint(report)
     if args.report:
-        safe_report(args.report, report)
+        _save(args.report, report)
+    _print(report)
+    return _template_acl_result_code(plan, result)
+
+
+def _discover_template_acl_delete_plan(gateway: OrchestratorGateway, csv_path: str) -> Dict[str, Any]:
+    rules = parse_template_acls(csv_path)
+    groups = gateway.get_template_groups()
+    selections = {str(group["name"]): gateway.get_template_selection(str(group["name"])) for group in groups}
+    associations = gateway.get_template_associations()
+    segments = _segment_ids(gateway) if any(rule.segments for rule in rules) else None
+    plan = plan_template_acl_deletions(rules, groups, selections, associations, segments)
+    for group in plan["groups"]:
+        centrally_absent = {item["acl"] for item in group.get("absent", [])}
+        for target in group.get("associations", []):
+            if int(gateway.get_reachability(target).get("state", 2)) != 1:
+                continue
+            details = gateway.get_appliance_acl_details(target)
+            for name in sorted(centrally_absent & set(details)):
+                body = details[name]
+                if not isinstance(body, Mapping) or not isinstance(body.get("entry"), Mapping) or not semantic_equal(normalize_acl_entries({priority: canonical_ip_fields(entry) if isinstance(entry, Mapping) else entry for priority, entry in body["entry"].items()}), normalize_acl_entries(group["requested_acl_entries"][name])):
+                    group["errors"].append("ACL {} is absent centrally but differs on appliance {}; exact deletion is blocked".format(name, target))
+                    group["eligible"] = False
+                    continue
+                group["appliance_only_deletions"].append({"target": target, "acl": name})
+                group["deleted_acls"] = sorted(set(group["deleted_acls"]) | {name})
+                group["touched_acls"] = sorted(set(group["touched_acls"]) | {name})
+    plan["eligible_groups"] = [group["template_group"] for group in plan["groups"] if group["eligible"]]
+    return plan
+
+
+def _exact_value_paths(value: Any, names: Set[str], path: str = "") -> List[str]:
+    if isinstance(value, Mapping):
+        return [hit for key, item in value.items() for hit in _exact_value_paths(item, names, "{}.{}".format(path, key) if path else str(key))]
+    if isinstance(value, list):
+        return [hit for index, item in enumerate(value) for hit in _exact_value_paths(item, names, "{}[{}]".format(path, index))]
+    return [path] if isinstance(value, str) and value in names else []
+
+
+def _template_acl_external_references(gateway: OrchestratorGateway, plan: Mapping[str, Any]) -> List[str]:
+    names = {name for group in plan["groups"] for name in group.get("deleted_acls", [])}
+    hits = _firewall_references(gateway, ("acl",), names)
+    for group in gateway.get_template_groups():
+        for template in group.get("templates", []):
+            if template.get("name") == "acls":
+                continue
+            value = template.get("valObject") if template.get("valObject") is not None else template.get("value")
+            for path in _exact_value_paths(value, names):
+                hits.append("template group {} template {} field {}".format(group.get("name"), template.get("name"), path))
+    checked = set()
+    for group in plan["groups"]:
+        group_names = set(group.get("deleted_acls", []))
+        for target in group.get("associations", []):
+            key = (target, tuple(sorted(group_names)))
+            if key in checked:
+                continue
+            checked.add(key)
+            if int(gateway.get_reachability(target).get("state", 2)) != 1:
+                hits.append("cannot verify route-map references on unreachable associated appliance {}".format(target))
+                continue
+            details = gateway.get_appliance_acl_details(target)
+            for name in sorted(group_names):
+                body = details.get(name)
+                if isinstance(body, Mapping) and body.get("rmap"):
+                    hits.append("appliance {} ACL {} has route-map references {}".format(target, name, ",".join(sorted(str(item) for item in body["rmap"]))))
+    return hits
+
+
+def _template_acls_delete(args: argparse.Namespace) -> int:
+    gateway = _gateway(args)
+    plan = _discover_template_acl_delete_plan(gateway, args.csv)
+    errors = [error for group in plan["groups"] for error in group["errors"]]
+    if errors:
+        raise ValidationError("template ACL deletion blocked:\n" + "\n".join(errors))
+    references = _template_acl_external_references(gateway, plan)
+    _block_referenced_deletion(references, "firewall rules, templates, appliance route maps, or unreachable associated appliances", "DEL-08")
+    table = []
+    for group in plan["groups"]:
+        counts: Dict[str, int] = {}
+        for item in group.get("deletions", []):
+            counts[item["acl"]] = counts.get(item["acl"], 0) + 1
+        for acl, count in sorted(counts.items()):
+            table.append(("Template ACL", "{}/{}".format(group["template_group"], acl), "{} exact entries; exact appliance copies on associated targets removed; group, selection, associations, unrelated ACLs/templates preserved".format(count)))
+        for item in group.get("appliance_only_deletions", []):
+            table.append(("Appliance ACL", "{}/{}".format(item["target"], item["acl"]), "{} exact entries; central ACL already absent; all other appliance ACLs preserved".format(len(group["requested_acl_entries"][item["acl"]]))))
+    preview = {"kind": "template-acls-delete", "plan": plan, "fingerprint": fingerprint(plan)}
+    approved = _approve_delete(table, args.dry_run)
+    if not approved:
+        _delete_output(args, preview, {"status": "no_op"} if not table and not args.dry_run else None)
+        return 0
+    fresh_references = _template_acl_external_references(gateway, plan)
+    if fresh_references:
+        raise DriftError("template ACL references changed after confirmation:\n" + "\n".join(fresh_references))
+    result = apply_template_acls(gateway, plan)
+    report = {"preview": preview, "result": result}
+    report["report_fingerprint"] = fingerprint(report)
+    if args.report:
+        _save(args.report, report)
     _print(report)
     return _template_acl_result_code(plan, result)
 
@@ -781,9 +1002,9 @@ def _zones_plan(args: argparse.Namespace) -> int:
     all_vrf = gateway.get_all_vrf_zones()
     mappings = gateway.get_zone_mappings()
     plan = plan_zones(baseline, gateway.get_next_zone_id(), args.name, all_vrf, mappings)
-    value = {"kind": "zones", "baseline": plan.baseline, "candidate": plan.candidate, "baseline_fingerprint": plan.baseline_fingerprint, "created": plan.created, "all_vrf_fingerprint": plan.all_vrf_fingerprint, "mappings_fingerprint": plan.mappings_fingerprint}
+    value = _stamp({"kind": "zones", "baseline": plan.baseline, "candidate": plan.candidate, "baseline_fingerprint": plan.baseline_fingerprint, "created": plan.created, "all_vrf_fingerprint": plan.all_vrf_fingerprint, "mappings_fingerprint": plan.mappings_fingerprint})
     value["report_fingerprint"] = fingerprint({key: item for key, item in value.items() if key != "report_fingerprint"})
-    safe_report(args.output, value)
+    _save(args.output, value)
     _print({"output": args.output, "created": plan.created})
     return 0
 
@@ -791,6 +1012,7 @@ def _zones_plan(args: argparse.Namespace) -> int:
 def _zones_apply(args: argparse.Namespace) -> int:
     value = _load_json(args.approved_plan)
     _validate_report(value, "zones")
+    _require_plan_orchestrator(args, value)
     plan = ZonePlan(value["baseline"], value["candidate"], value["baseline_fingerprint"], value["created"], value.get("all_vrf_fingerprint"), value.get("mappings_fingerprint"))
     if not _approve(value, args.dry_run, list(plan.created)):
         return 0
@@ -810,7 +1032,7 @@ def _zones_create(args: argparse.Namespace) -> int:
         return 0
     result = apply_zones(gateway, plan)
     if args.report:
-        safe_report(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
+        _save(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
     _print(result)
     return 0 if result["status"] in {"success", "no_op"} else 5
 
@@ -830,6 +1052,7 @@ def _bulk_plan(args: argparse.Namespace) -> int:
 def _bulk_apply(args: argparse.Namespace) -> int:
     value = _load_json(args.approved_plan)
     _validate_report(value, args.bulk_kind + "-groups")
+    _require_plan_orchestrator(args, value)
     plan = BulkPlan(args.bulk_kind, value["new_rows"], value["no_ops"], value["conflicts"], base64.b64decode(value["content"]), value.get("baseline_fingerprint"), value.get("warnings", []))
     if not _approve(value, args.dry_run):
         return 0
@@ -852,7 +1075,7 @@ def _bulk_deploy(args: argparse.Namespace) -> int:
         return 0
     result = apply_native_groups(gateway, plan)
     if args.report:
-        safe_report(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
+        _save(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
     _print(result)
     return 0 if result["status"] in {"success", "no_op"} else 5
 
@@ -998,6 +1221,7 @@ def _app_groups_plan(args: argparse.Namespace) -> int:
 def _app_groups_apply(args: argparse.Namespace) -> int:
     value = _load_json(args.approved_plan)
     _validate_report(value, "app-groups")
+    _require_plan_orchestrator(args, value)
     skipped = value.get("skipped_conflicts")
     if skipped is None:
         raise ValidationError("application group plan must be regenerated with skipped conflict details")
@@ -1018,7 +1242,7 @@ def _app_groups_deploy(args: argparse.Namespace) -> int:
         return 5 if plan["skipped_conflicts"] else 0
     result = _app_group_result_with_skips(apply_application_groups(gateway, plan), plan["skipped_conflicts"])
     if args.report:
-        safe_report(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
+        _save(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
     _print(result)
     return 0 if result["status"] in {"success", "no_op"} else 5
 
@@ -1096,6 +1320,7 @@ def _definitions_plan(args: argparse.Namespace) -> int:
 def _definitions_apply(args: argparse.Namespace) -> int:
     value = _load_json(args.approved_plan)
     _validate_report(value, "app-definitions")
+    _require_plan_orchestrator(args, value)
     conflicts = value.get("skipped_conflicts")
     if conflicts is None:
         raise ValidationError("application definition plan must be regenerated with conflict details")
@@ -1121,7 +1346,7 @@ def _definitions_deploy(args: argparse.Namespace) -> int:
         return 5 if plan.conflicts else 0
     result = _definition_result_with_conflicts(execute_application_definitions_with_appexpress(gateway, plan.new, inventories, appexpress), plan.conflicts)
     if args.report:
-        safe_report(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
+        _save(args.report, {"preview": preview, "result": result, "report_fingerprint": fingerprint({"preview": preview, "result": result})})
     _print(result)
     return 0 if result["status"] == "success" else 5
 
@@ -1252,8 +1477,9 @@ def _appexpress_without_ids(value: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _seal_report(value: Dict[str, Any], output: str) -> None:
+    _stamp(value)
     value["report_fingerprint"] = fingerprint({key: item for key, item in value.items() if key != "report_fingerprint"})
-    safe_report(output, value)
+    _save(output, value)
 
 
 def _validate_report(value: Mapping[str, Any], kind: str) -> None:
@@ -1265,21 +1491,44 @@ def _validate_report(value: Mapping[str, Any], kind: str) -> None:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    global _RUN, _TARGET, _TARGET_NAME, _TARGET_URL
     parser = build_parser()
     args = parser.parse_args(argv)
+    _TARGET = _TARGET_NAME = _TARGET_URL = ""
+    recorder = _RUN = RunRecorder(sys.argv[1:] if argv is None else argv)
+    recorder.verbose = args.verbose
+    code = 1
     try:
-        return int(args.handler(args))
-    except ApprovalError as error:
-        print(str(error), file=sys.stderr)
-        return error.exit_code
+        code = int(args.handler(args))
+        return code
+    except (ApprovalError, EOFError) as error:
+        recorder.error = error
+        print(str(error) or "input closed before approval", file=sys.stderr)
+        code = 3
+        return code
     except EdgeConnectError as error:
+        recorder.error = error
         print(str(redact(str(error))), file=sys.stderr)
-        return error.exit_code
+        code = error.exit_code
+        return code
     except (OSError, ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError, csv.Error) as error:
+        recorder.error = error
         if args.verbose >= 2:
             traceback.print_exc()
         print("error: {}: {}".format(type(error).__name__, redact(str(error))), file=sys.stderr)
-        return 1
+        code = 1
+        return code
+    except KeyboardInterrupt as error:
+        recorder.error = error
+        code = 130
+        return code
+    except Exception as error:
+        recorder.error = error
+        raise
+    finally:
+        _RUN = None
+        if not getattr(args, "no_run_log", False):
+            finish(recorder, args, code)
 
 
 if __name__ == "__main__":

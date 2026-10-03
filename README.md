@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.2.2` / package version `1.2.2` — template ACLs with address groups, service groups and segments (the same match fields as firewall rules), fail-closed collision detection, stricter value validation, and clear errors for malformed CSVs and unexpected API responses.
+**Current release:** `v1.2.3` / package version `1.2.3` — firewall rules and template ACL entries are sent in the address form appliances can compile, appliance-rejected rules are reported as FAILED, a RUN SUMMARY and per-row outcome report for every command, several Orchestrators in one `.env`, and strict template ACL deletion.
 
 The tool implements:
 
@@ -30,6 +30,7 @@ The tool implements:
 - [Common workflows](#common-workflows)
 - [CSV-driven deletion](#csv-driven-deletion)
 - [Exit codes](#exit-codes)
+- [Run summary and report log](#run-summary-and-report-log)
 - [CSV templates and examples](#csv-templates-and-examples)
 - [Testing and development](#testing-and-development)
 - [Troubleshooting](#troubleshooting)
@@ -137,6 +138,51 @@ orchestrator_api_key=<ORCHESTRATOR_API_KEY>
 ```
 
 When `--dotenv` is omitted, the CLI loads only `./.env` from the current working directory. It never searches parent or home directories. Process environment variables override values from the file. Use `--dotenv /absolute/path/to/other.env` to select a different file.
+
+### Several Orchestrators in one `.env`
+
+To switch between Orchestrators without editing `.env` or your CSV files, list each one under a nickname. The nickname is what you type on the command line.
+
+```dotenv
+orch_1=prod
+orch_2=test
+
+prod_base_url=https://<PROD_ORCHESTRATOR_FQDN>
+prod_api_key=<PROD_API_KEY>
+test_base_url=https://<TEST_ORCHESTRATOR_FQDN>
+test_api_key=<TEST_API_KEY>
+# Optional per nickname: <nickname>_ca_bundle, <nickname>_api_key_header
+
+# Optional: used when the command does not name one
+orch_default=prod
+```
+
+- `orch_<number>=<nickname>` registers an Orchestrator. Add `orch_3`, `orch_4` and so on as needed. The numbers set the menu order.
+- `<nickname>_base_url` and `<nickname>_api_key` hold that Orchestrator's settings.
+- `orch_default` accepts a nickname (`prod`) or a slot (`orch_1`).
+- Nicknames use letters, digits and `_`, and capitals don't matter. Don't use `default`, `orchestrator`, `edgeconnect` or `ec`.
+
+The tool picks an Orchestrator in this order:
+
+1. `--orchestrator <nickname>` on the command (overrides the default)
+2. `orch_default`
+3. The only one, if just one is listed
+4. Otherwise, a numbered menu in an interactive terminal. A non-interactive run stops and lists the nicknames instead.
+
+```bash
+edgeconnect-auto firewall deploy --csv rules.csv --dry-run                       # uses orch_default
+edgeconnect-auto --orchestrator test firewall deploy --csv rules.csv --dry-run   # overrides it
+```
+
+The chosen Orchestrator is printed above every `APPLY` and deletion prompt (`Target Orchestrator: test (<host>)`) and on the `Orchestrator :` line of the RUN SUMMARY and report log. Check it before you confirm. The single-Orchestrator `orchestrator_base_url` / `orchestrator_api_key` lines work as before. If you add `orch_<number>` lines next to them, the old lines become one more choice with the nickname `orchestrator` (`--orchestrator orchestrator`, or `orch_default=orchestrator`). They are never silently ignored.
+
+Plan files (`plan --output`) and inventory files (`discovery --output`) record the Orchestrator they were made from. `apply --approved-plan` and `firewall deploy --inventory` refuse to use them on a different Orchestrator, before any approval prompt, and name only the Orchestrator the file belongs to:
+
+```text
+this plan is for Orchestrator semir (https://<FQDN>); rerun with --orchestrator semir to use it
+```
+
+A firewall plan built offline from `--inventory` inherits that inventory's Orchestrator. Files written by older versions have no record and are not checked. Deletion has no saved plan; its target is shown in the deletion table and before every confirmation.
 
 ### Windows PowerShell
 
@@ -362,7 +408,16 @@ edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/t
 edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/template-acls.json
 ```
 
-A missing group requires typing its exact name and then `APPLY`. Existing groups additionally require explicit confirmation before selecting Access Lists or changing native template mode to merge. New groups are never associated with appliances automatically. See [Template-group ACL CSV](docs/CSV_REFERENCE.md#template-group-acls).
+A missing group requires typing its exact name and then `APPLY`. Existing groups additionally require explicit confirmation before selecting Access Lists or changing native template mode to merge. New groups are never associated with appliances automatically.
+
+Strict deletion removes a complete ACL only when every live entry exactly matches the complete CSV definition. It preserves the template group, selection, associations, unrelated ACLs and unrelated templates. It blocks firewall, template, appliance route-map and unreachable-target references, requires the standard deletion code and abyss acknowledgment, removes the exact central ACL plus exact copies from associated appliances through documented passthrough, and verifies absence. This appliance step is required because native template merge does not remove an omitted ACL.
+
+```bash
+edgeconnect-auto template-acls delete --csv template_acls.csv --dry-run
+edgeconnect-auto template-acls delete --csv template_acls.csv
+```
+
+See [Template-group ACL CSV](docs/CSV_REFERENCE.md#template-group-acls).
 
 ### Missing zones
 
@@ -482,7 +537,7 @@ edgeconnect-auto app-groups delete --csv application_groups.csv --report reports
 edgeconnect-auto app-definitions delete --csv application_definitions.csv --report reports/app-definitions-delete.json --dry-run
 ```
 
-Deletion has no implicit name-prefix restriction. A live resource must match the CSV semantics exactly; absent resources are no-ops, while mismatches, external references detected by the workflow, or baseline drift block deletion. Always begin with `--dry-run`. Without it, the CLI displays the complete deletion table, requires a fresh random code, then requires typing `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. State is re-read after confirmation and absence is verified after deletion. Delete dependencies in this order when separate CSVs are involved: firewall rules, application groups, application definitions with their integrated AppExpress state, service groups, then address groups.
+Deletion has no implicit name-prefix restriction. A live resource must match the CSV semantics exactly; absent resources are no-ops, while mismatches, external references detected by the workflow, or baseline drift block deletion. Always begin with `--dry-run`. Without it, the CLI displays the complete deletion table, requires a fresh random code, then requires typing `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. State is re-read after confirmation and absence is verified after deletion. Delete dependencies in this order when separate CSVs are involved: firewall rules, template ACLs, application groups, application definitions with their integrated AppExpress state, service groups, then address groups.
 
 ## Verbose output
 
@@ -491,11 +546,11 @@ edgeconnect-auto -v discovery
 edgeconnect-auto -vv firewall deploy --csv rules.csv --dry-run
 ```
 
-- Default: plans, validation results, changes, and verification summary
-- `-v`: API method/path, status, and response size
+- Default: small results as JSON, a short change table before every `APPLY` prompt, and the [run summary](#run-summary-and-report-log) at the end. Large previews and plans are not printed; they are always saved in the report log.
+- `-v`: also prints the full preview JSON, plus API method/path, status, and response size
 - `-vv`: sanitized payload details, plus a Python traceback for unexpected runtime errors
 
-`-v`, `--dotenv`, and `--allow-http` are global options: place them **before** the workflow name. `edgeconnect-auto firewall validate --csv rules.csv -v` fails with `unrecognized arguments: -v`. Verbosity only affects Orchestrator API calls, so local-only `validate` output looks the same at every level.
+`-v`, `--dotenv`, `--orchestrator`, `--allow-http`, and `--report-dir` are global options: place them **before** the workflow name. `edgeconnect-auto firewall validate --csv rules.csv -v` fails with `unrecognized arguments: -v`. Verbosity only affects Orchestrator API calls, so local-only `validate` output looks the same at every level.
 
 Credentials and authorization headers are never logged.
 
@@ -512,9 +567,111 @@ Credentials and authorization headers are never logged.
 
 Automation systems must treat code 5 as incomplete deployment requiring operator review.
 
+## Run summary and report log
+
+Every command ends with a **RUN SUMMARY**, whatever happened: success, no-op, dry run, blocked, refused, drift, partial, interrupted, or an unexpected error. Think of it as the receipt at the end of a transaction: it tells you what happened, why, and what to do next, even when nothing was written.
+
+```text
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall deploy
+Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
+Versions     : tool 1.2.3, Orchestrator 9.7.1.42046
+CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
+RESULT       : BLOCKED
+Changes made : no
+Exit code    : 2 = blocked by validation or planning; nothing was written
+
+What was planned or done
+  - segment pair Default -> Default: BLOCKED by 1 issue(s); none of its 73 rows will be written
+
+Rows (73): 1 BLOCKED, 72 NOT ATTEMPTED
+  ROW  OUTCOME        ITEM                 SCOPE / REASON
+  2    BLOCKED        1 (priority 20000)   Default -> Default | INSIDE -> OUTSIDE | [FW-24] ... priority 20000 conflicts ...
+  3    NOT ATTEMPTED  2 (priority 20005)   Default -> Default | INSIDE -> OUTSIDE | segment pair blocked by row 2
+  ...
+
+Why it stopped or what failed
+  - row 2 [FW-24] rule_key 1 priority 20000 conflicts with a different existing rule in zone pair INSIDE -> OUTSIDE (existing: allow disabled, match acl=EXAMPLE-ACL; this row: allow disabled, match dst_ip=192.0.2.0/24, either_port=443, protocol=tcp); fix: use a free priority such as 20001, or remove the existing rule first
+
+Warnings (do not block)
+  - target 3.NE (branch-03) is unreachable and will remain unverified
+
+Appliances
+  - 0.NE (hub-01): reachable
+  - 3.NE (branch-03): unreachable
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Fix every blocking issue listed above, then rerun the same command with --dry-run.
+==============================================================================
+```
+
+The summary is printed to standard error, so it still appears when standard output is redirected.
+
+| Line | Meaning |
+|---|---|
+| `RESULT` | `SUCCESS`, `NO_OP`, `DRY_RUN`, `VALID`, `PLANNED`, `BLOCKED`, `INVALID`, `REFUSED`, `DRIFT`, `PARTIAL`, `ZONES_CREATED_RERUN`, `INTERRUPTED`, or `ERROR` |
+| `Changes made` | `no`, `yes`, `possibly` (partial), or `unknown` (error or interruption after `APPLY`: check Orchestrator) |
+| `What was planned or done` | Counts per segment pair, template group, or object type; per-pair and per-group results, including rollback state |
+| `Rows` | One line per CSV row (or object): its outcome and why. Problem rows are listed first; the screen shows 25, the report log shows all |
+| `Why it stopped or what failed` | Every blocking issue, with its rule code, row, and fix |
+| `Appliances` | Reachability or verification per appliance, with hostname |
+| `Run ref` | Firewall writes only; the same reference appears in Orchestrator audit log comments |
+
+### Row outcomes
+
+| Outcome | Meaning |
+|---|---|
+| `WOULD CREATE`, `WOULD ADD`, `WOULD OVERWRITE`, `WOULD DELETE` | Planned only (dry run, refused, or blocked elsewhere) |
+| `CREATED`, `ADDED`, `OVERWRITTEN`, `DELETED` | Written and verified |
+| `CREATED, UNVERIFIED` (and similar) | Written, but not every appliance or readback could be verified |
+| `ALREADY PRESENT`, `ALREADY ABSENT` | Nothing to do for this row |
+| `BLOCKED`, `INVALID` | This row has an error; the reason is shown |
+| `NOT ATTEMPTED` | This row is fine, but another row blocks its segment pair, template group, or the whole CSV |
+| `SKIPPED` | Row isolated from an otherwise successful run (application definitions and groups) |
+| `FAILED`, `NOT WRITTEN` | The write failed and was rolled back, drift stopped it, or an appliance refused to compile the rule (see below) |
+
+A firewall error in one row blocks every row of the same segment pair, and a CSV validation error blocks the whole file. `NOT ATTEMPTED` makes that visible: fix the `BLOCKED` or `INVALID` rows and the rest can proceed.
+
+### Status fields in report files
+
+Every `--report` file and every report-log record starts with the same fields and words, whatever the workflow: `status` (the `RESULT` values above), `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (the nickname, or `unnamed` for the single-Orchestrator lines) and `orchestrator_url` (for example `https://<ORCHESTRATOR_FQDN>`). Commands that never contact Orchestrator, such as `validate`, record `not contacted`. Scripts should read these. To list every run against one Orchestrator: `grep '"orchestrator": "ge"' reports/firewall.jsonl`. The workflow-specific results underneath are unchanged (for example firewall `result.status: SUCCESS` or template ACL `result.status: success`); a different older top-level status is kept as `detail_status`.
+
+### Summarize a saved report
+
+```bash
+edgeconnect-auto report summarize reports/firewall-deploy.json
+edgeconnect-auto report summarize reports/firewall.jsonl --last 3
+edgeconnect-auto report summarize old-report.json --rows-csv rows.csv
+```
+
+This prints the RUN SUMMARY and the full row table from a saved `--report` file, a plan file, or the last runs of a `reports/<workflow>.jsonl` log. It also works on reports written by versions before this feature (the tool version then shows as unknown). `--rows-csv` exports the row table for Excel. It reads files only: it does not contact Orchestrator and does not add to the report log.
+
+### Automatic report log
+
+You do not need `--report` to keep a record. Every run is appended to a log for its workflow in `./reports/` (created if missing, and excluded from Git):
+
+| File | Contents |
+|---|---|
+| `reports/<workflow>.log` | The human-readable run summary of every run, newest at the end |
+| `reports/<workflow>.jsonl` | One JSON line per run: the summary (run ID, timestamp, versions, command, CSV checksum, status, issues) plus the complete preview and result |
+
+`<workflow>` is the command family: `firewall`, `template-acls`, `address-groups`, `service-groups`, `app-groups`, `app-definitions`, `zones`, or `discovery`. The log files grow with every run; archive or delete old ones when no longer needed.
+
+| Option | Effect |
+|---|---|
+| (none) | Log to `./reports/` in the current directory |
+| `--report-dir D:\ec-reports` or `EDGECONNECT_REPORT_DIR` | Log to another folder |
+| `--report-dir ""` | Disable the automatic log for this run |
+| `--report reports/x.json` (per command) | Additionally write that one run to an exact file, overwritten each time. It is always written, even on refusal or error, and includes the same `summary` block, so it never shows an older run's result. |
+
+To send a run for troubleshooting, send the matching block from `reports/<workflow>.log`; add the `.jsonl` line when the full preview is needed.
+
 ## Reports
 
-Reports are:
+Reports and report logs are:
 
 - Redacted
 - Fingerprinted
@@ -615,6 +772,14 @@ The tool never overwrites a conflicting rule.
 ### Unreachable appliances
 
 The global policy may be saved, but verification remains incomplete. The command exits PARTIAL and identifies unverified targets.
+
+### Appliance alarm "ACL rule has invalid syntax"
+
+Orchestrator can store a firewall rule or ACL entry, copy it to every appliance, and log success, while the appliance policy engine refuses to compile it. The appliance then raises the service-affecting alarm "ACL rule has invalid syntax" with source `/policyEngine/acl/<priority>`, and the rule is not enforced. On 9.6.4 appliances this happens for single addresses without a prefix length (`10.1.1.1` instead of `10.1.1.1/32`) and for dotted masks (`/255.255.255.0` instead of `/24`); one such value in a list rejects the whole rule.
+
+- The tool sends these values as `/32` (`/128` for IPv6) and prefix lengths, and warns (`FW-33`, `ACL-29`).
+- After every firewall or template ACL write it reads the appliance alarms for the verified appliances (for up to 30 seconds) and reports each rejected row as `FAILED`, with the appliance and the reason. The run ends PARTIAL. Rules written by older versions are not rechecked.
+- A rule already deployed without `/32` blocks a redeploy at the same priority with `FW-34`. Remove it with `firewall delete` and the CSV it was deployed from (the delete still matches it), then deploy the corrected CSV.
 
 ### API returns success but drops a field
 

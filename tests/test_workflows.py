@@ -6,7 +6,7 @@ from pathlib import Path
 
 from edgeconnect_automation.errors import DriftError, ValidationError
 from edgeconnect_automation.firewall import parse_firewall_csv
-from edgeconnect_automation.workflows import ACL_HEADERS, ACL_HEADERS_LEGACY, ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acls, plan_zones
+from edgeconnect_automation.workflows import ACL_HEADERS, ACL_HEADERS_LEGACY, ADDRESS_HEADERS, APP_DEF_HEADERS, SERVICE_HEADERS, ApplicationDefinition, apply_appexpress, apply_native_groups, apply_template_acls, apply_zones, execute_application_definitions, execute_application_definitions_with_appexpress, native_csv_bytes, native_group_semantic_equal, parse_address_groups, parse_application_definitions, parse_application_groups, parse_service_groups, parse_template_acls, plan_appexpress_modes, plan_application_definitions, plan_application_groups, plan_native_groups, plan_template_acl_deletions, plan_template_acls, plan_zones
 
 
 class TempCsv:
@@ -38,6 +38,50 @@ class TemplateAclTests(unittest.TestCase):
         row = {header: "" for header in ACL_HEADERS}
         row.update({"TemplateGroup": "test2", "ACLName": "web-acl", "ACLUpdateMode": "MERGE", "TemplateApplyMode": "MERGE", "Priority": "1000", "Permit": "TRUE", "BroadMatchAck": "FALSE"}, **values)
         return row
+
+    def test_strict_delete_removes_only_an_exact_complete_acl(self):
+        fixture = TempCsv(ACL_HEADERS, [self.row(Protocol="tcp")])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        existing = acl_group("test2", {"web-acl": {"entry": {"1000": rules[0].entry}}, "keep": {"entry": {"9000": {"permit": False}}}})
+        plan = plan_template_acl_deletions(rules, [existing], {"test2": ["acls", "hostname"]}, {"0.NE": ["test2"]})
+        group = plan["groups"][0]
+        self.assertTrue(group["eligible"], group["errors"])
+        self.assertEqual(group["deleted_acls"], ["web-acl"])
+        self.assertNotIn("web-acl", group["candidate_acl_value"]["data"])
+        self.assertIn("keep", group["candidate_acl_value"]["data"])
+        self.assertEqual(group["candidate_selection"], ["acls", "hostname"])
+        self.assertEqual(group["associations"], ["0.NE"])
+        self.assertEqual(group["unrelated_templates"], [existing["templates"][1]])
+
+    def test_addresses_are_written_with_prefix_and_old_bare_acl_still_deletes_exactly(self):
+        fixture = TempCsv(ACL_HEADERS, [self.row(SourceIP="198.18.80.193", DestinationIP="198.18.4.0/255.255.254.0", Protocol="tcp")])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        self.assertEqual((rules[0].entry["src_ip"], rules[0].entry["dst_ip"]), ("198.18.80.193/32", "198.18.4.0/23"))
+        self.assertEqual(sum("[ACL-29]" in warning for warning in rules[0].warnings), 2)
+        legacy = dict(rules[0].entry, src_ip="198.18.80.193", dst_ip="198.18.4.0/255.255.254.0")
+        group = plan_template_acl_deletions(rules, [acl_group("test2", {"web-acl": {"entry": {"1000": legacy}}})], {"test2": ["acls"]}, {})["groups"][0]
+        self.assertTrue(group["eligible"], group["errors"])
+        self.assertEqual(group["deleted_acls"], ["web-acl"])
+
+    def test_strict_delete_blocks_partial_or_semantically_different_acl(self):
+        fixture = TempCsv(ACL_HEADERS, [self.row(Protocol="tcp")])
+        try:
+            rules = parse_template_acls(str(fixture.path))
+        finally:
+            fixture.close()
+        extra = copy.deepcopy(rules[0].entry)
+        extra["permit"] = False
+        existing = acl_group("test2", {"web-acl": {"entry": {"1000": rules[0].entry, "2000": extra}}})
+        group = plan_template_acl_deletions(rules, [existing], {"test2": ["acls"]}, {})["groups"][0]
+        self.assertFalse(group["eligible"])
+        self.assertIn("differs from the complete CSV definition", group["errors"][0])
+        self.assertIn("web-acl", group["candidate_acl_value"]["data"])
 
     def test_parse_merge_overwrites_whole_priority_and_preserves_omitted_rules(self):
         fixture = TempCsv(ACL_HEADERS, [

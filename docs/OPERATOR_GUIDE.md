@@ -10,7 +10,7 @@ When `--dotenv` is omitted, commands load only `./.env` from the current working
 
 Every normal write command performs discovery, validation and preview in the same process, then:
 
-1. Displays the sanitized exact candidate, target state, fingerprints, impact, verification and recovery information.
+1. Displays a short change table (counts, skipped or blocked items, warnings, impact and recovery). The sanitized exact candidate, target state and fingerprints are saved in the report log and printed with `-v`.
 2. Refuses non-TTY execution.
 3. Requires exact uppercase `APPLY` with no `--yes` bypass.
 4. Re-reads the affected baseline and aborts on drift.
@@ -26,7 +26,9 @@ Run from the project root:
 PYTHONPATH=src python3 -m edgeconnect_automation --help
 ```
 
-Supported runtime aliases include `orchestrator_base_url` / `ORCHESTRATOR_BASE_URL` / `EDGECONNECT_BASE_URL` / `EC_BASE_URL`, corresponding API-key aliases, CA-bundle aliases, and API-key-header aliases. Never place credentials in command arguments, reports, templates or source files.
+Supported runtime aliases include `orchestrator_base_url` / `ORCHESTRATOR_BASE_URL` / `EDGECONNECT_BASE_URL` / `EC_BASE_URL`, corresponding API-key aliases, CA-bundle aliases, and API-key-header aliases.
+
+Several Orchestrators can share one `.env`: register each with `orch_<N>=<nickname>` and set `<nickname>_base_url`, `<nickname>_api_key`, and optionally `<nickname>_ca_bundle` / `<nickname>_api_key_header`. Selection order: global `--orchestrator <nickname>`, then `orch_default` (a nickname or slot such as `orch_1`), then the only listed Orchestrator, then an interactive numbered menu. Non-interactive runs with several Orchestrators and no choice stop with a configuration error. Duplicate, reserved or invalid nicknames are rejected. The selected nickname and host are printed before every `APPLY` and deletion confirmation and in the RUN SUMMARY. When `orch_<N>` lines exist alongside the single-Orchestrator keys, those keys become one more choice with the nickname `orchestrator`. Plan and inventory files record their Orchestrator (`orchestrator: {name, url}`); `apply --approved-plan` and `firewall deploy --inventory` refuse them on any other Orchestrator before approval, naming only the Orchestrator the file belongs to. Never place credentials in command arguments, reports, templates or source files.
 
 ## Exit codes
 
@@ -38,6 +40,11 @@ Supported runtime aliases include `orchestrator_base_url` / `ORCHESTRATOR_BASE_U
 | 3 | Approval refusal or non-TTY write refusal |
 | 4 | Baseline drift |
 | 5 | PARTIAL or CRITICAL, including unresolved appliance verification |
+| 130 | Interrupted by the operator (Ctrl+C) |
+
+## Run summary and report log
+
+Every command, including failed and refused runs, ends with a RUN SUMMARY on standard error: result, whether changes were made, exit-code meaning, counts, every blocking issue with its rule code and fix, warnings, appliance states with hostnames, and the next step. Each run is also appended to `reports/<workflow>.log` (summary text) and `reports/<workflow>.jsonl` (summary plus the complete preview and result) in the current directory. Use `--report-dir <folder>` or `EDGECONNECT_REPORT_DIR` to relocate the log and `--report-dir ""` to disable it. An explicit `--report <file>` is written on every outcome, including refusal and errors, and contains the same `summary`. Every report file and log record carries the same top-level `status`, `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (nickname) and `orchestrator_url`. The summary includes a per-row table (`BLOCKED`, `NOT ATTEMPTED`, `CREATED`, `ALREADY PRESENT` and so on). `edgeconnect-auto report summarize <file> [--last N] [--rows-csv rows.csv]` prints the summary and row table of any saved report or log, including reports from earlier versions, without contacting Orchestrator. See the README section "Run summary and report log".
 
 ## Default one-command workflows
 
@@ -130,7 +137,7 @@ Each resource workflow provides a `delete` subcommand accepting the same `--csv`
 
 Every apply requires three stages: review the complete untruncated deletion table, type a fresh random `DELETE-...` code, and type `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. Non-interactive deletion is refused. After confirmation, collection fingerprints and individual object semantics are checked again. Missing objects are no-ops; semantic mismatches and detected external references block the entire command; incomplete readback returns nonzero PARTIAL.
 
-Use dependency order across commands: firewall rules, application groups, application definitions with integrated AppExpress cleanup, service groups, then address groups. `app-definitions delete` handles matching MONITOR entries before deleting definitions and blocks definitions referenced by application groups. Compound IDs are resolved from the current unique name and semantic body immediately before each delete.
+Use dependency order across commands: firewall rules, template ACLs, application groups, application definitions with integrated AppExpress cleanup, service groups, then address groups. `template-acls delete` requires the complete ACL in the CSV to match every live entry exactly; it preserves the group, selection, associations and unrelated configuration, blocks firewall/template/route-map/unreachable-target references, removes exact associated-appliance copies through passthrough, and verifies absence. Native template merge omission alone is never considered deletion. `app-definitions delete` handles matching MONITOR entries before deleting definitions and blocks definitions referenced by application groups. Compound IDs are resolved from the current unique name and semantic body immediately before each delete.
 
 ## Advanced read-only and plan-file commands
 

@@ -4,7 +4,7 @@
 "EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","3000","TRUE","","","192.0.2.0/24","198.51.100.10/32","","","","","","","","1000-2000","443","","","","","","","","tcp","Directional IPv4 and ports","FALSE"
 "EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","4000","TRUE","","","","","2001:db8::/32","","","","","","","","","443","","","","","","example.net","tcp/udp","Either IPv6, port, and domain","FALSE"
 "EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","5000","TRUE","","","","","","","","","","","","","","","","","","*.source.example.com","*destination.example.com","","","Directional domains","FALSE"
-"EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","6000","FALSE","","","10.0.0.0/255.255.0.0","","","","","","","","","","","","","","","","","","icmp","Dotted mask and deny","FALSE"
+"EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","6000","FALSE","","","10.0.0.0/16","","","","","","","","","","","","","","","","","","icmp","Prefix mask and deny","FALSE"
 "EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","65535","FALSE","","","","","","","","","","","","","","","","","","","","","","Intentional catch-all deny","TRUE"
 "EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","7000","TRUE","","","","198.51.100.10/32","","test-51-ag-Formats","","","Default","","","","","","","","","","","","","Source group and segment to destination IP","FALSE"
 "EXISTING_OR_NEW_GROUP","test-51-acl","MERGE","MERGE","7010","TRUE","","","192.0.2.10/32","","","","test-51-ag-Excluded|test-51-ag-Child","","","Default","","","","","","","","","","","","Source IP to destination group list","FALSE"

@@ -1,6 +1,6 @@
 # CSV Constraints and Dependencies
 
-Status: **All decisions D1–D14 resolved (2026-09-24). Final plan in §16. Nothing in "Gap" rows is implemented yet.**
+Status: **Implemented (2026-09-24).** All decisions D1–D14 are resolved. §17 records what was implemented, the deliberate deviations from the plan, and deferred items; it takes precedence over the per-row status tags below, which record the pre-implementation analysis.
 
 Scope: every CSV the CLI accepts, the rules each row must satisfy, the rules between rows, the
 dependencies between workflows, and the implementation/test plan for the missing checks.
@@ -79,7 +79,7 @@ Families per CSV:
 | Address group | `source_address_group`, `destination_address_group`, `either_address_group` | not supported | not supported |
 | Port literal | `source_port`, `destination_port`, `either_port` | `SourcePort`, `DestinationPort`, `EitherPort` | `SourcePort`, `DestinationPort`, `EitherPort` |
 | Service group | `source_service_group`, `destination_service_group`, `either_service_group` | not supported | not supported |
-| Domain | not supported | `SourceDomain`, `DestinationDomain`, `EitherDomain` | `SourceDomain`, `DestinationDomain`, `EitherDomain` |
+| Domain | `source_domain`, `destination_domain`, `either_domain` (added, FW-17) | `SourceDomain`, `DestinationDomain`, `EitherDomain` | `SourceDomain`, `DestinationDomain`, `EitherDomain` |
 | Geo | not supported | not supported | `SourceGeo`, `DestinationGeo`, `EitherGeo` |
 | Address map | not supported | not supported | `SourceAddressMap`, `DestinationAddressMap`, `EitherAddressMap` |
 
@@ -231,7 +231,7 @@ Headers (exact order):
 | ACL-16 | Existing native mode `merge=false` → typed `MERGE ACLS <group>`. | Done |
 | ACL-17 | Never associate appliances. | Done |
 | ACL-18 | Application/app-group dependencies re-checked before write (drift). | Done |
-| ACL-19 | Omitting a priority does **not** remove it from appliances under native merge. Deletion needs the separate workflow in OI-032. | Documented limitation |
+| ACL-19 | Omitting a priority does **not** remove it under native merge; `template-acls delete` requires a complete exact ACL match and exact associated-appliance cleanup. | Done |
 
 ---
 
@@ -281,7 +281,7 @@ Status: matrix **Done** (`_reject_unused_fields`).
 |---|---|---|
 | CMP-01 | Within-family Either exclusivity for port, IP, geo, domain, address map. | Done |
 | CMP-02 | At least two attributes (list members count individually). | Done |
-| CMP-03 | A single TCP/UDP port with no other non-port attribute must use `TCP_PORT`/`UDP_PORT`. | Done |
+| CMP-03 | A single TCP/UDP port with no other non-port attribute must use `TCP_PORT`/`UDP_PORT`. A simple either-direction domain with no other non-protocol criterion must use `DOMAIN`; live 9.7.1 rejected it with `Use the Domain Name tab to define simple rules`. | Done / live-confirmed |
 | CMP-04 | Criteria text ≤ 512 characters. | Done |
 | CMP-05 | Compound ports may coexist with blank, `ip`, `tcp`, `udp`, or `tcp/udp`; existing user/portal data and API readback confirm these forms. | Confirmed |
 | CMP-06 | Protocol vocabulary: `ip,tcp,udp,tcp/udp,icmp,icmpv6` or `0..255`; do not impose ACL's tcp/udp-only port rule on compounds. | Gap |
@@ -439,7 +439,7 @@ Firewall rules → Template ACLs (separate, OI-032) → App groups
 | DEL-05 | Address/service group deletion **not** blocked when a global firewall rule references the group. | Gap — must block |
 | DEL-06 | App definition / app group deletion **not** blocked when a firewall rule or a template ACL references it. | Gap — must block |
 | DEL-07 | Compound deletion: resolve current ID immediately before delete, re-verify body. | Done |
-| DEL-08 | Template ACL deletion: separate workflow, zero `secmap/rmap/qmap` references before appliance delete. | Gap (OI-032) |
+| DEL-08 | Template ACL deletion: complete exact CSV/central/appliance semantics; zero firewall/template/route-map references; reachable associated targets; strict confirmations; central and exact passthrough appliance deletion; absence and preservation verification. | Done |
 
 ---
 
@@ -516,12 +516,12 @@ All local, no API writes. Files: `tests/test_firewall.py`, `tests/test_workflows
 
 Completed API/importer contract probes are recorded in §15.2. Remaining future tests: SG-09 protocol-mismatched nesting, APG-08/11, comment limits, direct appliance semantics of ACL IPv6/range/dotted-mask matches, and compound direct-interface (not label) names. Do not block implementation of the confirmed local rules on these deferred items.
 
-## 13. Implementation phases (after approval)
+## 13. Implementation phases (superseded by §16)
 
 1. **Phase A — shared parsers and correctness bugs:** policy/address IP grammars; compound `\|`→`,` API conversion; domain grammar; `tcp/udp`; ACL priority `1..65535`; ICMP type ranges; 64-char group names; nesting depth including existing groups. Write table-driven failing tests first.
 2. **Phase B — cross-field completeness:** all directional-family matrices; protocol/port rules by workflow; duplicate/empty members; empty/exclude-only groups; short rows/empty files; type-specific/case-insensitive application names; AppExpress limit 50; firewall domain columns (FW-17).
 3. **Phase C — dependency validation:** compound geo/DSCP/interface-label/address-map resolvers; application/group dependencies; cross-template ACL conflict; warnings (host bits, redundant acknowledgments, duplicate semantics).
-4. **Phase D — deletion safety:** DEL-05/06; block deletes referenced by firewall or template ACL state. Template ACL deletion remains separate under OI-032.
+4. **Phase D — deletion safety:** DEL-05/06/08; block referenced deletes and require exact central/appliance cleanup for template ACLs.
 5. **Phase E — structured errors:** collect all errors with rule ID/field/fix/block scope while preserving existing isolation units and exit codes.
 6. Update templates, `CSV_REFERENCE.md`, requirements, operator guide and changelog; full tests; CLI/reference audit; read-only lab plans. Any deployment remains separately approved.
 
@@ -540,7 +540,7 @@ Completed API/importer contract probes are recorded in §15.2. Remaining future 
 | D11 | Treat `application=any` like `application_group=any`? | **Approved: reject** `application=any`; use blank or `application_group=any` (owner, 2026-09-24). |
 | D12 | Collect all errors per row (vs. first error)? | **Approved: yes** (owner, 2026-09-24). |
 | D13 | Blank ACL `Permit` = vendor default permit? | **Approved: No** — `Permit` stays explicit TRUE/FALSE (owner, 2026-09-23). |
-| D14 | Policy dotted mask (`10.0.0.0/255.255.0.0`)? | **Resolved: accept.** Unassociated ACL API probe stored/read it exactly; address-group importer also supports dotted masks. Mark appliance semantics unverified until naturally encountered in a reviewed deployment. |
+| D14 | Policy dotted mask (`10.0.0.0/255.255.0.0`)? | **Superseded 2026-10-03: accept, but send as a prefix length.** Appliances (9.6.4, lab `0.NE` probe and production evidence) raise "ACL rule has invalid syntax" for dotted masks and for single addresses without `/32` in firewall rules and ACL entries, although Orchestrator stores them exactly. The tool converts them (`FW-33` / `ACL-29` warnings) and, after every write, reads appliance alarms and reports rejected rules as FAILED. Native address-group members are unaffected. |
 
 ---
 
@@ -692,7 +692,7 @@ Unassociated template API readback proves the Orchestrator accepts and preserves
 - Vendor-documented + API-confirmed forms are supported.
 - Existing GUI-created + central/effective/appliance-read forms are supported for compatibility.
 - API-only forms that contradict docs (`priority 0`, `ip` + port, middle wildcard) are rejected.
-- Dotted masks and policy IPv6 are supported, but their packet-match semantics remain uncertified until they appear in a separately approved appliance deployment and traffic test.
+- Dotted masks and single addresses are converted to prefix lengths (`/32`, `/128`) before they are sent, because appliances refuse to compile the original forms (D14). Policy IPv6 packet-match semantics remain uncertified until they appear in a separately approved appliance deployment and traffic test.
 
 ---
 
@@ -791,8 +791,8 @@ Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edg
 | Comment/Notes/ACL name length limits | No platform evidence; importer and API errors remain the backstop |
 | AD-12 name collision with built-in applications of another type | Built-in collisions are valid multi-definition applications on the platform |
 | Compound IPv6, wildcard, direct interface names | Compound schema is IPv4 address/prefix/range; interface is a label ID |
-| Template ACL `REPLACE` and deletion | OI-032 |
-| Packet-level appliance verification of IPv6, dotted-mask and range+mask policy matches | Needs a separately approved deployment and traffic test |
+| Template ACL `REPLACE` | OI-032; strict exact deletion is implemented (`template-acls delete`) |
+| Packet-level appliance verification of IPv6 and range+mask policy matches | Needs a separately approved deployment and traffic test; dotted masks and single addresses are now converted to prefix lengths (D14) |
 
 ### 17.4 Compatibility impact
 

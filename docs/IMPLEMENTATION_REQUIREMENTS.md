@@ -235,7 +235,8 @@ Rules:
 - Within one directional family, either-direction values exclude source/destination values. Different families may use different direction modes (GUI-created rule 20030 combines `dst_ip` with `either_addrgrp_groups`).
 - Multi-value IP/port/domain cells use `|`; port ranges use `-` (for example `10.1.1.1/32|10.1.1.2/32` and `1000-1002|1010`).
 - Ports are allowed with a blank, `tcp`, `udp`, `tcp/udp`, `6`, or `17` protocol. GUI-created firewall rules and ACL entries store ports without a protocol, so blank stays valid; other explicit protocols are rejected.
-- Policy IP values accept the documented prefix-matching grammar (octet ranges, whole-octet wildcards, IPv6), dotted masks, and GUI-compatibility forms with warnings; see `CSV_CONSTRAINTS_AND_DEPENDENCIES.md` §14.2.
+- Policy IP values accept the documented prefix-matching grammar (octet ranges, whole-octet wildcards, IPv6), dotted masks, and GUI-compatibility forms with warnings; see `CSV_CONSTRAINTS_AND_DEPENDENCIES.md` §14.2. Single addresses are sent as `/32` (`/128`) and dotted masks as prefix lengths, because appliances reject the original forms in firewall rules and ACL entries (D14).
+- After every firewall or template ACL write, read the appliance alarms (`POST /alarm/appliance`) for verified targets and report rules raising "ACL rule has invalid syntax" (`/policyEngine/acl/<priority>`) as FAILED; configuration readback alone cannot detect them.
 - Domain columns map to `src_dns`, `dst_dns`, `either_dns`. `either_dns` is readback-confirmed; directional firewall domain keys match the ACL/compound encodings and are protected by exact readback with rollback.
 - `application=any` is rejected; `application_group=any` is valid. A nonzero `logging_level` requires logging enabled.
 - Every problem in a row is reported with its rule ID, field, value, fix, and blocked scope.

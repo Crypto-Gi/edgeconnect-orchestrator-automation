@@ -48,6 +48,43 @@ class FakeClient:
 
 
 class GatewayContractTests(unittest.TestCase):
+    def test_policy_compile_alarms_filter_by_source_priority_and_target(self):
+        client = FakeClient()
+        client.config.alarm_wait = 0
+        alarms = [
+            {"applianceId": "0.NE", "source": "/policyEngine/acl/46000", "description": "ACL rule has invalid syntax"},
+            {"applianceId": "0.NE", "source": "/policyEngine/acl/99999"},
+            {"applianceId": "9.NE", "source": "/policyEngine/acl/46020"},
+            {"applianceId": "0.NE", "source": "/license/ec"},
+        ]
+        client.request = lambda method, path, **kwargs: client.calls.append((method, path, kwargs)) or alarms
+        found = OrchestratorGateway(client).policy_compile_alarms(["0.NE"], 1000000, [46000, "46020"])
+        self.assertEqual(found, {"0.NE": [46000]})
+        method, path, kwargs = client.calls[-1]
+        self.assertEqual((method, path, kwargs["json_body"], kwargs["query"]["view"]), ("POST", "/alarm/appliance", {"nePks": ["0.NE"]}, "active"))
+
+    def test_deleted_rules_must_disappear_from_reachable_appliances(self):
+        client = FakeClient()
+        client.security_map = {"map1": {"1_2": {"prio": {"100": {}, "200": {}}}}}
+        gateway = OrchestratorGateway(client, {"0.NE": "reachable", "4.NE": "unreachable"})
+        removed = [{"zone_key": "1_2", "priority": 100}, {"zone_key": "1_2", "priority": 300}]
+        self.assertEqual(gateway.verify_rules_absent(removed), {"0.NE": "still_present:100", "4.NE": "unreachable"})
+        client.security_map = {"map1": {"1_2": {"prio": {"200": {}}}}}
+        self.assertEqual(gateway.verify_rules_absent(removed), {"0.NE": "verified", "4.NE": "unreachable"})
+
+    def test_alarm_check_failure_is_explicit_and_unverified(self):
+        from edgeconnect_automation.gateway import appliance_rejections
+
+        class Broken:
+            def policy_compile_alarms(self, *args):
+                raise RuntimeError("timeout")
+
+        targets = {"0.NE": "verified", "4.NE": "unreachable"}
+        message = appliance_rejections(Broken(), targets, 0, [1])
+        self.assertEqual(targets, {"0.NE": "alarm_check_failed", "4.NE": "unreachable"})
+        self.assertIn("appliance alarm check failed", message)
+        self.assertEqual(appliance_rejections(Broken(), {"0.NE": "unreachable"}, 0, [1]), "")
+
     def test_native_bulk_uses_csvfile_multipart_and_parses_failure(self):
         client = FakeClient()
         gateway = OrchestratorGateway(client)
