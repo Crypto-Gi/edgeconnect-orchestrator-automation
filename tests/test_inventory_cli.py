@@ -556,6 +556,28 @@ class DeployCliTests(unittest.TestCase):
         self.assertTrue(apply_gateway.appexpress["monitor-app"]["monitor"])
         self.assertFalse(apply_gateway.appexpress["monitor-app"]["appExpressEnabled"])
 
+    def test_blank_appexpress_mode_removal_is_shown_before_apply(self):
+        row = {header: "" for header in APP_DEF_HEADERS}
+        row.update({"DefinitionType": "DOMAIN", "Name": "monitor-app", "Notes": "monitor test", "Enabled": "TRUE", "Confidence": "100", "Domain": "monitor.example.com", "AppExpressMode": ""})
+        with self.application_csv.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, APP_DEF_HEADERS)
+            writer.writeheader()
+            writer.writerow(row)
+        gateway = AppDefinitionDeployGateway()
+        gateway.inventories["dnsClassification"] = [{"domain": "monitor.example.com", "name": "monitor-app", "description": "monitor test", "priority": 100, "disabled": False}]
+        gateway.appexpress = {"monitor-app": {"id": 1, "name": "monitor-app", "monitor": False, "appExpressEnabled": True, "probes": [{"target": "monitor.example.com"}]}}
+        shown = []
+
+        def answer(prompt):
+            shown.append(stdout.getvalue())
+            return "N"
+
+        stdout = io.StringIO()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=answer), patch("sys.stdout", stdout):
+            self.assertEqual(main(["app-definitions", "deploy", "--csv", str(self.application_csv)]), 3)
+        self.assertIn("AppExpress: remove 1 (monitor-app)", shown[0])
+        self.assertEqual(gateway.appexpress_posts, 0)
+
     def test_application_group_missing_dependency_skips_group_and_dependents(self):
         groups_csv = Path(self.directory.name) / "application-groups-partial.csv"
         groups_csv.write_text("Name,Applications,ParentGroups\nbad-group,missing-app,\ndependent-group,present-app,bad-group\ngood-group,present-app,\n", encoding="utf-8")

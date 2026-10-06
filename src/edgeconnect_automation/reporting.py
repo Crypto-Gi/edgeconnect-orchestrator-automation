@@ -9,7 +9,7 @@ import sys
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from . import __version__
 from .util import fingerprint, redact, safe_report
@@ -253,6 +253,11 @@ def _counts(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[str]:
         value = plan.get(key)
         if isinstance(value, list) and (value or key in {"new_rows", "new", "delete"}):
             lines.append("{}: {}".format(label, len(value)))
+    appexpress = plan.get("appexpress")
+    if isinstance(appexpress, Mapping) and isinstance(appexpress.get("baseline"), Mapping) and isinstance(appexpress.get("candidate"), Mapping):
+        line = _appexpress_changes(appexpress["baseline"], appexpress["candidate"])
+        if line:
+            lines.append(line)
     if isinstance(plan.get("created"), Mapping) and plan.get("kind") in {"zones", "missing-firewall-zones"}:
         lines.append("zones to create: {}".format(", ".join(sorted(plan["created"])) or "none"))
     for key, label in (("created", "created"), ("deleted", "deleted"), ("unverified", "unverified")):
@@ -274,6 +279,23 @@ def _counts(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[str]:
         if isinstance(group, Mapping):
             lines.append("result template group {}: {}{}".format(group.get("template_group"), group.get("status"), " - {}".format(group["error"]) if group.get("error") else ""))
     return lines
+
+
+def _appexpress_changes(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> str:
+    """One line naming AppExpress entries the write removes, changes or adds; empty when it changes none (DEC-027: blank AppExpressMode means OFF)."""
+    def by_name(collection: Mapping[str, Any]) -> Dict[str, Tuple[str, Any]]:
+        return {str(value.get("name", key)).lower(): (str(value.get("name", key)), value) for key, value in collection.items() if isinstance(value, Mapping)}
+
+    before, after = by_name(baseline), by_name(candidate)
+    parts = []
+    for verb, suffix, names in (
+        ("remove", "", [before[name][0] for name in sorted(set(before) - set(after))]),
+        ("change", " to monitor-only", [after[name][0] for name in sorted(set(before) & set(after)) if before[name][1] != after[name][1]]),
+        ("add", "", [after[name][0] for name in sorted(set(after) - set(before))]),
+    ):
+        if names:
+            parts.append("{} {}{} ({})".format(verb, len(names), suffix, ", ".join(names)))
+    return "AppExpress: " + ", ".join(parts) if parts else ""
 
 
 def _targets(recorder: RunRecorder, plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[str]:
