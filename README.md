@@ -563,7 +563,7 @@ Credentials and authorization headers are never logged.
 | 2 | Validation failure or no eligible segment pair |
 | 3 | Approval refused or non-interactive write attempted |
 | 4 | Baseline drift |
-| 5 | PARTIAL or CRITICAL result |
+| 5 | PARTIAL or CRITICAL result, including a run that stopped (drift, validation, refusal) after it had started writing |
 
 Automation systems must treat code 5 as incomplete deployment requiring operator review.
 
@@ -632,6 +632,8 @@ The summary is printed to standard error, so it still appears when standard outp
 | `NOT ATTEMPTED` | This row is fine, but another row blocks its segment pair, template group, or the whole CSV |
 | `SKIPPED` | Row isolated from an otherwise successful run (application definitions and groups) |
 | `FAILED`, `NOT WRITTEN` | The write failed and was rolled back, drift stopped it, or an appliance refused to compile the rule (see below) |
+| `NOT DELETED` | A deletion run stopped or skipped this row after drift or an error; the reason is shown. Firewall deletion continues with other segment pairs; object deletion stops at the first problem |
+| `UNKNOWN` | The command stopped after it had started writing, and the result of this row is not known; check Orchestrator |
 
 A firewall error in one row blocks every row of the same segment pair, and a CSV validation error blocks the whole file. `NOT ATTEMPTED` makes that visible: fix the `BLOCKED` or `INVALID` rows and the rest can proceed.
 

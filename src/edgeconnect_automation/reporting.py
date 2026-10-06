@@ -66,6 +66,11 @@ class RunRecorder:
         self.appliances: Dict[str, str] = {}
         self.error: Optional[BaseException] = None
         self.tool_version = __version__
+        self.client: Any = None
+
+    def writes_sent(self) -> int:
+        """Write requests the API client sent this run; an error after one means changes may exist."""
+        return int(getattr(self.client, "write_requests", 0) or 0)
 
     def capture(self, value: Any) -> None:
         self.payloads.append(value)
@@ -149,6 +154,8 @@ def _status(recorder: RunRecorder, args: Any, exit_code: int) -> str:
         name = type(error).__name__
         if isinstance(error, KeyboardInterrupt):
             return "INTERRUPTED"
+        if recorder.writes_sent() and (name in {"ApprovalError", "DriftError", "ValidationError", "ConfigurationError"} or isinstance(error, EOFError)):
+            return "PARTIAL"
         if name == "ApprovalError" or isinstance(error, EOFError):
             return "REFUSED"
         if name == "DriftError":
@@ -414,6 +421,7 @@ def row_outcomes(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[Dic
     groups = plan.get("groups") if isinstance(plan.get("groups"), list) else []
     if delete_plans:
         deleted = {str(entry.get("rule_key")) for pair in result.get("pairs", []) or [] if isinstance(pair, Mapping) for entry in pair.get("deleted", []) if isinstance(entry, Mapping)}
+        failed = {"{} -> {}".format(*pair.get("pair", ["?", "?"])): (str(pair["error"]), str(pair.get("written", "no"))) for pair in result.get("pairs", []) or [] if isinstance(pair, Mapping) and pair.get("error")}
         lingering: Dict[str, List[str]] = {}
         for pair in result.get("pairs", []) or []:
             for target, state in ((pair.get("targets") or {}).items() if isinstance(pair, Mapping) else []):
@@ -425,6 +433,10 @@ def row_outcomes(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[Dic
             for entry in delete_plan.get("removed", []):
                 name = str(entry.get("rule_key", ""))
                 left = lingering.get(str(entry.get("priority")), [])
+                if scope in failed:
+                    error, written = failed[scope]
+                    rows.append(_row("", name, "{} | zones {} | priority {}".format(scope, entry.get("zone_key", ""), entry.get("priority", "")), "DELETE UNVERIFIED" if written != "no" else "NOT DELETED", error))
+                    continue
                 outcome = "WOULD DELETE" if not result else "DELETE UNVERIFIED" if left or name not in deleted else "DELETED"
                 rows.append(_row("", name, "{} | zones {} | priority {}".format(scope, entry.get("zone_key", ""), entry.get("priority", "")), outcome, "still present on appliance {}".format(", ".join(sorted(left))) if left else ""))
         for name in _names(plan.get("absent")):
@@ -456,7 +468,11 @@ def row_outcomes(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[Dic
         seen.add(name)
         outcome = "WOULD CREATE" if not result else "CREATED, UNVERIFIED" if name in unverified else "CREATED" if name in created or status == "success" else "NOT CREATED"
         rows.append(_row(entry.get("_row") or entry.get("row"), name, kind, outcome, str(result.get("error") or "") if outcome == "NOT CREATED" else ""))
+    not_deleted = {str(name) for name in _names(result.get("not_deleted"))}
     for name in _names(plan.get("delete")):
+        if name in not_deleted:
+            rows.append(_row("", name, kind, "NOT DELETED", str(result.get("error") or "")))
+            continue
         outcome = "WOULD DELETE" if not result else "DELETED" if name in deleted and name not in unverified else "DELETE UNVERIFIED"
         rows.append(_row("", name, kind, outcome))
     for key, outcome in (("no_ops", "ALREADY PRESENT"), ("absent", "ALREADY ABSENT"), ("conflicts", "BLOCKED")):
@@ -489,12 +505,12 @@ def _rejected_csv_rows(text: str, errors: Mapping[int, Sequence[str]]) -> List[D
     return rows
 
 
-def _unattempted_csv_rows(text: str, reason: str) -> List[Dict[str, Any]]:
+def _unattempted_csv_rows(text: str, reason: str, outcome: str = "NOT ATTEMPTED") -> List[Dict[str, Any]]:
     try:
         records = list(csv.DictReader(text.splitlines()))
     except csv.Error:
         records = []
-    return [_row(number, str(record.get("rule_key") or record.get("Name") or record.get("ACLName") or ""), "CSV", "NOT ATTEMPTED", "command stopped before row processing: " + reason) for number, record in enumerate(records, 2)]
+    return [_row(number, str(record.get("rule_key") or record.get("Name") or record.get("ACLName") or ""), "CSV", outcome, ("command stopped after writing began: " if outcome == "UNKNOWN" else "command stopped before row processing: ") + reason) for number, record in enumerate(records, 2)]
 
 
 def _fill_row_numbers(rows: List[Dict[str, Any]], text: str) -> None:
@@ -593,7 +609,10 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         issues[:0] = ["{}: {}".format(type(error).__name__, lines[0])] + lines[1:]
         by_row = _errors_by_row(lines)
         csv_text = data.decode("utf-8-sig", "replace") if csv_path and Path(csv_path).is_file() else ""
-        if by_row and not rows:
+        if recorder.writes_sent() and not rows and csv_text:
+            rows = _unattempted_csv_rows(csv_text, lines[0], "UNKNOWN")
+            counts.append("command stopped after {} write request(s) to Orchestrator; check Orchestrator for which of {} row(s) were applied".format(recorder.writes_sent(), len(rows)))
+        elif by_row and not rows:
             rows = _rejected_csv_rows(csv_text, by_row)
             counts.append("CSV rejected: {} invalid row(s), {} valid row(s) not attempted; nothing was written".format(len(by_row), len(rows) - len(by_row)))
         elif not rows and csv_text:

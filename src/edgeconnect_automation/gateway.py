@@ -317,10 +317,10 @@ class OrchestratorGateway:
         return self._shape(self.client.get("/spPortal/internetDb/ipIntelligence/search", {"filter": name}), list, "address map search")
 
     def search_application(self, name: str) -> Any:
-        return self.client.request("POST", "/applicationDefinition/applications/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True)
+        return self.client.request("POST", "/applicationDefinition/applications/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True, read_only=True)
 
     def search_application_group(self, name: str) -> Any:
-        return self.client.request("POST", "/applicationDefinition/applicationTags/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True)
+        return self.client.request("POST", "/applicationDefinition/applicationTags/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True, read_only=True)
 
     def get_appliances(self) -> Any:
         return self._shape(self.client.get("/appliance"), list, "appliances")
@@ -356,7 +356,7 @@ class OrchestratorGateway:
         # ponytail: alarms carry only the appliance timestamp; a 60 s skew allowance plus the priority filter limits misattribution.
         query = {"view": "active", "maxAlarms": 10000, "from": since_ms - 60000}
         while True:
-            alarms = self.client.request("POST", "/alarm/appliance", query=query, json_body={"nePks": targets}, expected_status=(200,), expect_json=True)
+            alarms = self.client.request("POST", "/alarm/appliance", query=query, json_body={"nePks": targets}, expected_status=(200,), expect_json=True, read_only=True)
             for alarm in alarms if isinstance(alarms, list) else []:
                 source = str(alarm.get("source", ""))
                 if source.startswith(self.POLICY_ALARM_SOURCE) and source[len(self.POLICY_ALARM_SOURCE):].isdigit():

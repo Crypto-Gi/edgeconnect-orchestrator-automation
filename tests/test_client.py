@@ -126,6 +126,15 @@ class ClientTests(unittest.TestCase):
                 client.request(method, "/x", json_body={} if method == "POST" else None, expect_json=method == "GET")
             self.assertEqual(seen, [("https://unit.invalid/x", "super-secret")])
 
+    def test_write_requests_are_counted_reads_are_not(self):
+        opener = Opener([Response(), Response(b"", 204), Response(b"[]"), Response(b"", 204)])
+        client = ApiClient(self.config(), opener=opener)
+        client.get("/zones")
+        client.post_json("/zones", {})
+        client.request("POST", "/applicationDefinition/applications/wildcard", json_body={}, read_only=True)
+        client.request("DELETE", "/ipObjects/addressGroup", query={"name": "x"}, expected_status=(204,), expect_json=False)
+        self.assertEqual(client.write_requests, 2)
+
     def test_strict_media_type_and_empty_json(self):
         with self.assertRaises(ResponseFormatError):
             ApiClient(self.config(), opener=Opener([Response(b"<html>", content_type="text/html")])).get("/x")

@@ -215,6 +215,8 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
     if _RUN is not None:
         _RUN.orchestrator_target, _RUN.orchestrator_name, _RUN.orchestrator_url = _TARGET, config.name, url
     gateway = OrchestratorGateway(ApiClient(config, verbosity=args.verbose))
+    if _RUN is not None:
+        _RUN.client = gateway.client
     release = str(gateway.get_version().get("release", ""))
     try:
         parts = tuple(int(part) for part in release.split(".")[:2])
@@ -517,22 +519,33 @@ def _firewall_delete(args: argparse.Namespace) -> int:
         _delete_output(args, preview, {"status": "no_op"} if not table and not args.dry_run else None)
         return 0
     results = []
+    first_error: Optional[Exception] = None
     for plan in plans:
         if not plan["removed"]:
             continue
-        if fingerprint(gateway.get_policy(plan["segment_map"])) != plan["fingerprint"]:
-            raise DriftError("firewall policy changed after confirmation for {}".format(plan["segment_map"]))
-        reference = "edgeconnect-auto-delete-{}-{}".format(int(time.time()), plan["segment_map"])
-        gateway.post_policy(plan["segment_map"], plan["candidate"], reference)
-        verified = semantic_equal(gateway.get_policy(plan["segment_map"]), plan["candidate"])
-        audit = gateway.correlate_audit(plan["segment_map"], reference) if hasattr(gateway, "correlate_audit") else True
-        if hasattr(gateway, "verify_rules_absent"):
-            gateway.targets = _appliance_target_states(gateway)
-            targets = gateway.verify_rules_absent(plan["removed"]) if verified else {}
-        else:
-            targets = {}
+        # Each segment pair is its own write: a problem in one is recorded and the others still run, as in deploy.
+        written = False
+        try:
+            if fingerprint(gateway.get_policy(plan["segment_map"])) != plan["fingerprint"]:
+                raise DriftError("firewall policy changed after confirmation for {}".format(plan["segment_map"]))
+            reference = "edgeconnect-auto-delete-{}-{}".format(int(time.time()), plan["segment_map"])
+            written = True
+            gateway.post_policy(plan["segment_map"], plan["candidate"], reference)
+            verified = semantic_equal(gateway.get_policy(plan["segment_map"]), plan["candidate"])
+            audit = gateway.correlate_audit(plan["segment_map"], reference) if hasattr(gateway, "correlate_audit") else True
+            if hasattr(gateway, "verify_rules_absent"):
+                gateway.targets = _appliance_target_states(gateway)
+                targets = gateway.verify_rules_absent(plan["removed"]) if verified else {}
+            else:
+                targets = {}
+        except Exception as error:
+            first_error = first_error or error
+            results.append({"pair": plan["pair"], "deleted": [], "error": str(error), "written": "possibly" if written else "no"})
+            continue
         results.append({"pair": plan["pair"], "deleted": plan["removed"], "readback_verified": verified, "audit_verified": audit, "targets": targets})
-    success = all(item["readback_verified"] and item["audit_verified"] and all(state == "verified" for state in item["targets"].values()) for item in results)
+    if first_error is not None and all(item.get("written") == "no" for item in results):
+        raise first_error
+    success = all(not item.get("error") and item["readback_verified"] and item["audit_verified"] and all(state == "verified" for state in item["targets"].values()) for item in results)
     result = {"status": "success" if success else "partial", "pairs": results}
     _delete_output(args, preview, result)
     return 0 if success else 5
@@ -1170,19 +1183,33 @@ def _bulk_delete(args: argparse.Namespace) -> int:
     fresh = gateway.get_address_groups() if args.bulk_kind == "address" else gateway.get_service_groups()
     if fingerprint(fresh) != preview["baseline_fingerprint"]:
         raise DriftError("native group collection changed after confirmation")
-    deleted = []
+    deleted: List[str] = []
+    attempted, stopped = "", ""
+    first_error: Optional[Exception] = None
     for name in order:
-        live = {str(item.get("name")): item for item in (gateway.get_address_groups() if args.bulk_kind == "address" else gateway.get_service_groups())}
-        if not native_group_semantic_equal(live.get(name), normalizer(grouped[name])):
-            raise ValidationError("group changed before deletion: {}".format(name))
-        if args.bulk_kind == "address":
-            gateway.delete_address_group(name)
-        else:
-            gateway.delete_service_group(name)
+        # Stop at the first problem: later deletions would run against a collection someone else is changing.
+        try:
+            live = {str(item.get("name")): item for item in (gateway.get_address_groups() if args.bulk_kind == "address" else gateway.get_service_groups())}
+            if not native_group_semantic_equal(live.get(name), normalizer(grouped[name])):
+                raise ValidationError("group changed before deletion: {}".format(name))
+            attempted = name
+            if args.bulk_kind == "address":
+                gateway.delete_address_group(name)
+            else:
+                gateway.delete_service_group(name)
+        except Exception as error:
+            stopped, first_error = str(error), error
+            break
         deleted.append(name)
+    if first_error is not None and not attempted:
+        raise first_error
     remaining = {str(item.get("name")) for item in (gateway.get_address_groups() if args.bulk_kind == "address" else gateway.get_service_groups())}
+    if attempted and attempted not in deleted and attempted not in remaining:
+        deleted.append(attempted)
     unverified = sorted(set(deleted) & remaining)
-    result = {"status": "success" if not unverified else "partial", "deleted": deleted, "unverified": unverified}
+    result: Dict[str, Any] = {"status": "success" if not unverified and not stopped else "partial", "deleted": deleted, "unverified": unverified}
+    if stopped:
+        result.update(not_deleted=[name for name in order if name not in deleted], error=stopped)
     _delete_output(args, preview, result)
     return 0 if result["status"] == "success" else 5
 
@@ -1452,22 +1479,40 @@ def _definitions_delete(args: argparse.Namespace) -> int:
             result = {"status": "partial", "deleted": [], "error": "AppExpress deletion verification failed"}
             _delete_output(args, preview, result)
             return 5
-    deleted = []
+    deleted: List[str] = []
+    attempted, stopped = "", ""
+    first_error: Optional[Exception] = None
     for definition, base, _ in deletion_plan:
-        live = gateway.get_application_definitions(base)
-        status, identity = _definition_delete_match(definition, live)
-        if status != "exact":
-            raise DriftError("application definition changed before deletion: {}".format(definition.name))
-        gateway.delete_application_definition(base, identity)
+        # Stop at the first problem, like native group deletion; the AppExpress entries above are already removed and stay reported.
+        try:
+            live = gateway.get_application_definitions(base)
+            status, identity = _definition_delete_match(definition, live)
+            if status != "exact":
+                raise DriftError("application definition changed before deletion: {}".format(definition.name))
+            attempted = definition.name
+            gateway.delete_application_definition(base, identity)
+        except Exception as error:
+            stopped, first_error = str(error), error
+            break
         deleted.append(definition.name)
+    if first_error is not None and not attempted and not appexpress_keys:
+        raise first_error
     unverified = []
+    not_deleted = []
     for definition, base, _ in deletion_plan:
         status, _ = _definition_delete_match(definition, gateway.get_application_definitions(base))
-        if status != "absent":
+        if definition.name not in deleted:
+            if status == "absent":
+                deleted.append(definition.name)
+            else:
+                not_deleted.append(definition.name)
+        elif status != "absent":
             unverified.append(definition.name)
-    result = {"status": "success" if not unverified else "partial", "deleted": deleted, "deleted_appexpress": list(appexpress_keys), "unverified": unverified}
+    result: Dict[str, Any] = {"status": "success" if not unverified and not stopped else "partial", "deleted": deleted, "deleted_appexpress": list(appexpress_keys), "unverified": unverified}
+    if stopped:
+        result.update(not_deleted=not_deleted, error=stopped)
     _delete_output(args, preview, result)
-    return 0 if not unverified else 5
+    return 0 if result["status"] == "success" else 5
 
 
 def _appexpress_without_ids(value: Mapping[str, Any]) -> Dict[str, Any]:
@@ -1507,12 +1552,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except (ApprovalError, EOFError) as error:
         recorder.error = error
         print(str(error) or "input closed before approval", file=sys.stderr)
-        code = 3
+        code = 5 if recorder.writes_sent() else 3
         return code
     except EdgeConnectError as error:
         recorder.error = error
         print(str(redact(str(error))), file=sys.stderr)
-        code = error.exit_code
+        # A drift, validation or approval stop after a write request is a partial run, never "nothing was written".
+        code = 5 if recorder.writes_sent() and error.exit_code in {2, 3, 4} else error.exit_code
         return code
     except (OSError, ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError, csv.Error) as error:
         recorder.error = error

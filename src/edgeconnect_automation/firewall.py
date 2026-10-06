@@ -529,12 +529,16 @@ class FirewallExecutor:
             if not pair.eligible:
                 results.append(PairResult(pair.pair, "ineligible", "; ".join(pair.errors)))
                 continue
-            if pair.acl_dependencies:
-                current_acls = self.gateway.get_central_acls(set(pair.acl_dependencies))
-                if fingerprint(_acl_snapshot(current_acls, pair.acl_dependencies)) != pair.acl_inventory_fingerprint:
-                    results.append(PairResult(pair.pair, "drift", "central ACL dependency changed before write"))
-                    continue
-            current = self.gateway.get_policy(pair.segment_map)
+            try:
+                current_acls = self.gateway.get_central_acls(set(pair.acl_dependencies)) if pair.acl_dependencies else {}
+                current = self.gateway.get_policy(pair.segment_map)
+            except Exception as error:
+                # Earlier pairs may already be written: record this one and go on, never lose their results.
+                results.append(PairResult(pair.pair, "failed", "not written: reading the policy before the write failed: {}".format(error)))
+                continue
+            if pair.acl_dependencies and fingerprint(_acl_snapshot(current_acls, pair.acl_dependencies)) != pair.acl_inventory_fingerprint:
+                results.append(PairResult(pair.pair, "drift", "central ACL dependency changed before write"))
+                continue
             if fingerprint(current) != pair.baseline_fingerprint:
                 results.append(PairResult(pair.pair, "drift", "baseline changed before write"))
                 continue

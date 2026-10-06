@@ -39,7 +39,7 @@ Several Orchestrators can share one `.env`: register each with `orch_<N>=<nickna
 | 2 | Validation failure or no eligible firewall pair |
 | 3 | Approval refusal or non-TTY write refusal |
 | 4 | Baseline drift |
-| 5 | PARTIAL or CRITICAL, including unresolved appliance verification |
+| 5 | PARTIAL or CRITICAL, including unresolved appliance verification, and any run that stopped (drift, validation, refusal) after it had started writing; exit codes 2, 3 and 4 always mean nothing was written |
 | 130 | Interrupted by the operator (Ctrl+C) |
 
 ## Run summary and report log

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from edgeconnect_automation.errors import ApprovalError, ValidationError
+from edgeconnect_automation.errors import ApprovalError, TransportError, ValidationError
 from edgeconnect_automation.firewall import FirewallExecutor, build_firewall_plan, parse_firewall_document, parse_firewall_text, rule_payload
 from edgeconnect_automation.gateway import OrchestratorGateway
 from edgeconnect_automation.models import Inventory
@@ -323,6 +323,24 @@ class FirewallExecutionTests(unittest.TestCase):
         self.assertEqual(fake.posts[-1][2], "run-10_20-rollback")
         self.assertEqual(fake.posts[-1][1].get("options"), {"merge": False, "templateApply": False})
         self.assertEqual(fake.posts[-1][1]["data"], bare["data"])
+
+    def test_failed_read_before_a_later_pair_keeps_the_earlier_result(self):
+        text = HEADERS + "\n" + row("one") + "\n" + row("two", source_segment="C", destination_segment="D", source_zone="ZC", destination_zone="ZD", source_address="10.2.0.0/24")
+        inv = inventory({("A", "B"): policy(marker="first"), ("C", "D"): policy(marker="second")})
+        plan = build_firewall_plan(parse_firewall_text(text), inv)
+        fake = FakeGateway({"10_20": policy(marker="first"), "30_40": policy(marker="second")})
+        original = fake.get_policy
+
+        def get_policy(segment_map):
+            if segment_map == "30_40":
+                raise TransportError("transport failure: TimeoutError", None, "GET", "/vrf/config/securityPolicies")
+            return original(segment_map)
+
+        fake.get_policy = get_policy
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual([(item.status, item.message) for item in result.pairs], [("success", ""), ("failed", "not written: reading the policy before the write failed: transport failure: TimeoutError")])
+        self.assertEqual(result.status, "PARTIAL")
+        self.assertEqual([post[0] for post in fake.posts], ["10_20"])
 
     def test_unverified_target_is_partial(self):
         plan = build_firewall_plan(parse_firewall_text(HEADERS + "\n" + row()), inventory())

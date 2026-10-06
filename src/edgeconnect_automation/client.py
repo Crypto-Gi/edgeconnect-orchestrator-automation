@@ -39,6 +39,7 @@ class ApiClient:
         self._opener = opener or build_opener(HTTPSHandler(context=context), _RefuseRedirect)
         self._sleep = sleep
         self._jitter = jitter
+        self.write_requests = 0
 
     def request(
         self,
@@ -51,6 +52,7 @@ class ApiClient:
         expected_status: Iterable[int] = (200,),
         expect_json: bool = True,
         accept: str = "application/json",
+        read_only: bool = False,
     ) -> Any:
         method = method.upper()
         if json_body is not None and binary_body is not None:
@@ -70,6 +72,9 @@ class ApiClient:
         elif self.verbosity >= 2 and binary_body is not None:
             self._log(2, "binary_payload_bytes={}".format(len(binary_body)))
         attempts = self.config.max_read_attempts if method == "GET" else 1
+        if method != "GET" and not read_only:
+            # Counted before sending: a write that fails in transit may still have been applied.
+            self.write_requests += 1
         for attempt in range(attempts):
             try:
                 with self._opener.open(request, timeout=self.config.timeout) as response:
