@@ -139,6 +139,17 @@ class GatewayContractTests(unittest.TestCase):
             gateway.correlate_audit("0_0", "run")
         self.assertEqual(client.calls[-1], ("GET", "/action", {"startTime": 700000, "endTime": 1000000}))
 
+    def test_audit_comment_must_match_whole(self):
+        client = FakeClient()
+        gateway = OrchestratorGateway(client)
+        actions = [
+            {"name": "Segment Security Policy Changed", "comment": "run-1_10", "taskStatus": "COMPLETED", "completionStatus": True},
+            {"name": "Segment Security Policy Changed", "comment": "run-1_1-rollback", "taskStatus": "COMPLETED", "completionStatus": True},
+        ]
+        with patch.object(gateway, "get_actions", return_value=actions):
+            self.assertFalse(gateway.correlate_audit("1_1", "run-1_1"))
+            self.assertTrue(gateway.correlate_audit("1_10", "run-1_10"))
+
     def test_template_group_write_contracts(self):
         client = FakeClient()
         client.template_groups = [{"name": "test2", "templates": []}]

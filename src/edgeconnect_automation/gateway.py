@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
@@ -368,13 +369,15 @@ class OrchestratorGateway:
 
     def correlate_audit(self, segment_map: str, run_reference: str) -> bool:
         start_time = int(time.time() * 1000) - 300000
+        # The whole comment must match: run-1_1 must not match run-1_10 or the run-1_1-rollback entry.
+        comment = re.compile(re.escape(run_reference) + r"(?![\w-])")
         deadline = time.monotonic() + getattr(getattr(self.client, "config", None), "verification_timeout", 120.0)
         while time.monotonic() < deadline:
             actions = self.get_actions(start_time, int(time.time() * 1000))
             if isinstance(actions, list):
                 for action in actions:
                     text = json.dumps(action, sort_keys=True)
-                    if run_reference in text and (segment_map in text or "Segment Security Policy Changed" in text):
+                    if comment.search(text) and (segment_map in text or "Segment Security Policy Changed" in text):
                         return action.get("taskStatus") == "COMPLETED" and action.get("completionStatus") is True
             time.sleep(getattr(getattr(self.client, "config", None), "poll_interval", 5.0))
         return False

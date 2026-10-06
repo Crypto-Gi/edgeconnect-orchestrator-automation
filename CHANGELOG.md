@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Each segment pair written in one run now gets its own Orchestrator audit comment, `<run ref>-<segment map>`, and audit correlation matches that exact comment. Previously every pair shared one comment, so a completed audit entry for one pair could mark a different pair, even one whose own save failed, as audit-verified. `firewall delete` comments also include the segment map.
 - HTTP redirects from Orchestrator are refused with a clear error. Previously the client followed them and resent the API key to the new location, even another host or plain HTTP, and a redirected POST was silently turned into a GET that reported success.
 
 ## 1.2.3 — 2026-10-03

@@ -673,7 +673,7 @@ def render(summary: Mapping[str, Any], title: str = "RUN SUMMARY", row_limit: Op
         "Exit code    : {} = {}".format(summary["exit_code"], summary["exit_meaning"]),
     ]
     if summary.get("run_reference"):
-        lines.append("Run ref      : {} (matches Orchestrator audit log comments)".format(summary["run_reference"]))
+        lines.append("Run ref      : {} (Orchestrator audit log comments start with it, followed by -<segment map>)".format(summary["run_reference"]))
     lines += _section("What was planned or done", summary.get("counts", []))
     if summary.get("rows"):
         totals = ", ".join("{} {}".format(count, outcome) for outcome, count in sorted(summary.get("row_outcomes", {}).items()))

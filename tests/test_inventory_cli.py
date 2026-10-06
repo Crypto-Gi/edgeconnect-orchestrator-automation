@@ -158,6 +158,36 @@ class DeployGateway:
         return [{"vrfName": "Default", "zoneName": "INSIDE", "zoneId": 1}, {"vrfName": "Default", "zoneName": "OUTSIDE", "zoneId": 2}]
 
 
+GUEST_ROW = "guest-rule,name,description,true,20000,Guest,Guest,GINSIDE,GOUTSIDE,10.1.0.0/24,,,,,,BuiltinApp,BuiltinGroup,tcp,,443,,,,,allow,true,2,false"
+
+
+class TwoPairGateway(DeployGateway):
+    """Segment pairs Default -> Default (map 0_0) and Guest -> Guest (map 1_1), each with its own policy and one rule at priority 20000."""
+
+    def __init__(self):
+        self.policies = {}
+        for segment_map, zone_key, line in (("0_0", "1_2", ROW), ("1_1", "3_4", GUEST_ROW)):
+            policy = baseline()
+            policy["data"]["map1"] = {zone_key: {"prio": {"20000": rule_payload(parse_firewall_text(HEADERS + "\n" + line)[0])}}}
+            self.policies[segment_map] = policy
+        self.references = []
+        self.before_read = {}
+
+    def get_policy(self, segment_map):
+        self.before_read.pop(segment_map, lambda: None)()
+        return copy.deepcopy(self.policies[segment_map])
+
+    def post_policy(self, segment_map, candidate, reference):
+        self.references.append(reference)
+        self.policies[segment_map] = copy.deepcopy(candidate)
+
+    def get_segments(self):
+        return {"0": {"id": 0, "name": "Default"}, "1": {"id": 1, "name": "Guest"}}
+
+    def get_segment_zones(self):
+        return [{"vrfName": "Default", "zoneName": "INSIDE", "zoneId": 1}, {"vrfName": "Default", "zoneName": "OUTSIDE", "zoneId": 2}, {"vrfName": "Guest", "zoneName": "GINSIDE", "zoneId": 3}, {"vrfName": "Guest", "zoneName": "GOUTSIDE", "zoneId": 4}]
+
+
 class NoReferences:
     policy = {"data": {"map1": {}}}
     acls = {}
@@ -628,6 +658,13 @@ class DeployCliTests(unittest.TestCase):
         with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
             self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
         self.assertNotIn("1_2", gateway.policy["data"]["map1"])
+
+    def test_firewall_delete_gives_each_segment_pair_its_own_audit_comment(self):
+        self.csv.write_text(HEADERS + "\n" + ROW + "\n" + GUEST_ROW + "\n", encoding="utf-8")
+        gateway = TwoPairGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]), patch("edgeconnect_automation.cli.time.time", return_value=1000.0):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
+        self.assertEqual(gateway.references, ["edgeconnect-auto-delete-1000-0_0", "edgeconnect-auto-delete-1000-1_1"])
 
     def test_firewall_delete_matches_a_live_rule_written_without_prefix(self):
         bare = ROW.replace("10.0.0.0/24", "10.0.0.1")

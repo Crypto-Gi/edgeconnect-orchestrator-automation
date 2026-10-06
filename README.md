@@ -618,7 +618,7 @@ The summary is printed to standard error, so it still appears when standard outp
 | `Rows` | One line per CSV row (or object): its outcome and why. Problem rows are listed first; the screen shows 25, the report log shows all |
 | `Why it stopped or what failed` | Every blocking issue, with its rule code, row, and fix |
 | `Appliances` | Reachability or verification per appliance, with hostname |
-| `Run ref` | Firewall writes only; the same reference appears in Orchestrator audit log comments |
+| `Run ref` | Firewall writes only; each segment pair's Orchestrator audit log comment is this reference followed by `-<segment map>`, for example `-0_0` |
 
 ### Row outcomes
 

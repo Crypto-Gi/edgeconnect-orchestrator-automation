@@ -519,7 +519,7 @@ def _firewall_delete(args: argparse.Namespace) -> int:
             continue
         if fingerprint(gateway.get_policy(plan["segment_map"])) != plan["fingerprint"]:
             raise DriftError("firewall policy changed after confirmation for {}".format(plan["segment_map"]))
-        reference = "edgeconnect-auto-delete-{}".format(int(time.time()))
+        reference = "edgeconnect-auto-delete-{}-{}".format(int(time.time()), plan["segment_map"])
         gateway.post_policy(plan["segment_map"], plan["candidate"], reference)
         verified = semantic_equal(gateway.get_policy(plan["segment_map"]), plan["candidate"])
         audit = gateway.correlate_audit(plan["segment_map"], reference) if hasattr(gateway, "correlate_audit") else True

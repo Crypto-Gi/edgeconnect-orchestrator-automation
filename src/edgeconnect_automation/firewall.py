@@ -541,9 +541,11 @@ class FirewallExecutor:
                 unresolved = any(status != "verified" for status in targets.values())
                 results.append(PairResult(pair.pair, "partial" if unresolved else "no_op", targets=targets))
                 continue
+            # One audit comment per segment pair: every pair's audit entry has the same action name, so a shared comment lets one pair's result stand in for another's.
+            pair_reference = "{}-{}".format(reference, pair.segment_map)
             try:
                 written_at = int(time.time() * 1000)
-                self.gateway.post_policy(pair.segment_map, pair.candidate, reference)
+                self.gateway.post_policy(pair.segment_map, pair.candidate, pair_reference)
                 readback = self.gateway.get_policy(pair.segment_map)
                 if not semantic_equal(readback, pair.candidate):
                     raise DriftError("normalized readback differs from candidate")
@@ -552,13 +554,13 @@ class FirewallExecutor:
                 targets = self.gateway.verify_targets(pair.segment_map, pair.candidate, reference, pair.acl_dependencies) if pair.acl_dependencies else self.gateway.verify_targets(pair.segment_map, pair.candidate, reference)
                 if not targets:
                     targets = {"expected_targets": "unknown"}
-                audit_verified = self.gateway.correlate_audit(pair.segment_map, reference) if hasattr(self.gateway, "correlate_audit") else True
+                audit_verified = self.gateway.correlate_audit(pair.segment_map, pair_reference) if hasattr(self.gateway, "correlate_audit") else True
                 message = "audit correlation unresolved" if not audit_verified else ""
                 message = "; ".join(filter(None, [message, appliance_rejections(self.gateway, targets, written_at, [priority for _, priority in pair.created_priorities])]))
                 unresolved = any(status != "verified" for status in targets.values()) or not audit_verified
                 results.append(PairResult(pair.pair, "partial" if unresolved else "success", message, targets=targets))
             except Exception as error:
-                rollback = self._rollback(pair, reference)
+                rollback = self._rollback(pair, pair_reference)
                 results.append(PairResult(pair.pair, "critical" if rollback != "verified" else "failed", str(error), rollback))
         statuses = {result.status for result in results}
         if statuses <= {"success", "no_op"}:
