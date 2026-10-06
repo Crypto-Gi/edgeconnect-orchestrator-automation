@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- HTTP redirects from Orchestrator are refused with a clear error. Previously the client followed them and resent the API key to the new location, even another host or plain HTTP, and a redirected POST was silently turned into a GET that reported success.
+
 ## 1.2.3 — 2026-10-03
 
 - Fixed firewall rules and template ACL entries that appliances refused to compile. Orchestrator stores and distributes rules with a single address and no prefix length (`10.1.1.1`) or with a dotted mask, and its audit log reports success, but 9.6.4 appliances raise the service-affecting alarm "ACL rule has invalid syntax" and do not enforce the rule. These values are now sent as `/32` (`/128`) and prefix lengths, with warnings `FW-33` / `ACL-29`. Proven with disabled probe rules on a lab appliance and matched against a production alarm export (185 of 185 rejected rules had such a value; none of 590 accepted rules did).

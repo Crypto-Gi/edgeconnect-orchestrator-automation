@@ -8,11 +8,18 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin
-from urllib.request import HTTPSHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from .config import Config
 from .errors import AuthenticationError, ConflictError, PermissionDeniedError, RateLimitError, ResourceNotFoundError, ResponseFormatError, ServerError, TransportError, ValidationError
 from .util import redact
+
+
+class _RefuseRedirect(HTTPRedirectHandler):
+    """A redirect would resend the API key to the new location, possibly another host or plain HTTP; fail on the 3xx instead."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
 
 
 class ApiClient:
@@ -29,7 +36,7 @@ class ApiClient:
         context = ssl.create_default_context(cafile=config.ca_bundle)
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
-        self._opener = opener or build_opener(HTTPSHandler(context=context))
+        self._opener = opener or build_opener(HTTPSHandler(context=context), _RefuseRedirect)
         self._sleep = sleep
         self._jitter = jitter
 
@@ -75,6 +82,8 @@ class ApiClient:
                     return self._decode(body, media_type, expect_json, status, method, path)
             except HTTPError as error:
                 status = int(error.code)
+                if 300 <= status < 400:
+                    raise TransportError("HTTP {} redirect refused; the API key is never sent to a redirected location, so set the base URL to the Orchestrator address that answers directly".format(status), status, method, path) from None
                 message = self._safe_error(error)
                 if method == "GET" and status in {429, 500, 502, 503, 504} and attempt + 1 < attempts:
                     self._sleep(self._delay(attempt, error.headers.get("Retry-After")))
