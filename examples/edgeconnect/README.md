@@ -10,7 +10,7 @@ It also contains a manual test pair for template ACLs in template group `test3`:
 - `template_acls_test3_valid.csv`: 55 valid entries for ACL `TEST-MATRIX` covering applications, protocols, IPs, ports, domains, address groups, service groups, Either-direction columns, segments and combinations.
 - `template_acls_test3_invalid.csv`: 40 rows with one deliberate mistake each. The row comment starts with `INVALID <rule-id>:`, the rule you should see. The whole file is rejected during validation, so it can never be applied.
 
-The mixed files are expected to fail and must never be applied. Use them only with validation or dry-run commands. The valid files use placeholder zones, template groups, interface labels, and Address Map names that must be replaced with values from the target Orchestrator.
+The mixed files are expected to fail validation and must never be applied. Use them only with validation or dry-run commands. `app-groups deploy` is the exception: it skips invalid groups and the groups that depend on them, can still create the valid groups in the file, and ends PARTIAL (exit 5). The valid files use placeholder zones, template groups, interface labels, and Address Map names that must be replaced with values from the target Orchestrator.
 
 Use the valid files in dependency order:
 

@@ -752,7 +752,7 @@ matches, URL matching.
 
 ## 17. Implementation status (2026-09-24)
 
-Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edgeconnect/` contains six clean starter files. `examples/edgeconnect/` contains one broader valid CSV and one intentionally mixed valid/invalid CSV per workflow; tests prove every valid file parses, every mixed file is rejected, and cross-file dependencies resolve. Additional edge cases are generated in temporary directories by the standard-library test suite.
+Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edgeconnect/` contains six clean starter files. `examples/edgeconnect/` contains one broader valid CSV and one intentionally mixed valid/invalid CSV per workflow; tests prove every valid file parses, every mixed file is rejected by its strict parser, and cross-file dependencies resolve. `app-groups deploy` is the exception: it skips invalid groups and the groups that depend on them, can still create the valid groups in the file, and ends PARTIAL (exit 5). Additional edge cases are generated in temporary directories by the standard-library test suite.
 
 ### 17.1 Implemented
 

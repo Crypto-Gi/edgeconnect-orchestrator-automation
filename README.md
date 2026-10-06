@@ -690,7 +690,7 @@ Use the six concise deployment starters under:
 templates/edgeconnect/
 ```
 
-For broader testing, `examples/edgeconnect/` contains exactly two CSVs per workflow: one valid file covering supported field families and important boundaries, and one intentionally mixed valid/invalid file. The mixed files must fail validation and must never be applied.
+For broader testing, `examples/edgeconnect/` contains two CSVs per workflow: one valid file covering supported field families and important boundaries, and one intentionally mixed valid/invalid file, plus the `test3` template ACL pair. The mixed files must never be applied; use them only with validation or `--dry-run`. Validation rejects every mixed file as a whole. `app-groups deploy` is the exception: it skips invalid groups and the groups that depend on them, can still create the valid groups in the file, and ends PARTIAL (exit 5).
 
 Both valid sets form the same dependency chain: address groups and service groups → application definitions → application groups → template ACLs → firewall rules. Copy valid files before editing. Replace zone names, the template-group name, interface label, and any Address Map names with values from your Orchestrator. Always start with `validate`, `plan`, or `--dry-run`.
 
