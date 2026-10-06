@@ -597,9 +597,12 @@ class DeployCliTests(unittest.TestCase):
                 self.value = copy.deepcopy(value)
 
         dry_gateway = Gateway()
+        dry_report = Path(self.directory.name) / "application-groups-dry-run-report.json"
         with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway), patch("sys.stdin.isatty", return_value=False):
-            self.assertEqual(main(["app-groups", "deploy", "--csv", str(groups_csv), "--applications", str(applications), "--dry-run"]), 5)
+            self.assertEqual(main(["app-groups", "deploy", "--csv", str(groups_csv), "--applications", str(applications), "--dry-run", "--report", str(dry_report)]), 5)
         self.assertEqual(dry_gateway.posts, 0)
+        dry = json.loads(dry_report.read_text(encoding="utf-8"))
+        self.assertEqual((dry["status"], dry["changes_written"], dry["exit_code"]), ("DRY_RUN", "no", 5))
 
         apply_gateway = Gateway()
         report = Path(self.directory.name) / "application-groups-partial-report.json"

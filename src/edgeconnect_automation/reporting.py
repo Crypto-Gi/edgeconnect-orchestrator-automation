@@ -188,10 +188,11 @@ def _status(recorder: RunRecorder, args: Any, exit_code: int) -> str:
             return "INVALID"
     if exit_code == 2:
         return "BLOCKED"
+    # A dry run with skipped rows exits 5 (skips always return 5), but it wrote nothing.
+    if getattr(args, "dry_run", False) and not recorder.writes_sent():
+        return "DRY_RUN"
     if exit_code == 5:
         return "PARTIAL"
-    if getattr(args, "dry_run", False):
-        return "DRY_RUN"
     if action_name(args) == "plan" or (getattr(args, "output", None) and workflow_name(args) != "discovery"):
         return "PLANNED"
     return "SUCCESS" if exit_code == 0 else "ERROR"
