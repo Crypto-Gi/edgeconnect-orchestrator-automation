@@ -279,6 +279,14 @@ def _policy_rules(policy: Mapping[str, Any], zone_key: str) -> Dict[str, Any]:
     return dict(rules)
 
 
+def options_error(baseline: Mapping[str, Any]) -> str:
+    """Policy writes are contract-tested only with merge=false/templateApply=false; another baseline mode could merge instead of replace."""
+    options = baseline.get("options")
+    if options is not None and (options.get("merge") is not False or options.get("templateApply") is not False):
+        return "[FW-30] baseline options are incompatible with the contract-tested merge=false/templateApply=false adapter; fix: review this segment pair's Security Policies settings in Orchestrator"
+    return ""
+
+
 def _ensure_candidate_shape(baseline: Mapping[str, Any]) -> Dict[str, Any]:
     candidate = copy.deepcopy(dict(baseline))
     candidate.setdefault("data", {}).setdefault("map1", {})
@@ -394,9 +402,8 @@ def build_firewall_plan(
         else:
             segment_map = "{}_{}".format(source_id, destination_id)
         baseline = copy.deepcopy(dict(inventory.policies.get(pair, {})))
-        options = baseline.get("options")
-        if options is not None and (options.get("merge") is not False or options.get("templateApply") is not False):
-            errors.append("[FW-30] baseline options are incompatible with the contract-tested merge=false/templateApply=false adapter; fix: review this segment pair's Security Policies settings in Orchestrator")
+        if options_error(baseline):
+            errors.append(options_error(baseline))
         candidate = _ensure_candidate_shape(baseline)
         seen: Dict[Tuple[str, str], Set[int]] = {}
         allocated_by_scope: Dict[ScopeKey, int] = {}
@@ -588,14 +595,16 @@ class FirewallExecutor:
                 rollback_maps = rollback_candidate.get("data", {}).get("map1", {})
                 if zone_key not in baseline_maps and not rollback_maps.get(zone_key, {}).get("prio"):
                     rollback_maps.pop(zone_key, None)
-            for key in set(rollback_candidate) - set(pair.baseline):
-                if key in {"options", "settings"}:
-                    rollback_candidate.pop(key, None)
-            if not semantic_equal(rollback_candidate, pair.baseline):
+
+            def comparable(value: Mapping[str, Any]) -> Dict[str, Any]:
+                # options/settings the write added to a baseline that had none are not a difference from that baseline.
+                return {key: item for key, item in value.items() if key in pair.baseline or key not in {"options", "settings"}}
+
+            if not semantic_equal(comparable(rollback_candidate), pair.baseline):
                 return "unresolved"
-            self.gateway.post_policy(pair.segment_map, rollback_candidate, reference + "-rollback")
+            self.gateway.post_policy(pair.segment_map, _ensure_candidate_shape(comparable(rollback_candidate)), reference + "-rollback")
             restored = self.gateway.get_policy(pair.segment_map)
-            return "verified" if semantic_equal(restored, pair.baseline) else "unverified"
+            return "verified" if semantic_equal(comparable(restored), pair.baseline) else "unverified"
         except Exception:
             return "unresolved"
 

@@ -313,6 +313,17 @@ class FirewallExecutionTests(unittest.TestCase):
         self.assertEqual(result.pairs[1].status, "success")
         self.assertEqual(fake.policies["10_20"], policy(marker="first"))
 
+    def test_rollback_posts_the_tested_options_when_the_baseline_has_none(self):
+        bare = policy(marker="first")
+        del bare["options"]
+        plan = build_firewall_plan(parse_firewall_text(HEADERS + "\n" + row()), inventory({("A", "B"): bare}))
+        fake = FakeGateway({"10_20": bare}, corrupt_map="10_20")
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual(result.pairs[0].rollback_status, "verified")
+        self.assertEqual(fake.posts[-1][2], "run-10_20-rollback")
+        self.assertEqual(fake.posts[-1][1].get("options"), {"merge": False, "templateApply": False})
+        self.assertEqual(fake.posts[-1][1]["data"], bare["data"])
+
     def test_unverified_target_is_partial(self):
         plan = build_firewall_plan(parse_firewall_text(HEADERS + "\n" + row()), inventory())
         fake = FakeGateway({"10_20": policy()}, target_states={"one": "verified", "two": "unreachable"})

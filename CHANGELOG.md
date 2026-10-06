@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `firewall delete` now applies the `FW-30` check that deploy already had: a segment pair whose policy options are not `merge=false` / `templateApply=false` blocks the deletion before confirmation, and the deletion is written with those contract-tested options. Previously it posted whatever options the live policy carried. Firewall rollback also sends those options when the baseline had none.
 - Each segment pair written in one run now gets its own Orchestrator audit comment, `<run ref>-<segment map>`, and audit correlation matches that exact comment. Previously every pair shared one comment, so a completed audit entry for one pair could mark a different pair, even one whose own save failed, as audit-verified. `firewall delete` comments also include the segment map.
 - HTTP redirects from Orchestrator are refused with a clear error. Previously the client followed them and resent the API key to the new location, even another host or plain HTTP, and a redirected POST was silently turned into a GET that reported success.
 

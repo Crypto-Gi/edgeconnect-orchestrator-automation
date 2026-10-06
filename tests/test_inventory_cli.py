@@ -666,6 +666,26 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
         self.assertEqual(gateway.references, ["edgeconnect-auto-delete-1000-0_0", "edgeconnect-auto-delete-1000-1_1"])
 
+    def test_firewall_delete_refuses_baseline_options_outside_the_tested_contract(self):
+        rule = parse_firewall_text(HEADERS + "\n" + ROW)[0]
+        policy = baseline()
+        policy["options"] = {"merge": True, "templateApply": False}
+        policy["data"]["map1"] = {"1_2": {"prio": {"20000": rule_payload(rule)}}}
+        gateway = DeployGateway(policy)
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=AssertionError("no confirmation expected")):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 2)
+        self.assertEqual(gateway.posts, 0)
+
+    def test_firewall_delete_sends_the_tested_options_when_the_baseline_has_none(self):
+        rule = parse_firewall_text(HEADERS + "\n" + ROW)[0]
+        policy = baseline()
+        del policy["options"]
+        policy["data"]["map1"] = {"1_2": {"prio": {"20000": rule_payload(rule)}}}
+        gateway = DeployGateway(policy)
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
+        self.assertEqual(gateway.policy.get("options"), {"merge": False, "templateApply": False})
+
     def test_firewall_delete_matches_a_live_rule_written_without_prefix(self):
         bare = ROW.replace("10.0.0.0/24", "10.0.0.1")
         self.csv.write_text(HEADERS + "\n" + bare + "\n", encoding="utf-8")

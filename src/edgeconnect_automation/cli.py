@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from .client import ApiClient
 from .config import load_config
 from .errors import ApprovalError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
-from .firewall import FirewallExecutor, build_firewall_plan, canonical_rule, normalize_rule, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
+from .firewall import FirewallExecutor, _ensure_candidate_shape, build_firewall_plan, canonical_rule, normalize_rule, options_error, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
 from .gateway import OrchestratorGateway
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
 from .reporting import RunRecorder, finish, preview_text, render, summaries_from_file, write_rows_csv
@@ -483,7 +483,10 @@ def _firewall_delete(args: argparse.Namespace) -> int:
             continue
         segment_map = "{}_{}".format(segments[pair[0]], segments[pair[1]])
         baseline = gateway.get_policy(segment_map)
-        candidate = copy.deepcopy(baseline)
+        if options_error(baseline):
+            conflicts.append("segment pair {} -> {}: {}".format(pair[0], pair[1], options_error(baseline)))
+            continue
+        candidate = _ensure_candidate_shape(baseline)
         removed = []
         for rule in rules:
             source_id = zones.get((rule.source_segment, rule.source_zone))

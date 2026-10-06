@@ -161,7 +161,7 @@ Code: `src/edgeconnect_automation/firewall.py`. Write/isolation unit: **source/d
 | FW-27 | Referenced address groups, service groups, applications, application groups exist in live inventory. | Done |
 | FW-28 | `acl` resolves to exactly one selected, nonempty central definition; conflicting central definitions block; missing association/appliance copy warns. | Done |
 | FW-29 | Routing segmentation must be enabled; inventories must be complete. | Done |
-| FW-30 | Baseline `options` must be `merge=false`, `templateApply=false`. | Done |
+| FW-30 | Baseline `options` must be `merge=false`, `templateApply=false`; checked by deploy and by `firewall delete`, and every policy write (deploy, delete, rollback) sends those options. | Done |
 
 ### 2.4 Isolation and outcome
 
