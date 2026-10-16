@@ -29,7 +29,10 @@ INSTRUCTIONS = (
     "Tools for HPE Aruba EdgeConnect Orchestrator. Workflow: list_orchestrators, then find_operations "
     "to locate the REST call, describe_operation for its parameters and body, then api_get (read) or "
     "api_write (change). Paths are relative to /gms/rest, e.g. /appliance. Writes only work on "
-    "Orchestrators configured as writable; confirm intent with the user before any api_write."
+    "Orchestrators configured as writable; confirm intent with the user before any api_write. "
+    "On 9.7 the spec has no write operations for deployment, BGP, OSPF, VRRP or static routes: read the "
+    "appliance's own config with GET /appliance/rest (query url=<path>, e.g. deployment, bgp/config/neighbor), "
+    "change it, and POST the whole object back; that needs passthrough writes enabled."
 )
 
 

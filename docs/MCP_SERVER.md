@@ -75,4 +75,15 @@ Claude Desktop (`claude_desktop_config.json`):
 
 Ask in plain language, for example "list appliances on seteam that are unreachable" or "show the overlay config on the lab". The assistant searches the spec, reads the operation, and calls it. Paths are relative to `/gms/rest`, e.g. `/appliance` or `/appliance/2.NE`.
 
+## Orchestrator API notes from lab testing
+
+Found while driving a 9.7.1 Orchestrator with five ECOS 9.6/9.7 appliances through this server:
+
+- Deployment, BGP, OSPF, VRRP, static routes and IP SLA have no Orchestrator write operation in the 9.7.1 spec. Read the appliance's own config with `GET /appliance/rest?nePk=<NE>&url=<path>` (`deployment`, `subnets3/configured`, `bgp/config/neighbor`, `ospf/config/system`, `vrrp`, `ipsla/config/managers`), change it and POST the whole object back. Strip state fields (VRRP `uptime`, `vmac`, ...) first. `subnets/configured` returns 410; use `subnets3/configured`.
+- Overlay `PUT /gms/overlays/config` is refused with 400 unless `multiCrossConnect` and `tunnelUsagePolicy` only name labels in the primary or backup list. Readback is normalised by bonding-policy presets, so compare intent fields, not the whole body. `topologyType` 1 is mesh and 2 is hub-and-spoke.
+- `GET /gms/overlays/config/regions` needs both `overlayId` and `regionId`, or neither.
+- User-defined applications are read with `GET /applicationDefinition?...&resourceKey=userDefined`; without it the call returns 200 with `{"result":"Not found"}`.
+- LAN subnets in a non-default segment are not advertised until that VRF is added with `add_local_lan` via `POST /subnets/setSubnetSharingOptions`.
+- Zone names allow only letters, digits and `_`. Zones and segment security policies are whole-collection writes: read, add, write back.
+
 The CSV workflows in `edgeconnect-auto` remain the safer route for bulk firewall and object changes: they add drift checks, readback and rollback that raw `api_write` calls do not.
