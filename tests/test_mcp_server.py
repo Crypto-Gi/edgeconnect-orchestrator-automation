@@ -18,6 +18,8 @@ SPEC = {
             "delete": {"summary": "Delete appliance"},
         },
         "/appliance/rest/{nePk}": {"post": {"summary": "Appliance REST passthrough"}},
+        "/thirdPartyServices/zscaler/countries": {"post": {"summary": "Set countries", "requestBody": {"content": {"text/plain": {"schema": {"type": "string"}}}}}},
+        "/thirdPartyServices/zscaler/legacy": {"post": {"summary": "Set legacy text", "consumes": ["text/plain"]}},
         "/ipObjects/addressGroup": {"post": {"summary": "Create address group", "parameters": [{"in": "body", "name": "body", "schema": {"$ref": "#/definitions/Group"}}]}},
     },
     "definitions": {
@@ -118,6 +120,24 @@ class McpServerTest(unittest.TestCase):
         self.assertTrue(error)  # undocumented method
         error, _ = self.call("api_write", orchestrator="lab", method="GET", path="/appliance")
         self.assertTrue(error)
+
+    def test_text_plain_bodies_are_sent_raw(self):
+        class Raw(FakeClient):
+            def request(self, method, path, **kwargs):
+                self.calls.append((method, path, kwargs.get("binary_body"), kwargs.get("content_type"), kwargs.get("json_body")))
+                return b""
+
+        raw = Raw()
+        self.server.orchestrators["lab"].client = raw
+        text = "line1\nline2"
+        for path in ("/thirdPartyServices/zscaler/countries", "/thirdPartyServices/zscaler/legacy"):
+            error, _ = self.call("api_write", orchestrator="lab", method="POST", path=path, body=text)
+            self.assertFalse(error)
+        self.assertEqual(raw.calls, [("POST", p, b"line1\nline2", "text/plain", None) for p in ("/thirdPartyServices/zscaler/countries", "/thirdPartyServices/zscaler/legacy")])
+        # JSON operations still get a JSON-encoded string
+        raw.calls.clear()
+        self.call("api_write", orchestrator="lab", method="POST", path="/ipObjects/addressGroup", body="x")
+        self.assertEqual(raw.calls, [("POST", "/ipObjects/addressGroup", None, None, "x")])
 
     def test_truncation_and_stdio(self):
         self.prod_client.body = json.dumps(["x" * 100] * 100).encode()

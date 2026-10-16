@@ -102,6 +102,7 @@ class Orchestrator:
                             "tags": operation.get("tags") or [],
                             "parameters": list(item.get("parameters") or []) + list(operation.get("parameters") or []),
                             "requestBody": operation.get("requestBody"),
+                            "consumes": sorted(((operation.get("requestBody") or {}).get("content") or {}) or operation.get("consumes") or spec.get("consumes") or []),
                             "regex": _template_regex(full),
                         })
             if not operations:
@@ -236,7 +237,7 @@ class Server:
 
     def _call(self, orchestrator: Orchestrator, method: str, arguments: Mapping[str, Any]) -> Any:
         path = str(arguments.get("path") or "")
-        orchestrator.match(method, path)
+        operation = orchestrator.match(method, path)
         if not orchestrator.client._url(path, None).startswith(orchestrator.config.base_url + "/"):
             raise ToolError("path {!r} does not stay under the Orchestrator REST base".format(path))
         query = arguments.get("query") or None
@@ -245,7 +246,13 @@ class Server:
         body = arguments.get("body")
         if method != "GET":
             self.log("edgeconnect-mcp WRITE {} {} {} query={}".format(orchestrator.name, method, path, json.dumps(redact(query), sort_keys=True)))
-        raw = orchestrator.client.request(method, path, query=query, json_body=body, expected_status=range(200, 300), expect_json=False, accept="application/json, text/plain, */*")
+        types = [t.split(";")[0].strip().lower() for t in operation["consumes"]]
+        # Operations that only take text/plain (e.g. Zscaler countries) need the string sent raw, not JSON-quoted.
+        send_text = isinstance(body, str) and "text/plain" in types and not any("json" in t for t in types)
+        if send_text:
+            raw = orchestrator.client.request(method, path, query=query, binary_body=body.encode("utf-8"), content_type="text/plain", expected_status=range(200, 300), expect_json=False, accept="application/json, text/plain, */*")
+        else:
+            raw = orchestrator.client.request(method, path, query=query, json_body=body, expected_status=range(200, 300), expect_json=False, accept="application/json, text/plain, */*")
         text = (raw or b"").decode("utf-8", "replace")
         try:
             value = json.loads(text) if text else None
