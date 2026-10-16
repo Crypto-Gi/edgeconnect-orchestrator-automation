@@ -166,7 +166,15 @@ class McpServerTest(unittest.TestCase):
         for template in ("/certificates/parse", "/license/validate", "/cipher/checkCompatibility", "/sslCertificate/verify", "/users/lookup", "/brandImage/upload", "/appliance/rest/{nePk}/x/validate"):
             self.assertEqual(high_risk_category("POST", template), None, template)
         self.assertEqual(high_risk_category("POST", "/appliance/rest/{nePk}", "ntp/validate"), None)
-        self.assertEqual(high_risk_category("POST", "/gmsConfig/portalCheck", None, "Test connectivity to the portal"), None)
+        for template in ("/gms/backup/testConnection", "/authentication/userAuthType", "/authentication/userAuthTypeToken", "/gms/wizard", "/thirdPartyServices/sse/connectorPool", "/alarm/clear", "/overlays/{id}"):
+            self.assertEqual(high_risk_category("POST", template), None, template)
+        self.assertEqual(high_risk_category("POST", "/ssl/x", None, "Verify the certificate chain"), None)
+        for method, template, category in (("POST", "/security/estServer", "certificates"), ("PUT", "/spPortal/config", "provisioning"), ("POST", "/account/key/generate", "provisioning"),
+                                           ("DELETE", "/account/oldKey", "provisioning"), ("POST", "/createCaseWithPortal", "provisioning"), ("POST", "/gms/gmsRegistration2", "provisioning"),
+                                           ("POST", "/gmsSMTP/testEmail", "orchestrator_admin"), ("POST", "/sendVerificationEmail", "orchestrator_admin"), ("POST", "/delUnverifiedEmails", "orchestrator_admin"),
+                                           ("POST", "/thirdPartyServices/clearpass/event/login", "identity_events"), ("POST", "/dhcpConfig/reset", "traffic_disruptive"),
+                                           ("POST", "/gmsOperatingSystem/root/passwordChanged", "orchestrator_admin"), ("POST", "/haGroups", "appliance_lifecycle")):
+            self.assertEqual(high_risk_category(method, template, None, "Change the settings"), category, template)
         self.assertEqual(high_risk_category("POST", "/ssl/x", None, "Validate a certificate chain"), None)
         self.assertEqual(high_risk_category("POST", "/appliance/denied/delete"), "appliance_lifecycle")
         self.assertEqual(high_risk_category("PUT", "/gmsSMTP/config"), "orchestrator_admin")
@@ -178,7 +186,7 @@ class McpServerTest(unittest.TestCase):
                                            ("POST", "/cloudDeployment/aws/instances", "cloud_deployment"), ("POST", "/edge-ha/groups", "appliance_lifecycle"),
                                            ("POST", "/orch-ha/failover", "orchestrator_ha"), ("POST", "/gmsRemoteAuth/TACACS+", "auth"), ("PUT", "/gmsRemoteAuth/JWT", "auth"),
                                            ("DELETE", "/vxoaImages/{id}", "upgrade"), ("POST", "/preconfiguration/{id}/apply", "provisioning"),
-                                           ("POST", "/wizard/appliance/apply", "provisioning"), ("POST", "/rma/wizard", "provisioning"), ("POST", "/portal/registration", "provisioning"),
+                                           ("POST", "/applianceWizard/apply", "provisioning"), ("POST", "/rmaWizard", "provisioning"), ("POST", "/portal/registration", "provisioning"),
                                            ("POST", "/ztp/settings", "provisioning"), ("POST", "/accountKey/generate", "provisioning"),
                                            ("PUT", "/gmsConfig/sessionTimeout", "orchestrator_admin"), ("PUT", "/restApiConfig", "orchestrator_admin"),
                                            ("POST", "/advancedProperties", "orchestrator_admin"), ("PUT", "/security/advancedSettings", "orchestrator_admin"),

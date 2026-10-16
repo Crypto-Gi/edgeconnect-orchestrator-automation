@@ -40,26 +40,27 @@ _TOKEN = re.compile(r"^<REDACTED:[0-9a-f]{16}>$")
 # Matched against the spec path template, and for appliance passthrough writes also against the `url` query value.
 HIGH_RISK: Tuple[Tuple[str, Tuple[str, ...], "re.Pattern[str]"], ...] = tuple((name, methods, re.compile(pattern)) for name, methods, pattern in (
     ("auth", WRITE_METHODS, r"(?:^|/)(?:users?|usergroups?|rbac\w*|roles?|authentication|auth|apikeys?|sessions?|activesessions|passwords?|jwt|oauth\w*|saml\w*|sso|ldap\w*|radius\w*|tacacs\W*)(?:/|$)|remoteauth"),
-    ("certificates", WRITE_METHODS, r"cert|ssl|cipher|https|(?:^|/)tls|(?:^|/)est(?:/|$)|end-?entity"),
+    ("certificates", WRITE_METHODS, r"cert|ssl|cipher|https|(?:^|/)tls|(?:^|/)est(?:server)?(?:/|$)|endentity"),
     ("licensing", WRITE_METHODS, r"licen"),
     ("backup_restore", WRITE_METHODS, r"backup|restore"),
     ("upgrade", WRITE_METHODS, r"upgrade|vxoaimages?|ecosimages?|swimages?"),
     ("reboot", WRITE_METHODS, r"reboot|shutdown|restart|poweroff|factory"),
-    ("orchestrator_ha", WRITE_METHODS, r"(?:^|/)(?:ha|gmsha|hagroups?|orchestratorha|orchha)(?:/|$)|failover"),
-    ("appliance_lifecycle", WRITE_METHODS, r"^/appliance/?$|(?:^|/)appliance/(?:deny|discovered|revoke|approve|changeappliancepk|deletefordiscovery|changepassword|denied)|edgeha|hostname|(?:^|/)sse/connector"),
+    ("orchestrator_ha", WRITE_METHODS, r"(?:^|/)(?:ha|gmsha|orchestratorha|orchha)(?:/|$)|failover"),
+    ("appliance_lifecycle", WRITE_METHODS, r"^/appliance/?$|(?:^|/)appliance/(?:deny|discovered|revoke|approve|changeappliancepk|deletefordiscovery|changepassword|denied)|edgeha|hostname|(?:^|/)sse/connector/?$|(?:^|/)hagroups?(?:/|$)"),
     ("appliance_lifecycle", ("DELETE",), r"^/appliance/\{[^}]+\}$|^/appliance/rest"),
     ("cloud_deployment", WRITE_METHODS, r"clouddeployment"),
-    ("provisioning", WRITE_METHODS, r"(?:^|/)(?:wizards?\w*|rma\w*|ztp\w*|portal\w*|registration\w*|accountkeys?)(?:/|$)|preconfig\w*/.*apply|apply\w*preconfig|wizard|accountkey|gmsregistration"),
-    ("orchestrator_admin", WRITE_METHODS, r"sessiontimeout|restapiconfig|advancedproperties|advancedsettings|gmssmtp|smtp|debugfiles?|dbpartition|partition"),
+    ("provisioning", WRITE_METHODS, r"(?:^|/)(?:rma\w*|ztp\w*|registration\w*|accountkeys?|createcasewithportal)(?:/|$)|portal|appliancewizard|rmawizard|preconfig\w*/.*apply|apply\w*preconfig|(?:^|/)account/(?:secondary|key|oldkey)|gmsregistration"),
+    ("orchestrator_admin", WRITE_METHODS, r"sessiontimeout|restapiconfig|advancedproperties|advancedsettings|gmssmtp|smtp|testemail|verificationemail|unverifiedemails|gmsoperatingsystem|debugfiles?|dbpartition|partition"),
     ("cli", WRITE_METHODS, r"broadcastcli|tcpdump|packetcapture|(?:^|/)(?:shell|cli|remotecli)(?:/|$)"),
     ("ip_allowlist", WRITE_METHODS, r"allowlist|whitelist|allowedips|ipallow"),
-    ("traffic_disruptive", WRITE_METHODS, r"networkmemory|flowreset"),
+    ("traffic_disruptive", WRITE_METHODS, r"networkmemory|flowreset|dhcpconfig/reset"),
+    ("identity_events", WRITE_METHODS, r"clearpass/event"),
 ))
 # Operations whose last path segment is a lookup or check (parse a certificate, validate a licence) change nothing, so
 # they stay allowed in the categories where such POSTs are common.
-LOOKUP_CATEGORIES = ("auth", "certificates", "licensing", "upgrade", "orchestrator_admin", "provisioning")
-_LOOKUP_SUMMARY = re.compile(r"getinfo|gettext|validat|verif|test ?connection|connectivity|\\bparse|\\bdecode")
-_LOOKUP = re.compile(r"^(?:validate|check|parse|verify|lookup|query|search|list|get|read|preview|decode|analy[sz]e|test)")
+LOOKUP_CATEGORIES = ("auth", "certificates", "licensing", "upgrade", "backup_restore")
+_LOOKUP_SUMMARY = re.compile(r"^(?:validate|verify|check|parse|decode|test (?:the )?connect|get )")
+_LOOKUP = re.compile(r"^(?:validate|check|parse|verify|lookup|query|search|list|get|read|preview|decode|analy[sz]e|test|userauthtype)")
 
 INSTRUCTIONS = (
     "Tools for HPE Aruba EdgeConnect Orchestrator. Workflow: list_orchestrators, then find_operations "
