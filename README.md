@@ -342,6 +342,10 @@ APPLY
 
 Use the generated resolved CSV for every future rerun when the original CSV omitted priorities. See [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md) for a beginner-friendly explanation, examples, rerun workflow, and troubleshooting.
 
+## MCP server
+
+`edgeconnect-mcp` is a local stdio MCP server that lets an AI assistant (Claude Desktop, Claude Code, any MCP client) read and, where you allow it, change any Orchestrator through the full REST API. It reuses this `.env`, is read-only unless you set `<nickname>_mcp_writes=true`, and only allows calls the Orchestrator's own API spec documents. See [docs/MCP_SERVER.md](docs/MCP_SERVER.md).
+
 ## Common workflows
 
 Unless a section states otherwise, a successful `--dry-run` exits `0`, performs no Orchestrator write, and prints the exact candidate. A real write requires interactive `APPLY`; a later exact rerun should be a verified no-op. Exit `5` means the result is intentionally incomplete and requires review, even when eligible changes succeeded.

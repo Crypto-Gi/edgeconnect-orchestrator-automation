@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- New `edgeconnect-mcp` stdio MCP server: every operation in the Orchestrator's own API spec through `find_operations`, `describe_operation`, `api_get` and `api_write`. Read-only unless `<nickname>_mcp_writes=true`; calls must match the spec; responses are redacted and size-limited. See `docs/MCP_SERVER.md`.
+- New `<nickname>_tls_sha256` (and `orchestrator_tls_sha256`) pins a self-signed Orchestrator certificate by SHA-256 fingerprint instead of disabling verification. Applies to the CLI too.
+
 ## 1.2.3 — 2026-10-03
 
 - Fixed firewall rules and template ACL entries that appliances refused to compile. Orchestrator stores and distributes rules with a single address and no prefix length (`10.1.1.1`) or with a dotted mask, and its audit log reports success, but 9.6.4 appliances raise the service-affecting alarm "ACL rule has invalid syntax" and do not enforce the rule. These values are now sent as `/32` (`/128`) and prefix lengths, with warnings `FW-33` / `ACL-29`. Proven with disabled probe rules on a lab appliance and matched against a production alarm export (185 of 185 rejected rules had such a value; none of 590 accepted rules did).
