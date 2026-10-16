@@ -45,7 +45,7 @@ openssl s_client -connect 192.0.2.10:443 </dev/null 2>/dev/null | openssl x509 -
 
 ## Connect a client
 
-After `python -m pip install -e .`:
+After `python -m pip install --upgrade pip` and `python -m pip install -e .` (macOS's built-in Python 3.9 ships a pip too old for editable installs):
 
 Claude Code:
 

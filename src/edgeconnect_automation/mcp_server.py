@@ -35,6 +35,18 @@ class ToolError(Exception):
     pass
 
 
+def _error_text(exc: BaseException, name: str = "<nickname>") -> str:
+    """One short, secret-free line: HTML error pages stripped, the TLS reason kept."""
+    text = str(exc)
+    reason = getattr(exc.__cause__, "reason", None) or exc.__cause__
+    if reason is not None and str(reason) not in text:
+        text += " ({})".format(reason)
+    if "CERTIFICATE_VERIFY_FAILED" in text:
+        text += "; for a self-signed Orchestrator set {0}_tls_sha256 (or {0}_ca_bundle) in .env".format(name)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", redact(text))).strip()
+    return text if len(text) <= 500 else text[:500] + " ..."
+
+
 def _settings(dotenv: Optional[str]) -> Dict[str, str]:
     values = parse_dotenv(dotenv) if dotenv else {}
     return {key.lower(): value for source in (values, os.environ) for key, value in source.items()}
@@ -100,7 +112,7 @@ class Orchestrator:
         try:
             spec = json.loads(self.client.request("GET", "/apiDocs", query=query, expect_json=False) or b"{}")
         except (EdgeConnectError, ValueError) as exc:
-            raise ToolError("could not download the API spec from {} ({}); set {}_openapi to a local copy".format(self.name, redact(str(exc)), self.name))
+            raise ToolError("could not download the API spec from {}: {}".format(self.name, _error_text(exc, self.name)))
         return [spec] if isinstance(spec, dict) else []
 
     def match(self, method: str, path: str) -> Dict[str, Any]:
@@ -115,16 +127,17 @@ class Orchestrator:
             raise ToolError("{} is not a documented method for {}; documented: {}".format(method, path, ", ".join(sorted({c["method"] for c in candidates}))))
         raise ToolError("{} {} is not in the {} API spec; use find_operations".format(method, path, self.name))
 
-    def resolve(self, schema: Any, depth: int = 0) -> Any:
-        if depth > 6:
-            return schema
+    def resolve(self, schema: Any, seen: Tuple[str, ...] = ()) -> Any:
         if isinstance(schema, dict):
-            if "$ref" in schema:
-                target = self._definitions.get(schema["$ref"].rsplit("/", 1)[-1])
-                return self.resolve(target, depth + 1) if target is not None else schema
-            return {key: self.resolve(value, depth + 1) for key, value in schema.items()}
+            ref = schema.get("$ref")
+            if isinstance(ref, str):
+                name = ref.rsplit("/", 1)[-1]
+                if name in seen or len(seen) > 8 or name not in self._definitions:
+                    return schema  # recursive or unknown schema: leave the reference
+                return self.resolve(self._definitions[name], seen + (name,))
+            return {key: self.resolve(value, seen) for key, value in schema.items()}
         if isinstance(schema, list):
-            return [self.resolve(value, depth + 1) for value in schema]
+            return [self.resolve(value, seen) for value in schema]
         return schema
 
 
@@ -255,7 +268,7 @@ class Server:
                 max_chars = max(1000, int(arguments.get("max_chars") or DEFAULT_MAX_CHARS))
                 text, error = json.dumps(self.call_tool(str(params.get("name")), arguments), indent=1, ensure_ascii=False, default=str), False
             except (ToolError, EdgeConnectError, ValueError, TypeError) as exc:
-                text, error = "Error: {}".format(redact(str(exc))), True
+                text, error = "Error: {}".format(_error_text(exc, str((params.get("arguments") or {}).get("orchestrator") or self.default))), True
             if len(text) > max_chars:
                 text = text[:max_chars] + "\n... truncated {} of {} characters; narrow the query or raise max_chars".format(len(text) - max_chars, len(text))
             result = {"content": [{"type": "text", "text": text}], "isError": error}

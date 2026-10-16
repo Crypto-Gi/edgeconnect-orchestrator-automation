@@ -19,7 +19,10 @@ SPEC = {
         },
         "/ipObjects/addressGroup": {"post": {"summary": "Create address group", "parameters": [{"in": "body", "name": "body", "schema": {"$ref": "#/definitions/Group"}}]}},
     },
-    "definitions": {"Group": {"type": "object", "properties": {"name": {"type": "string"}}}},
+    "definitions": {
+        "Group": {"type": "object", "properties": {"name": {"type": "string"}, "rules": {"type": "array", "items": {"$ref": "#/definitions/Rule"}}}},
+        "Rule": {"type": "object", "properties": {"includedIPs": {"type": "array"}, "parent": {"$ref": "#/definitions/Rule"}}},
+    },
 }
 
 
@@ -74,6 +77,8 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(json.loads(text)["total_matches"], 3)
         _, text = self.call("describe_operation", method="POST", path="/ipObjects/addressGroup")
         self.assertIn('"name"', text)  # $ref resolved
+        self.assertIn('"includedIPs"', text)  # nested $ref resolved
+        self.assertIn('"#/definitions/Rule"', text)  # recursion stops at the cycle
 
     def test_get_is_redacted_and_matched_against_spec(self):
         error, text = self.call("api_get", path="/appliance/2.NE", query={"x": 1})
@@ -119,6 +124,26 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(load_config(environ=env, orchestrator="lab").tls_sha256, "ab" * 32)
         with self.assertRaises(ConfigurationError):
             load_config(environ=dict(env, lab_tls_sha256="abc"), orchestrator="lab")
+
+    def test_errors_are_short_and_explain_tls_failures(self):
+        from urllib.error import URLError
+        from edgeconnect_automation.errors import ResourceNotFoundError, TransportError
+
+        def html_404(*args, **kwargs):
+            raise ResourceNotFoundError("HTTP 404: <html><body>" + "<p>Not found</p>" * 300 + "</body></html>", 404, "GET", "/appliance")
+
+        self.prod_client.request = html_404
+        _, text = self.call("api_get", path="/appliance")
+        self.assertNotIn("<", text)
+        self.assertLess(len(text), 520)
+
+        def bad_cert(*args, **kwargs):
+            raise TransportError("transport failure: URLError") from URLError("[SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate")
+
+        self.lab_client.request = bad_cert
+        _, text = self.call("api_get", orchestrator="lab", path="/appliance")
+        self.assertIn("CERTIFICATE_VERIFY_FAILED", text)
+        self.assertIn("lab_tls_sha256", text)
 
 
 if __name__ == "__main__":
