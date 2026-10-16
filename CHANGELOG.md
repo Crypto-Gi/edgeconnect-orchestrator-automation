@@ -3,6 +3,8 @@
 ## Unreleased
 
 - New `edgeconnect-mcp` stdio MCP server: every operation in the Orchestrator's own API spec through `find_operations`, `describe_operation`, `api_get` and `api_write`. Read-only unless `<nickname>_mcp_writes=true`; calls must match the spec; responses are redacted and size-limited. See `docs/MCP_SERVER.md`.
+- Redaction now also hides pre-shared keys, auth keys, private keys and passphrases, and no longer hides flags and numbers under secret-looking keys (`passwordMinLen`, `csrfProtection`). Found by a full read sweep of a 9.7.1 lab, where tunnel and template-group `presharedkey` values were returned in clear.
+- `api_write` refuses bodies containing `<REDACTED>`, and writes through the `/appliance/rest` and `/broadcastCli` passthroughs need `<nickname>_mcp_passthrough=true`.
 - New `<nickname>_tls_sha256` (and `orchestrator_tls_sha256`) pins a self-signed Orchestrator certificate by SHA-256 fingerprint instead of disabling verification. Applies to the CLI too.
 
 ## 1.2.3 — 2026-10-03

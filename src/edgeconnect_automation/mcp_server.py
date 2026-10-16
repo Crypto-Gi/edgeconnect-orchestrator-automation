@@ -20,6 +20,8 @@ from .util import redact
 
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+# Generic passthroughs that reach any appliance API or CLI, so the spec cannot constrain what they change.
+PASSTHROUGH_PREFIXES = ("/appliance/rest", "/broadcastCli")
 DEFAULT_MAX_CHARS = 60000
 _PATH = re.compile(r"^/[A-Za-z0-9_\-./{}:@~%+,=]*$")
 
@@ -43,7 +45,8 @@ def _error_text(exc: BaseException, name: str = "<nickname>") -> str:
         text += " ({})".format(reason)
     if "CERTIFICATE_VERIFY_FAILED" in text:
         text += "; for a self-signed Orchestrator set {0}_tls_sha256 (or {0}_ca_bundle) in .env".format(name)
-    text = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", redact(text))).strip()
+    text = re.sub(r"(?is)<(script|style)\b.*?(?:</\1\s*>|$)", " ", redact(text))  # $: error bodies are cut at 4 KB
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", text)).strip()
     return text if len(text) <= 500 else text[:500] + " ..."
 
 
@@ -58,10 +61,11 @@ def _template_regex(template: str) -> "re.Pattern[str]":
 
 
 class Orchestrator:
-    def __init__(self, name: str, config: Config, writes: bool, spec_source: Optional[str], client: Optional[ApiClient] = None) -> None:
+    def __init__(self, name: str, config: Config, writes: bool, spec_source: Optional[str], client: Optional[ApiClient] = None, passthrough: bool = False) -> None:
         self.name = name
         self.config = config
         self.writes = writes
+        self.passthrough = passthrough
         self.spec_source = spec_source
         self.client = client or ApiClient(config)
         self._operations: Optional[List[Dict[str, Any]]] = None
@@ -154,8 +158,8 @@ class Server:
         orchestrators = {}
         for name in names:
             config = load_config(dotenv, orchestrator=name if name != "orchestrator" else None, interactive=False)
-            writes = settings.get("{}_mcp_writes".format(name), "").strip().lower() in ("1", "true", "yes")
-            orchestrators[name] = Orchestrator(name, config, writes, settings.get("{}_openapi".format(name)))
+            enabled = lambda option: settings.get("{}_{}".format(name, option), "").strip().lower() in ("1", "true", "yes")
+            orchestrators[name] = Orchestrator(name, config, enabled("mcp_writes"), settings.get("{}_openapi".format(name)), passthrough=enabled("mcp_passthrough"))
         default = (settings.get("orch_default") or "").strip().lower()
         default = settings.get(default, default).strip().lower()  # orch_default may name a slot such as orch_2
         return cls(orchestrators, default if default in orchestrators else names[0])
@@ -168,7 +172,7 @@ class Server:
         path = {"type": "string", "description": "Path relative to /gms/rest with path parameters filled in, e.g. /appliance or /appliance/2.NE"}
         max_chars = {"type": "integer", "description": "Truncate the response text to this many characters (default {})".format(DEFAULT_MAX_CHARS)}
         return [
-            {"name": "list_orchestrators", "description": "List configured Orchestrators and whether writes are enabled for each.",
+            {"name": "list_orchestrators", "description": "List configured Orchestrators and whether writes and appliance passthrough writes are enabled for each.",
              "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": True}},
             {"name": "find_operations", "description": "Search the Orchestrator's own API spec for REST operations by keyword (path, summary, tag).",
              "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "orchestrator": orch, "method": {"type": "string", "enum": ["GET"] + list(WRITE_METHODS)}, "limit": {"type": "integer"}}, "required": ["query"]},
@@ -192,7 +196,7 @@ class Server:
 
     def call_tool(self, name: str, arguments: Mapping[str, Any]) -> Any:
         if name == "list_orchestrators":
-            return [{"name": o.name, "host": o.host, "writes_enabled": o.writes, "default": o.name == self.default} for o in self.orchestrators.values()]
+            return [{"name": o.name, "host": o.host, "writes_enabled": o.writes, "passthrough_writes_enabled": o.passthrough, "default": o.name == self.default} for o in self.orchestrators.values()]
         orchestrator = self._orchestrator(arguments)
         if name == "find_operations":
             words = str(arguments.get("query") or "").lower().split()
@@ -219,6 +223,11 @@ class Server:
                 raise ToolError("api_write method must be one of {}".format(", ".join(WRITE_METHODS)))
             if not orchestrator.writes:
                 raise ToolError("writes are disabled for {}; set {}_mcp_writes=true in .env to allow them".format(orchestrator.name, orchestrator.name))
+            if "<REDACTED>" in json.dumps([arguments.get("body"), arguments.get("query")]):
+                raise ToolError("the request contains <REDACTED> placeholders from a redacted read; send the real values or omit those fields")
+            operation = orchestrator.match(method, str(arguments.get("path") or ""))
+            if operation["path"].startswith(PASSTHROUGH_PREFIXES) and not orchestrator.passthrough:
+                raise ToolError("{} is a raw appliance passthrough that the API spec cannot constrain; set {}_mcp_passthrough=true in .env to allow writes through it".format(operation["path"], orchestrator.name))
             return self._call(orchestrator, method, arguments)
         raise ToolError("unknown tool {!r}".format(name))
 

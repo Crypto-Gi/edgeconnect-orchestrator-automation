@@ -13,9 +13,10 @@
 ## Safety model
 
 - **Read-only by default.** `api_write` is refused unless `.env` has `<nickname>_mcp_writes=true` for that Orchestrator. Turn it on only for lab Orchestrators, or deliberately.
+- **Raw passthroughs need a second opt-in.** `/appliance/rest` and `/broadcastCli` forward any request to an appliance's own API or CLI, so the spec cannot limit what they change. Writes through them also need `<nickname>_mcp_passthrough=true`.
 - **Spec allowlist.** Every call must match a method and path in the API spec the Orchestrator itself serves (`/gms/rest/apiDocs`, the same one Support > REST APIs shows). Undocumented paths, `..`, encoded separators and anything that would leave `/gms/rest` are rejected.
 - **Separate read and write tools.** `api_write` is marked destructive, so MCP clients ask before each call; reads can be auto-approved.
-- **Secrets stay local.** API keys are only sent as the `X-Auth-Token` header. Responses and errors pass through the same redaction as the CLI (`apiKey`, `password`, `token`, ...).
+- **Secrets stay local.** API keys are only sent as the `X-Auth-Token` header. Responses and errors pass through the same redaction as the CLI: string values under keys such as `apiKey`, `password`, `token`, `presharedKey`, `authKey` and `privateKey` become `<REDACTED>`, while flags and numbers (`passwordMinLen`, `csrfProtection`) stay readable. `api_write` refuses a body that still contains `<REDACTED>`, so a read-modify-write cannot overwrite a real secret with the placeholder.
 - **Strict TLS.** Certificates are verified. A self-signed lab Orchestrator is supported by pinning its certificate (`<nickname>_tls_sha256`), never by turning verification off.
 - **No listener.** stdio only; nothing is exposed on the network. Every write is logged to stderr (the MCP client's server log) with method, path and query.
 - Large responses are truncated to `max_chars` (default 60,000) so one call cannot flood the conversation.
@@ -29,6 +30,8 @@ orch_4=lab
 lab_base_url=https://192.0.2.10
 lab_api_key=<API_KEY>
 lab_mcp_writes=true
+# Optional: allow writes through /appliance/rest and /broadcastCli.
+# lab_mcp_passthrough=true
 # Self-signed certificate: pin it.
 lab_tls_sha256=<SHA-256 fingerprint>
 # Optional: use a saved spec instead of downloading it on first use.

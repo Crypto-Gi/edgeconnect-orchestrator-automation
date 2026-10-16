@@ -17,6 +17,7 @@ SPEC = {
             "get": {"summary": "Get one appliance", "parameters": [{"name": "nePk", "in": "path"}]},
             "delete": {"summary": "Delete appliance"},
         },
+        "/appliance/rest/{nePk}": {"post": {"summary": "Appliance REST passthrough"}},
         "/ipObjects/addressGroup": {"post": {"summary": "Create address group", "parameters": [{"in": "body", "name": "body", "schema": {"$ref": "#/definitions/Group"}}]}},
     },
     "definitions": {
@@ -66,6 +67,12 @@ class McpServerTest(unittest.TestCase):
         names = [tool["name"] for tool in self.server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]]
         self.assertEqual(names, ["list_orchestrators", "find_operations", "describe_operation", "api_get", "api_write"])
 
+    def test_redaction_hides_psks_but_keeps_flags_and_numbers(self):
+        self.prod_client.body = json.dumps({"presharedkey": "abc12", "authKey": "k", "passwordMinLen": 8, "csrfProtection": True, "md5Password": ""}).encode()
+        _, text = self.call("api_get", path="/appliance")
+        value = json.loads(text)["result"]
+        self.assertEqual(value, {"presharedkey": "<REDACTED>", "authKey": "<REDACTED>", "passwordMinLen": 8, "csrfProtection": True, "md5Password": ""})
+
     def test_list_orchestrators_never_shows_keys(self):
         error, text = self.call("list_orchestrators")
         self.assertFalse(error)
@@ -74,7 +81,7 @@ class McpServerTest(unittest.TestCase):
 
     def test_find_and_describe(self):
         _, text = self.call("find_operations", query="appliance")
-        self.assertEqual(json.loads(text)["total_matches"], 3)
+        self.assertEqual(json.loads(text)["total_matches"], 4)
         _, text = self.call("describe_operation", method="POST", path="/ipObjects/addressGroup")
         self.assertIn('"name"', text)  # $ref resolved
         self.assertIn('"includedIPs"', text)  # nested $ref resolved
@@ -97,6 +104,16 @@ class McpServerTest(unittest.TestCase):
         error, _ = self.call("api_write", orchestrator="lab", method="POST", path="/ipObjects/addressGroup", body={"name": "g"})
         self.assertFalse(error)
         self.assertEqual(self.lab_client.calls, [("POST", "/ipObjects/addressGroup", None, {"name": "g"})])
+        error, text = self.call("api_write", orchestrator="lab", method="POST", path="/ipObjects/addressGroup", body={"name": "g", "password": "<REDACTED>"})
+        self.assertTrue(error)
+        self.assertIn("placeholders", text)
+        error, text = self.call("api_write", orchestrator="lab", method="POST", path="/appliance/rest/2.NE", query={"url": "reboot"})
+        self.assertTrue(error)
+        self.assertIn("lab_mcp_passthrough", text)
+        self.assertEqual(len(self.lab_client.calls), 1)
+        self.server.orchestrators["lab"].passthrough = True
+        error, _ = self.call("api_write", orchestrator="lab", method="POST", path="/appliance/rest/2.NE", query={"url": "x"})
+        self.assertFalse(error)
         error, _ = self.call("api_write", orchestrator="lab", method="PUT", path="/appliance/2.NE")
         self.assertTrue(error)  # undocumented method
         error, _ = self.call("api_write", orchestrator="lab", method="GET", path="/appliance")
@@ -135,6 +152,9 @@ class McpServerTest(unittest.TestCase):
         self.prod_client.request = html_404
         _, text = self.call("api_get", path="/appliance")
         self.assertNotIn("<", text)
+        self.prod_client.request = lambda *a, **k: (_ for _ in ()).throw(ResourceNotFoundError('HTTP 404: <html><script>"use strict"; const protocol = "https://";', 404, "GET", "/x"))
+        _, text = self.call("api_get", path="/appliance")
+        self.assertNotIn("use strict", text)
         self.assertLess(len(text), 520)
 
         def bad_cert(*args, **kwargs):

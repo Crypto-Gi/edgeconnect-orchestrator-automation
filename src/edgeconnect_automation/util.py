@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping
 
 
-_SECRET_KEYS = re.compile(r"(?:api[-_]?key|authorization|cookie|csrf|password|secret|token)", re.I)
+_SECRET_KEYS = re.compile(r"(?:api[-_]?key|authorization|cookie|csrf|password|passphrase|secret|token|psk|preshared|private[-_]?key|auth[-_]?key)", re.I)
 _SECRET_TEXT = re.compile(r"(?i)(authorization|x-auth-token|api[-_]?key|password|secret|cookie)\s*[:=]\s*([^\s,;]+)")
 
 
@@ -18,9 +18,16 @@ def fingerprint(value: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _redact_secret(item: Any) -> Any:
+    # Flags, numbers and empty values under secret-looking keys (passwordMinLen, csrfProtection) reveal nothing.
+    if item is None or isinstance(item, (bool, int, float)) or item == "":
+        return item
+    return "<REDACTED>"
+
+
 def redact(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {str(key): "<REDACTED>" if _SECRET_KEYS.search(str(key)) else redact(item) for key, item in value.items()}
+        return {str(key): _redact_secret(item) if _SECRET_KEYS.search(str(key)) else redact(item) for key, item in value.items()}
     if isinstance(value, list):
         return [redact(item) for item in value]
     if isinstance(value, tuple):
