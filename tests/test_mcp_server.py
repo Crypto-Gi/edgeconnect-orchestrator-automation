@@ -163,10 +163,38 @@ class McpServerTest(unittest.TestCase):
         error, _ = self.call("api_write", orchestrator="lab", method="DELETE", path="/appliance/2.NE")
         self.assertFalse(error)
         self.assertEqual(high_risk_category("POST", "/ipObjects/addressGroup"), None)
+        for template in ("/certificates/parse", "/license/validate", "/cipher/checkCompatibility", "/sslCertificate/verify", "/users/lookup", "/brandImage/upload", "/appliance/rest/{nePk}/x/validate"):
+            self.assertEqual(high_risk_category("POST", template), None, template)
+        self.assertEqual(high_risk_category("POST", "/appliance/rest/{nePk}", "ntp/validate"), None)
+        self.assertEqual(high_risk_category("POST", "/gmsConfig/portalCheck", None, "Test connectivity to the portal"), None)
+        self.assertEqual(high_risk_category("POST", "/ssl/x", None, "Validate a certificate chain"), None)
+        self.assertEqual(high_risk_category("POST", "/appliance/denied/delete"), "appliance_lifecycle")
+        self.assertEqual(high_risk_category("PUT", "/gmsSMTP/config"), "orchestrator_admin")
+        self.assertEqual(high_risk_category("POST", "/sse/connector"), "appliance_lifecycle")
+        self.assertEqual(high_risk_category("POST", "/brandCustomization/image"), None)
         self.assertEqual(high_risk_category("POST", "/appliance/rest/{nePk}", "deployment"), None)
-        for method, template, category in (("POST", "/users/{username}", "auth"), ("PUT", "/gms/backup/config", "backup_restore"),
+        for method, template, category in (("DELETE", "/appliance", "appliance_lifecycle"), ("POST", "/appliance", "appliance_lifecycle"),
+                                           ("POST", "/appliance/deleteForDiscovery", "appliance_lifecycle"), ("POST", "/appliance/changePassword", "appliance_lifecycle"),
+                                           ("POST", "/cloudDeployment/aws/instances", "cloud_deployment"), ("POST", "/edge-ha/groups", "appliance_lifecycle"),
+                                           ("POST", "/orch-ha/failover", "orchestrator_ha"), ("POST", "/gmsRemoteAuth/TACACS+", "auth"), ("PUT", "/gmsRemoteAuth/JWT", "auth"),
+                                           ("DELETE", "/vxoaImages/{id}", "upgrade"), ("POST", "/preconfiguration/{id}/apply", "provisioning"),
+                                           ("POST", "/wizard/appliance/apply", "provisioning"), ("POST", "/rma/wizard", "provisioning"), ("POST", "/portal/registration", "provisioning"),
+                                           ("POST", "/ztp/settings", "provisioning"), ("POST", "/accountKey/generate", "provisioning"),
+                                           ("PUT", "/gmsConfig/sessionTimeout", "orchestrator_admin"), ("PUT", "/restApiConfig", "orchestrator_admin"),
+                                           ("POST", "/advancedProperties", "orchestrator_admin"), ("PUT", "/security/advancedSettings", "orchestrator_admin"),
+                                           ("POST", "/smtp", "orchestrator_admin"), ("DELETE", "/debugFiles/{name}", "orchestrator_admin"),
+                                           ("DELETE", "/dbPartition/{id}", "orchestrator_admin"), ("POST", "/est/profile", "certificates"), ("POST", "/endEntityProfile", "certificates"),
+                                           ("POST", "/users/{username}", "auth"), ("PUT", "/gms/backup/config", "backup_restore"),
                                            ("POST", "/broadcastCli", "cli"), ("POST", "/license/portal", "licensing"), ("POST", "/networkMemory", "traffic_disruptive")):
             self.assertEqual(high_risk_category(method, template), category, template)
+
+    def test_flag_settings_named_like_secrets_stay_readable(self):
+        self.lab_client.body = json.dumps({"applyPassword": "true", "enablePassword": "false", "password": "true", "authKey": "yes"}).encode()
+        _, text = self.call("api_get", orchestrator="lab", path="/appliance")
+        value = json.loads(text)["result"]
+        self.assertEqual((value["applyPassword"], value["enablePassword"]), ("true", "false"))
+        self.assertTrue(value["password"].startswith("<REDACTED:"))  # not flag-named, so still a secret
+        self.assertTrue(value["authKey"].startswith("<REDACTED:"))
 
     def test_rate_limiter_waits_instead_of_failing(self):
         now, slept = [0.0], []

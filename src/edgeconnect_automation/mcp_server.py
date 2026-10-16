@@ -39,19 +39,27 @@ _TOKEN = re.compile(r"^<REDACTED:[0-9a-f]{16}>$")
 # Writes refused even on writable Orchestrators unless <nickname>_mcp_allow_high_risk names the category (or "all").
 # Matched against the spec path template, and for appliance passthrough writes also against the `url` query value.
 HIGH_RISK: Tuple[Tuple[str, Tuple[str, ...], "re.Pattern[str]"], ...] = tuple((name, methods, re.compile(pattern)) for name, methods, pattern in (
-    ("auth", WRITE_METHODS, r"(?:^|/)(?:users?|usergroups?|rbac\w*|roles?|authentication|auth|tacacs\w*|radius\w*|ldap\w*|saml\w*|sso|oauth\w*|apikeys?|sessions?|activesessions|passwords?)(?:/|$)"),
-    ("certificates", WRITE_METHODS, r"cert|ssl|cipher|https|(?:^|/)tls"),
+    ("auth", WRITE_METHODS, r"(?:^|/)(?:users?|usergroups?|rbac\w*|roles?|authentication|auth|apikeys?|sessions?|activesessions|passwords?|jwt|oauth\w*|saml\w*|sso|ldap\w*|radius\w*|tacacs\W*)(?:/|$)|remoteauth"),
+    ("certificates", WRITE_METHODS, r"cert|ssl|cipher|https|(?:^|/)tls|(?:^|/)est(?:/|$)|end-?entity"),
     ("licensing", WRITE_METHODS, r"licen"),
     ("backup_restore", WRITE_METHODS, r"backup|restore"),
-    ("upgrade", WRITE_METHODS, r"upgrade|(?:^|/)images?(?:/|$)"),
+    ("upgrade", WRITE_METHODS, r"upgrade|vxoaimages?|ecosimages?|swimages?"),
     ("reboot", WRITE_METHODS, r"reboot|shutdown|restart|poweroff|factory"),
-    ("orchestrator_ha", WRITE_METHODS, r"(?:^|/)(?:ha|gmsha|hagroups?|orchestratorha)(?:/|$)"),
-    ("appliance_lifecycle", WRITE_METHODS, r"(?:^|/)appliance/(?:deny|discovered|revoke|approve|changeappliancepk)|edgeha|hostname"),
+    ("orchestrator_ha", WRITE_METHODS, r"(?:^|/)(?:ha|gmsha|hagroups?|orchestratorha|orchha)(?:/|$)|failover"),
+    ("appliance_lifecycle", WRITE_METHODS, r"^/appliance/?$|(?:^|/)appliance/(?:deny|discovered|revoke|approve|changeappliancepk|deletefordiscovery|changepassword|denied)|edgeha|hostname|(?:^|/)sse/connector"),
     ("appliance_lifecycle", ("DELETE",), r"^/appliance/\{[^}]+\}$|^/appliance/rest"),
+    ("cloud_deployment", WRITE_METHODS, r"clouddeployment"),
+    ("provisioning", WRITE_METHODS, r"(?:^|/)(?:wizards?\w*|rma\w*|ztp\w*|portal\w*|registration\w*|accountkeys?)(?:/|$)|preconfig\w*/.*apply|apply\w*preconfig|wizard|accountkey|gmsregistration"),
+    ("orchestrator_admin", WRITE_METHODS, r"sessiontimeout|restapiconfig|advancedproperties|advancedsettings|gmssmtp|smtp|debugfiles?|dbpartition|partition"),
     ("cli", WRITE_METHODS, r"broadcastcli|tcpdump|packetcapture|(?:^|/)(?:shell|cli|remotecli)(?:/|$)"),
     ("ip_allowlist", WRITE_METHODS, r"allowlist|whitelist|allowedips|ipallow"),
     ("traffic_disruptive", WRITE_METHODS, r"networkmemory|flowreset"),
 ))
+# Operations whose last path segment is a lookup or check (parse a certificate, validate a licence) change nothing, so
+# they stay allowed in the categories where such POSTs are common.
+LOOKUP_CATEGORIES = ("auth", "certificates", "licensing", "upgrade", "orchestrator_admin", "provisioning")
+_LOOKUP_SUMMARY = re.compile(r"getinfo|gettext|validat|verif|test ?connection|connectivity|\\bparse|\\bdecode")
+_LOOKUP = re.compile(r"^(?:validate|check|parse|verify|lookup|query|search|list|get|read|preview|decode|analy[sz]e|test)")
 
 INSTRUCTIONS = (
     "Tools for HPE Aruba EdgeConnect Orchestrator. Workflow: list_orchestrators, then find_operations "
@@ -70,10 +78,12 @@ class ToolError(Exception):
     pass
 
 
-def high_risk_category(method: str, template: str, url: Optional[str] = None) -> Optional[str]:
-    targets = [template.lower()] + (["/" + url.lower().lstrip("/")] if url else [])
+def high_risk_category(method: str, template: str, url: Optional[str] = None, summary: str = "") -> Optional[str]:
+    # Hyphens, underscores and plus signs are dropped so edge-ha, orch_ha and TACACS+ match their plain spellings.
+    targets = [re.sub(r"[-_+]", "", target) for target in [template.lower()] + (["/" + url.lower().lstrip("/")] if url else [])]
+    lookup = not url and bool(_LOOKUP.match(template.lower().rstrip("/").rsplit("/", 1)[-1]) or _LOOKUP_SUMMARY.search(summary.lower()))
     for name, methods, pattern in HIGH_RISK:
-        if method in methods and any(pattern.search(target) for target in targets):
+        if method in methods and any(pattern.search(target) for target in targets) and not (lookup and name in LOOKUP_CATEGORIES):
             return name
     return None
 
@@ -98,6 +108,15 @@ class RateLimiter:
         self.tokens -= 1
 
 
+_FLAG_KEY = re.compile(r"^(?:apply|enforce|notify|enable|enabled|use|is|has|require|required|show|allow)", re.I)
+_FLAG_VALUE = ("true", "false", "yes", "no", "on", "off", "enabled", "disabled")
+
+
+def _is_flag(key: str, item: Any) -> bool:
+    """applyPassword="true" is a setting, not a password."""
+    return isinstance(item, str) and bool(_FLAG_KEY.match(key)) and item.strip().lower() in _FLAG_VALUE
+
+
 class Vault:
     """Redacts secrets to per-process tokens and puts the real values back on write.
 
@@ -116,7 +135,7 @@ class Vault:
 
     def hide(self, value: Any) -> Any:
         if isinstance(value, Mapping):
-            return {str(key): (self._token(item) if isinstance(item, str) and item else _redact_secret(item)) if _SECRET_KEYS.search(str(key)) else self.hide(item) for key, item in value.items()}
+            return {str(key): (item if _is_flag(str(key), item) else self._token(item) if isinstance(item, str) and item else _redact_secret(item)) if _SECRET_KEYS.search(str(key)) else self.hide(item) for key, item in value.items()}
         if isinstance(value, list):
             return [self.hide(item) for item in value]
         if isinstance(value, str):
@@ -342,7 +361,7 @@ class Server:
             if operation["path"].startswith(PASSTHROUGH_PREFIXES) and not orchestrator.passthrough:
                 raise ToolError("{} is a raw appliance passthrough that the API spec cannot constrain; set {}_mcp_passthrough=true in .env to allow writes through it".format(operation["path"], orchestrator.name))
             url = query.get("url") if isinstance(query, dict) and operation["path"].startswith(PASSTHROUGH_PREFIXES) else None
-            category = high_risk_category(method, operation["path"], str(url) if url else None)
+            category = high_risk_category(method, operation["path"], str(url) if url else None, operation["summary"])
             if category and category not in orchestrator.allow_high_risk and "all" not in orchestrator.allow_high_risk:
                 raise ToolError("{} {} is a high-risk operation ({}) and is refused even with writes enabled; add {} to {}_mcp_allow_high_risk in .env to allow it".format(method, operation["path"], category, category, orchestrator.name))
             return self._call(orchestrator, method, dict(arguments, body=body, query=query))
@@ -462,7 +481,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.list_high_risk:
             orchestrator = server._orchestrator({"orchestrator": args.list_high_risk})
             for operation in orchestrator.operations():
-                category = high_risk_category(operation["method"], operation["path"]) if operation["method"] != "GET" else None
+                category = high_risk_category(operation["method"], operation["path"], None, operation["summary"]) if operation["method"] != "GET" else None
                 if category:
                     print("{}\t{} {}".format(category, operation["method"], operation["path"]))
             return 0
