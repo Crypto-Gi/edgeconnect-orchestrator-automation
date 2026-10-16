@@ -1,12 +1,14 @@
 import io
 import json
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
 
 from edgeconnect_automation.config import Config, load_config
 from edgeconnect_automation.errors import ConfigurationError
-from edgeconnect_automation.mcp_server import Orchestrator, Server, ToolError
+from edgeconnect_automation.mcp_server import Orchestrator, RateLimiter, Server, ToolError, high_risk_category
 
 SPEC = {
     "swagger": "2.0",
@@ -73,7 +75,32 @@ class McpServerTest(unittest.TestCase):
         self.prod_client.body = json.dumps({"presharedkey": "abc12", "authKey": "k", "passwordMinLen": 8, "csrfProtection": True, "md5Password": ""}).encode()
         _, text = self.call("api_get", path="/appliance")
         value = json.loads(text)["result"]
-        self.assertEqual(value, {"presharedkey": "<REDACTED>", "authKey": "<REDACTED>", "passwordMinLen": 8, "csrfProtection": True, "md5Password": ""})
+        self.assertRegex(value.pop("presharedkey"), r"^<REDACTED:[0-9a-f]{16}>$")
+        self.assertRegex(value.pop("authKey"), r"^<REDACTED:[0-9a-f]{16}>$")
+        self.assertEqual(value, {"passwordMinLen": 8, "csrfProtection": True, "md5Password": ""})
+        self.prod_client.body = json.dumps({"cert": "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----"}).encode()
+        _, text = self.call("api_get", path="/appliance")
+        self.assertNotIn("MIIE", text)
+
+    def test_secret_tokens_round_trip_on_write_back(self):
+        self.lab_client.body = json.dumps({"name": "g", "presharedKey": "hunter2", "nested": [{"password": "p@ss"}]}).encode()
+        _, text = self.call("api_get", orchestrator="lab", path="/appliance")
+        self.assertNotIn("hunter2", text)
+        self.assertNotIn("p@ss", text)
+        read = json.loads(text)["result"]
+        error, _ = self.call("api_write", orchestrator="lab", method="POST", path="/ipObjects/addressGroup", body=read)
+        self.assertFalse(error)
+        self.assertEqual(self.lab_client.calls[-1][3], {"name": "g", "presharedKey": "hunter2", "nested": [{"password": "p@ss"}]})
+        sent = len(self.lab_client.calls)
+        # A token moved into a readable field, or used on another Orchestrator, is refused rather than revealed.
+        error, text = self.call("api_write", orchestrator="lab", method="POST", path="/ipObjects/addressGroup", body={"name": read["presharedKey"]})
+        self.assertTrue(error)
+        self.assertIn("placeholders", text)
+        self.server.orchestrators["prod"].writes = True
+        error, _ = self.call("api_write", orchestrator="prod", method="POST", path="/ipObjects/addressGroup", body=read)
+        self.assertTrue(error)
+        self.assertEqual(len(self.lab_client.calls), sent)
+        self.assertEqual(self.prod_client.calls, [])
 
     def test_list_orchestrators_never_shows_keys(self):
         error, text = self.call("list_orchestrators")
@@ -120,6 +147,64 @@ class McpServerTest(unittest.TestCase):
         self.assertTrue(error)  # undocumented method
         error, _ = self.call("api_write", orchestrator="lab", method="GET", path="/appliance")
         self.assertTrue(error)
+
+    def test_high_risk_writes_need_their_own_opt_in(self):
+        lab = self.server.orchestrators["lab"]
+        lab.passthrough = True
+        error, text = self.call("api_write", orchestrator="lab", method="DELETE", path="/appliance/2.NE")
+        self.assertTrue(error)
+        self.assertIn("appliance_lifecycle", text)
+        self.assertIn("lab_mcp_allow_high_risk", text)
+        error, text = self.call("api_write", orchestrator="lab", method="POST", path="/appliance/rest/2.NE", query={"url": "system/reboot"})
+        self.assertTrue(error)
+        self.assertIn("(reboot)", text)
+        self.assertEqual(self.lab_client.calls, [])
+        lab.allow_high_risk = ("appliance_lifecycle",)
+        error, _ = self.call("api_write", orchestrator="lab", method="DELETE", path="/appliance/2.NE")
+        self.assertFalse(error)
+        self.assertEqual(high_risk_category("POST", "/ipObjects/addressGroup"), None)
+        self.assertEqual(high_risk_category("POST", "/appliance/rest/{nePk}", "deployment"), None)
+        for method, template, category in (("POST", "/users/{username}", "auth"), ("PUT", "/gms/backup/config", "backup_restore"),
+                                           ("POST", "/broadcastCli", "cli"), ("POST", "/license/portal", "licensing"), ("POST", "/networkMemory", "traffic_disruptive")):
+            self.assertEqual(high_risk_category(method, template), category, template)
+
+    def test_rate_limiter_waits_instead_of_failing(self):
+        now, slept = [0.0], []
+        limiter = RateLimiter(2, clock=lambda: now[0], sleep=lambda seconds: (slept.append(seconds), now.__setitem__(0, now[0] + seconds)))
+        for _ in range(4):
+            limiter.take()  # burst of twice the rate
+        self.assertEqual(slept, [])
+        limiter.take()
+        self.assertAlmostEqual(slept[0], 0.5)
+        RateLimiter(0, sleep=lambda seconds: self.fail("0 means no limit")).take()
+
+    def test_audit_log_records_calls_without_secrets(self):
+        path = os.path.join(self.tmp.name, "audit", "audit.jsonl")
+        server = Server(self.server.orchestrators, default="prod", log=lambda line: None, audit_log=path)
+        self.lab_client.body = json.dumps({"presharedKey": "hunter2"}).encode()
+        for name, arguments in (("api_get", {"orchestrator": "lab", "path": "/appliance", "query": {"password": "q-secret"}}),
+                                ("api_write", {"orchestrator": "lab", "method": "POST", "path": "/ipObjects/addressGroup", "body": {"name": "g"}}),
+                                ("api_write", {"method": "DELETE", "path": "/appliance/2.NE"})):
+            server.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+        server.audit.close()
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        content = Path(path).read_text()
+        self.assertNotIn("hunter2", content)
+        self.assertNotIn("q-secret", content)
+        records = [json.loads(line) for line in content.splitlines()]
+        self.assertEqual([(r["tool"], r["orchestrator"], r["method"], r["outcome"]) for r in records],
+                         [("api_get", "lab", "GET", "ok"), ("api_write", "lab", "POST", "ok"), ("api_write", "prod", "DELETE", "error")])
+        self.assertTrue(records[1]["body_sha256"].startswith("sha256:"))
+        self.assertIn("prod_mcp_writes", records[2]["error"])
+
+    def test_results_are_marked_untrusted_and_hidden_characters_escaped(self):
+        self.prod_client.body = json.dumps({"comment": "ok\u202egnp.exe\U000e0041"}).encode()
+        _, text = self.call("api_get", path="/appliance")
+        self.assertNotIn("\u202e", text)
+        self.assertNotIn("\U000e0041", text)
+        decoded = json.loads(text)
+        self.assertEqual(decoded["result"]["comment"], "ok\u202egnp.exe\U000e0041")  # lossless
+        self.assertIn("untrusted", decoded["note"])
 
     def test_text_plain_bodies_are_sent_raw(self):
         class Raw(FakeClient):

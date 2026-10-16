@@ -16,9 +16,13 @@
 - **Raw passthroughs need a second opt-in.** `/appliance/rest` and `/broadcastCli` forward any request to an appliance's own API or CLI, so the spec cannot limit what they change. Writes through them also need `<nickname>_mcp_passthrough=true`.
 - **Spec allowlist.** Every call must match a method and path in the API spec the Orchestrator itself serves (`/gms/rest/apiDocs`, the same one Support > REST APIs shows). Undocumented paths, `..`, encoded separators and anything that would leave `/gms/rest` are rejected.
 - **Separate read and write tools.** `api_write` is marked destructive, so MCP clients ask before each call; reads can be auto-approved.
-- **Secrets stay local.** API keys are only sent as the `X-Auth-Token` header. Responses and errors pass through the same redaction as the CLI: string values under keys such as `apiKey`, `password`, `token`, `presharedKey`, `authKey` and `privateKey` become `<REDACTED>`, while flags and numbers (`passwordMinLen`, `csrfProtection`) stay readable. `api_write` refuses a body that still contains `<REDACTED>`, so a read-modify-write cannot overwrite a real secret with the placeholder.
+- **Secrets stay local.** API keys are only sent as the `X-Auth-Token` header. String values under keys such as `apiKey`, `password`, `token`, `presharedKey`, `authKey` and `privateKey`, and any PEM private key, come back as `<REDACTED:…>` tokens; flags and numbers (`passwordMinLen`, `csrfProtection`) stay readable. Write a token back unchanged and the server puts the real value in, so read-modify-write of BGP, OSPF, overlays or tunnels round-trips exactly. A token is only restored under a secret-looking key, on the Orchestrator it came from, during the same server run; anything else (a plain `<REDACTED>`, a token moved into a readable field, a token from another Orchestrator or an earlier run) is refused, so a secret can never be overwritten with a placeholder or copied somewhere readable.
+- **High-risk blocklist.** Even with writes on, these are refused unless `<nickname>_mcp_allow_high_risk` names their category (comma-separated, or `all`): `auth` (users, roles, RBAC, TACACS/RADIUS, API keys, sessions), `certificates` (certs, SSL/TLS, ciphers, HTTPS), `licensing`, `backup_restore`, `upgrade`, `reboot` (reboot, shutdown, restart, factory reset), `orchestrator_ha`, `appliance_lifecycle` (delete, approve/deny/revoke, EdgeHA, hostname, passthrough DELETE), `cli` (broadcastCli, tcpdump, shell), `ip_allowlist`, `traffic_disruptive` (network memory erase, flow reset). Passthrough writes are also checked against their `url`. `edgeconnect-mcp --list-high-risk <nickname>` prints every write in that Orchestrator's spec that the list refuses.
+- **Rate limits per Orchestrator.** Reads default to 10 per second and writes to 2 per second, each with a burst of twice that. Over the limit, calls wait rather than fail, so scripts slow down instead of breaking. Change with `<nickname>_mcp_read_rate` / `<nickname>_mcp_write_rate` (0 = no limit).
+- **Audit log.** Every tool call is appended as one JSON line to `~/.edgeconnect-mcp/audit.jsonl` (file 0600, folder 0700): time, session and call id, tool, Orchestrator, method, path, redacted query, a SHA-256 of the write body, outcome, error, duration and response size. Bodies and secrets are never written. Set `mcp_audit_log=/other/path` or `mcp_audit_log=off`.
+- **Untrusted results.** API results carry a note that their text is data, not instructions, and the server instructions say the same. Invisible and direction-changing characters (zero-width, bidi overrides, Unicode tag characters) are shown as `\uXXXX` JSON escapes, so hidden text is visible while the value still decodes exactly.
 - **Strict TLS.** Certificates are verified. A self-signed lab Orchestrator is supported by pinning its certificate (`<nickname>_tls_sha256`), never by turning verification off.
-- **No listener.** stdio only; nothing is exposed on the network. Every write is logged to stderr (the MCP client's server log) with method, path and query.
+- **No listener.** stdio only; nothing is exposed on the network. Every write is also logged to stderr (the MCP client's server log) with method, path and query.
 - Large responses are truncated to `max_chars` (default 60,000) so one call cannot flood the conversation.
 
 ## Configure
@@ -36,6 +40,14 @@ lab_mcp_writes=true
 lab_tls_sha256=<SHA-256 fingerprint>
 # Optional: use a saved spec instead of downloading it on first use.
 # lab_openapi=/absolute/path/apiDocs.json
+# Optional: allow blocklisted categories of writes (or "all").
+# lab_mcp_allow_high_risk=traffic_disruptive,backup_restore
+# Optional: requests per second (0 = no limit). Defaults: 10 reads, 2 writes.
+# lab_mcp_read_rate=10
+# lab_mcp_write_rate=2
+
+# Global: audit log location, or off.
+# mcp_audit_log=~/.edgeconnect-mcp/audit.jsonl
 ```
 
 Get a certificate fingerprint (check it on the Orchestrator console or another trusted path before pinning):
