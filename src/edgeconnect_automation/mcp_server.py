@@ -59,8 +59,10 @@ HIGH_RISK: Tuple[Tuple[str, Tuple[str, ...], "re.Pattern[str]"], ...] = tuple((n
 # Operations whose last path segment is a lookup or check (parse a certificate, validate a licence) change nothing, so
 # they stay allowed in the categories where such POSTs are common.
 LOOKUP_CATEGORIES = ("auth", "certificates", "licensing", "upgrade", "backup_restore")
+# Areas where only a lookup-named path counts, because their summaries say "verify" for real changes (registration).
+PATH_LOOKUP_CATEGORIES = LOOKUP_CATEGORIES + ("provisioning",)
 _LOOKUP_SUMMARY = re.compile(r"^(?:validate|verify|check|parse|decode|test (?:the )?connect|get )")
-_LOOKUP = re.compile(r"^(?:validate|check|parse|verify|lookup|query|search|list|get|read|preview|decode|analy[sz]e|test|userauthtype)")
+_LOOKUP = re.compile(r"^(?:validate|check|parse|verify|lookup|query|search|list|get|read|preview|decode|analy[sz]e|test|userauthtype)|.*connectivity$")
 
 INSTRUCTIONS = (
     "Tools for HPE Aruba EdgeConnect Orchestrator. Workflow: list_orchestrators, then find_operations "
@@ -82,9 +84,10 @@ class ToolError(Exception):
 def high_risk_category(method: str, template: str, url: Optional[str] = None, summary: str = "") -> Optional[str]:
     # Hyphens, underscores and plus signs are dropped so edge-ha, orch_ha and TACACS+ match their plain spellings.
     targets = [re.sub(r"[-_+]", "", target) for target in [template.lower()] + (["/" + url.lower().lstrip("/")] if url else [])]
-    lookup = not url and bool(_LOOKUP.match(template.lower().rstrip("/").rsplit("/", 1)[-1]) or _LOOKUP_SUMMARY.search(summary.lower()))
+    path_lookup = not url and bool(_LOOKUP.match(template.lower().rstrip("/").rsplit("/", 1)[-1]))
+    summary_lookup = not url and bool(_LOOKUP_SUMMARY.search(summary.lower()))
     for name, methods, pattern in HIGH_RISK:
-        if method in methods and any(pattern.search(target) for target in targets) and not (lookup and name in LOOKUP_CATEGORIES):
+        if method in methods and any(pattern.search(target) for target in targets) and not (path_lookup and name in PATH_LOOKUP_CATEGORIES) and not (summary_lookup and name in LOOKUP_CATEGORIES):
             return name
     return None
 

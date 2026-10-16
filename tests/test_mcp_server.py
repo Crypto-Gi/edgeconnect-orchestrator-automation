@@ -166,7 +166,8 @@ class McpServerTest(unittest.TestCase):
         for template in ("/certificates/parse", "/license/validate", "/cipher/checkCompatibility", "/sslCertificate/verify", "/users/lookup", "/brandImage/upload", "/appliance/rest/{nePk}/x/validate"):
             self.assertEqual(high_risk_category("POST", template), None, template)
         self.assertEqual(high_risk_category("POST", "/appliance/rest/{nePk}", "ntp/validate"), None)
-        for template in ("/gms/backup/testConnection", "/authentication/userAuthType", "/authentication/userAuthTypeToken", "/gms/wizard", "/thirdPartyServices/sse/connectorPool", "/alarm/clear", "/overlays/{id}"):
+        for template in ("/gms/backup/testConnection", "/authentication/userAuthType", "/authentication/userAuthTypeToken", "/gms/wizard", "/thirdPartyServices/sse/connectorPool", "/alarm/clear", "/overlays/{id}",
+                         "/customCert/applianceConnectivity", "/customCert/orchestratorConnectivity", "/rmaWizard/checkInterfaceMapping"):
             self.assertEqual(high_risk_category("POST", template), None, template)
         self.assertEqual(high_risk_category("POST", "/ssl/x", None, "Verify the certificate chain"), None)
         for method, template, category in (("POST", "/security/estServer", "certificates"), ("PUT", "/spPortal/config", "provisioning"), ("POST", "/account/key/generate", "provisioning"),
