@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import random
 import ssl
@@ -8,6 +10,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin
+from http.client import HTTPSConnection
 from urllib.request import HTTPSHandler, Request, build_opener
 
 from .config import Config
@@ -29,7 +32,13 @@ class ApiClient:
         context = ssl.create_default_context(cafile=config.ca_bundle)
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
-        self._opener = opener or build_opener(HTTPSHandler(context=context))
+        handler = HTTPSHandler(context=context)
+        if config.tls_sha256:
+            # A pinned self-signed certificate replaces CA and hostname checks; the pin is checked on every connection.
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            handler = _PinnedHTTPSHandler(context, config.tls_sha256)
+        self._opener = opener or build_opener(handler)
         self._sleep = sleep
         self._jitter = jitter
 
@@ -196,3 +205,23 @@ class ApiClient:
                 except (TypeError, ValueError, OverflowError):
                     pass
         return min(0.5 * (2 ** attempt) + self._jitter() * 0.25, 10.0)
+
+
+class _PinnedHTTPSHandler(HTTPSHandler):
+    def __init__(self, context: ssl.SSLContext, pin: str) -> None:
+        super().__init__(context=context)
+        self._pinned_context = context
+        self._pin = pin
+
+    def https_open(self, req: Any) -> Any:
+        pin = self._pin
+
+        class PinnedConnection(HTTPSConnection):
+            def connect(self) -> None:
+                super().connect()
+                actual = hashlib.sha256(self.sock.getpeercert(binary_form=True) or b"").hexdigest()
+                if not hmac.compare_digest(actual, pin):
+                    self.close()
+                    raise ssl.SSLError("server certificate does not match the configured SHA-256 pin")
+
+        return self.do_open(PinnedConnection, req, context=self._pinned_context)
