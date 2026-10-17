@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="edgeconnect-auto", description="Safety-focused EdgeConnect Orchestrator automation")
     parser.add_argument("--dotenv", help="dotenv path override; defaults to ./.env when present")
     parser.add_argument("--orchestrator", metavar="NAME", help="Orchestrator nickname from .env (orch_<N>=<NAME>); overrides orch_default")
-    parser.add_argument("--allow-http", action="store_true", help="allow HTTP for isolated test fixtures only")
+    parser.add_argument("--allow-http", action="store_true", help="allow HTTP to a localhost test fixture (localhost, 127.x, ::1 only)")
     parser.add_argument("-v", "--verbose", action="count", default=0)
     parser.add_argument("--report-dir", help="folder for the automatic per-workflow report log (default ./reports or $EDGECONNECT_REPORT_DIR; '' disables it)")
     subparsers = parser.add_subparsers(dest="command", required=True)

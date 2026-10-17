@@ -4,6 +4,8 @@
 
 - Redaction now also hides pre-shared keys, auth keys, private keys and passphrases, and no longer hides flags and numbers under secret-looking keys (`passwordMinLen`, `csrfProtection`). Found by a full read sweep of a 9.7.1 lab, where tunnel and template-group `presharedkey` values were returned in clear.
 - New `<nickname>_tls_sha256` (and `orchestrator_tls_sha256`) pins a self-signed Orchestrator certificate by SHA-256 fingerprint instead of disabling verification.
+- The API client no longer follows HTTP redirects. It used to follow them to any host, or to plain HTTP, with the API key header attached.
+- `--allow-http` now accepts only localhost, 127.x and ::1 base URLs.
 - The MCP server briefly added here now lives in its own repository, [edgeconnect-mcp](https://github.com/Crypto-Gi/edgeconnect-mcp).
 
 ## 1.2.3 — 2026-10-03
