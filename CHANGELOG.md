@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.4 — 2026-10-16
 
 - A `--dry-run` that skips rows (application groups and definitions return exit 5 for skips) is now summarized as `DRY_RUN` with "changes made: no". It was reported as `PARTIAL` with "changes made: possibly", although a dry run never writes. Found in a lab dry run of `application_groups_mixed.csv`.
 - Before `APPLY`, application-definition runs now list every AppExpress change: `AppExpress: remove 1 (Zoom), change 1 to monitor-only (Teams), add 1 (Webex)`. Since 1.2.3 the short change table had left these out, so a blank `AppExpressMode` (which means `OFF`) could remove a fully configured AppExpress entry, and `MONITOR` could turn off `appExpressEnabled`, without either being shown. The line appears only when AppExpress actually changes.

@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.2.3` / package version `1.2.3` — firewall rules and template ACL entries are sent in the address form appliances can compile, appliance-rejected rules are reported as FAILED, a RUN SUMMARY and per-row outcome report for every command, several Orchestrators in one `.env`, and strict template ACL deletion.
+**Current release:** `v1.2.4` / package version `1.2.4` — refuses HTTP redirects so API keys stay with the configured Orchestrator URL, correlates firewall audit comments per segment pair, applies the `FW-30` options contract to firewall deletion and rollback, reports any run that stops after writing as `PARTIAL`, previews AppExpress removals and downgrades before `APPLY`, and summarizes dry runs with skipped rows as `DRY_RUN`.
 
 The tool implements:
 
