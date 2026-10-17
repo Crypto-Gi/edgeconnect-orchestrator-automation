@@ -107,6 +107,47 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(value["api_key"], "<REDACTED>")
         self.assertEqual(value["nested"]["Authorization"], "<REDACTED>")
         self.assertNotIn("hunter2", value["message"])
+        value = redact({"presharedkey": "abc12", "authKey": "k", "passwordMinLen": 8, "csrfProtection": True, "md5Password": ""})
+        self.assertEqual(value, {"presharedkey": "<REDACTED>", "authKey": "<REDACTED>", "passwordMinLen": 8, "csrfProtection": True, "md5Password": ""})
+
+    def test_redirects_are_refused_not_followed(self):
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        from threading import Thread
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append((self.path, self.headers.get("X-Auth-Token")))
+                self.send_response(302)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        httpd = HTTPServer(("127.0.0.1", 0), Handler)
+        Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            config = load_config(environ={"orchestrator_base_url": "http://127.0.0.1:{}".format(httpd.server_port), "orchestrator_api_key": "K"}, allow_http=True)
+            with self.assertRaises(ResponseFormatError):
+                ApiClient(config).get("/x")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+        self.assertEqual(seen, [("/gms/rest/x", "K")])  # the redirect target never got the key
+
+    def test_http_is_only_allowed_for_loopback(self):
+        for url in ("http://127.0.0.1:8080", "http://localhost", "http://[::1]"):
+            load_config(environ={"orchestrator_base_url": url, "orchestrator_api_key": "K"}, allow_http=True)
+        for url in ("http://192.0.2.1", "http://127.evil.example"):
+            with self.assertRaises(ConfigurationError):
+                load_config(environ={"orchestrator_base_url": url, "orchestrator_api_key": "K"}, allow_http=True)
+
+    def test_tls_pin_is_normalized_and_validated(self):
+        env = {"orch_1": "lab", "lab_base_url": "https://192.0.2.1", "lab_api_key": "K", "lab_tls_sha256": "AB:" * 31 + "AB"}
+        self.assertEqual(load_config(environ=env, orchestrator="lab").tls_sha256, "ab" * 32)
+        with self.assertRaises(ConfigurationError):
+            load_config(environ=dict(env, lab_tls_sha256="abc"), orchestrator="lab")
 
 
 class ConfigAndCliTests(unittest.TestCase):

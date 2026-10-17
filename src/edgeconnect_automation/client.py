@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urljoin
 from http.client import HTTPSConnection
-from urllib.request import HTTPSHandler, Request, build_opener
+from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 from .config import Config
 from .errors import AuthenticationError, ConflictError, PermissionDeniedError, RateLimitError, ResourceNotFoundError, ResponseFormatError, ServerError, TransportError, ValidationError
@@ -38,7 +38,7 @@ class ApiClient:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
             handler = _PinnedHTTPSHandler(context, config.tls_sha256)
-        self._opener = opener or build_opener(handler)
+        self._opener = opener or build_opener(handler, _NoRedirect())
         self._sleep = sleep
         self._jitter = jitter
 
@@ -205,6 +205,13 @@ class ApiClient:
                 except (TypeError, ValueError, OverflowError):
                     pass
         return min(0.5 * (2 ** attempt) + self._jitter() * 0.25, 10.0)
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Turn every 3xx into an error: urllib would follow it to any host or to plain HTTP with the API key header."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
 
 
 class _PinnedHTTPSHandler(HTTPSHandler):

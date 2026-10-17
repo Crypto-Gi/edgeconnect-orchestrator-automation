@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import re
 import sys
@@ -161,6 +162,8 @@ def load_config(
     parsed = urlsplit(base_url)
     if parsed.scheme not in ({"https"} if not allow_http else {"https", "http"}) or not parsed.netloc:
         raise ConfigurationError("base URL must be an absolute {} URL".format("HTTPS" if not allow_http else "HTTP(S)"))
+    if parsed.scheme == "http" and not _is_loopback(parsed.hostname or ""):
+        raise ConfigurationError("HTTP is only allowed for localhost, 127.x and ::1 test fixtures; use HTTPS")
     if parsed.query or parsed.fragment or parsed.username or parsed.password:
         raise ConfigurationError("base URL must not include credentials, query, or fragment")
     path = parsed.path.rstrip("/")
@@ -184,3 +187,12 @@ def load_config(
         name=name,
         tls_sha256=tls_sha256 or None,
     )
+
+
+def _is_loopback(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False

@@ -27,7 +27,6 @@ dependencies = []
 
 [project.scripts]
 edgeconnect-auto = "edgeconnect_automation.cli:main"
-edgeconnect-mcp = "edgeconnect_automation.mcp_server:main"
 
 [tool.unittest]
 start-directory = "tests"
