@@ -68,7 +68,7 @@ lab_api_key=<API_KEY>
 
 # Optional per nickname: <nickname>_ca_bundle=/path/to/ca.pem (private CA),
 #   <nickname>_api_key_header=X-Auth-Token,
-#   <nickname>_tls_sha256=<fingerprint> (self-signed certificate; edgeconnect-auto only)
+#   <nickname>_tls_sha256=<fingerprint> (self-signed certificate)
 # Preconfig: Orchestrators allowed for /validate, comma-separated nicknames.
 # EC_VALIDATORS=lab
 EOF
