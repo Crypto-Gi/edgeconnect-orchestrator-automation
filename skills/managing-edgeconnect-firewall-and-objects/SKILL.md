@@ -34,9 +34,10 @@ Turn the user's request into CSV rows, prove them with the `edgeconnect-auto` CL
 
 ## Setup
 
-1. **Find the CLI and the clone.** Try `edgeconnect-auto --help`. Without it, run every command below as `PYTHONPATH=<clone>/src python3 -m edgeconnect_automation ...`; the clone is the folder holding `src/edgeconnect_automation/`, two folders above this file when the skill sits in the repository. With neither, ask the user before cloning or installing anything; `QUICKSTART.md` has the steps.
+1. **Find the CLI and the clone.** Try `edgeconnect-auto --help`. Without it, run every command below as `<python> -m edgeconnect_automation ...`, where `<python>` is the interpreter it is installed in (often a project `.venv/bin/python`), or as `PYTHONPATH=<clone>/src python3 -m edgeconnect_automation ...`. The clone is the folder holding `src/edgeconnect_automation/`, two folders above this file when the skill sits in the repository. With none of these, ask the user before cloning or installing anything; `QUICKSTART.md` has the steps.
 2. **Work in the user's folder that holds `.env`.** The CLI reads only `./.env` from the current folder, never a parent or home folder, unless given `--dotenv <path>`. Keep the CSVs there; run logs go to `./reports/`. Never commit CSVs, reports or `.env`, and never put an API key in a CSV or a command line.
 3. **Name the Orchestrator.** When `.env` lists more than one, pass the global `--orchestrator <nickname>` before the workflow name (`edgeconnect-auto --orchestrator lab firewall ...`): without a terminal the CLI cannot show its menu and stops. Confirm the nickname with the user before the first command against it.
+4. **Trust the certificate.** `transport failure: URLError` on the first call usually means the certificate is not trusted or does not match the host in `<nickname>_base_url`. For a private CA the user sets `<nickname>_ca_bundle=<pem path>`; for one self-signed certificate (common in labs) the user adds `<nickname>_tls_sha256=<SHA-256 fingerprint>` to `.env`, which the CLI checks on every connection. Give the user the line to add; never edit `.env`, the hosts file or a trust store yourself, and never relay or proxy the connection.
 
 ## Quick Reference
 
@@ -75,6 +76,7 @@ Exit codes: `0` success, verified no-op or clean preview; `1` runtime or API err
 - **Changing an existing object.** A row identical to the live object is a no-op; a different body with the same identity (firewall priority, group name, application identity) is a conflict, not an update. To change one: delete it with a CSV holding its current exact row, the user applies, then deploy the new row.
 - **Rerunning a firewall CSV with blank priorities.** Use the resolved CSV; firewall `delete` needs explicit priorities on every row.
 - **Hand-editing a CSV with `sed` or by retyping it.** Quoted cells with commas break. Edit with Python's `csv` module (`references/request-to-csv.md`).
+- **Leftovers after cleanup.** `template-acls deploy` creates a missing template group, but `template-acls delete` removes only the ACL and leaves the group. There is no zone delete command. Tell the user before creating either; they remove a group or zone in Orchestrator themselves.
 - **Template ACL reach.** Saving a template group pushes its ACL to every appliance associated with that group; name those appliances to the user from the preview. Mind the `ACL-25` guard on groups whose Security Policies template is in replace mode.
 - **Example files.** `examples/edgeconnect/*_mixed.csv` and `template_acls_test3_invalid.csv` are invalid by design; use them only with `validate` or `--dry-run`. Example objects are named `test-51-`; remove those rows from a copied template unless the user wants them.
 
