@@ -52,7 +52,7 @@ Every command you run is read-only: `discovery`, `firewall validate`, `--dry-run
 | **Preview deletion** | `edgeconnect-auto <workflow> delete --csv <file> --dry-run` | Exact-match deletion table and reference checks; zero writes |
 | **Read a result** | `edgeconnect-auto report summarize reports/<workflow>.jsonl` | Summary and per-row table of the latest run (`--last N` for more); no Orchestrator access |
 
-`<workflow>` is `firewall`, `template-acls`, `address-groups`, `service-groups`, `app-definitions` or `app-groups`. The user runs the same `deploy`, `delete` or `zones create` command **without `--dry-run`** in their own terminal; the CLI shows a short change table, re-reads the baseline, and asks them to type `APPLY` (zones also `CREATE <zone>`; deletion a generated code and a final sentence).
+`<workflow>` is `firewall`, `template-acls`, `address-groups`, `service-groups`, `app-definitions` or `app-groups`. The user runs the same `deploy`, `delete` or `zones create` command **without `--dry-run`** in their own terminal; the CLI shows a short change table, re-reads the baseline, and asks them to type `APPLY` (a zone also `CREATE <zone>`, a new template group its exact name; deletion a generated code and a final sentence).
 
 Exit codes: `0` success, verified no-op or clean preview; `1` runtime or API error; `2` validation failure; `3` approval refused or no terminal; `4` the live state changed since the preview (re-run the preview); `5` PARTIAL (rows skipped as conflicts or missing dependencies, unreachable appliances, or appliance-rejected rules: read the row table; a dry run can also exit `5`); `130` interrupted.
 
