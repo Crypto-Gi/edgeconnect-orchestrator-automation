@@ -39,8 +39,7 @@ for repo in $REPOS; do
       echo "$repo: updated to $(git -C "$ROOT/$repo" rev-parse --short HEAD)"
     fi
   else
-    # edgeconnect-preconfig is private: git needs a GitHub login (gh auth login, a credential helper or SSH).
-    git clone -q "https://github.com/Crypto-Gi/$repo.git" "$ROOT/$repo" || die "$repo: clone failed; sign in to GitHub (gh auth login) with access to Crypto-Gi/$repo and run again"
+    git clone -q "https://github.com/Crypto-Gi/$repo.git" "$ROOT/$repo" || die "$repo: clone failed; check your network access to github.com and run again"
     echo "$repo: cloned at $(git -C "$ROOT/$repo" rev-parse --short HEAD)"
   fi
 done
