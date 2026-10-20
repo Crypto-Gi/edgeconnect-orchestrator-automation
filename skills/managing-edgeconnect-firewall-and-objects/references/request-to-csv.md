@@ -55,11 +55,12 @@ with open(TEMPLATE, newline="", encoding="utf-8") as f:
 
 rows = []
 with open("flows.csv", newline="", encoding="utf-8") as f:
-    for flow in csv.DictReader(f):
-        key = "-".join([flow["src_segment"], flow["src_zone"], flow["dst_segment"], flow["dst_zone"],
-                        flow["proto"], flow["ports"].replace("|", "_")]).lower()
+    for number, flow in enumerate(csv.DictReader(f), 1):
+        # The row number keeps keys unique when two flows differ only by address (FW-21).
+        key = "-".join(["flow{:03d}".format(number), flow["src_segment"], flow["src_zone"], flow["dst_segment"],
+                        flow["dst_zone"], flow["proto"], flow["ports"].replace("|", "_") or "all"]).lower()
         rows.append({
-            "rule_key": key, "rule_name": key[:60], "enabled": "TRUE",
+            "rule_key": key, "rule_name": key[:60], "description": "bulk import " + key, "enabled": "TRUE",
             "source_segment": flow["src_segment"], "destination_segment": flow["dst_segment"],
             "source_zone": flow["src_zone"], "destination_zone": flow["dst_zone"],
             "source_address": flow["src"], "destination_address": flow["dst"],
@@ -74,19 +75,25 @@ with open("firewall_rules.csv", "w", newline="", encoding="utf-8") as f:
 print(len(rows), "rows")
 ```
 
-Rows with different `source_segment` and `destination_segment` are inter-segment policies; they are checked and written as their own segment pair. Rows in the same zone pair get priorities 20000, 20010, ... in file order, so sort the source first if the user cares about order. Then `firewall validate`, fix everything it lists, and preview with `--resolved-csv`.
+`rule_key` and `rule_name` stay local; `description` becomes the rule's comment in Orchestrator, so put something there the user can find the batch by. Keep the source table's row order stable, since keys carry the row number. Rows with different `source_segment` and `destination_segment` are inter-segment policies; they are checked and written as their own segment pair. Rows in the same zone pair get priorities 20000, 20010, ... in file order, so sort the source first if the user cares about order. Then `firewall validate`, fix everything it lists, and preview with `--resolved-csv`.
 
 ### Many application definitions from a list
 
-For "monitor these SaaS apps with AppExpress", one `DOMAIN` row per name and domain:
+For "add these applications, and monitor the SaaS ones with AppExpress", one row per name and domain or port:
 
 ```python
-apps = [("crm-saas", "*.crm.example.com"), ("hr-saas", "*.hr.example.net"), ("erp-saas", "erp.example.org")]
-rows = [{"DefinitionType": "DOMAIN", "Name": name, "Notes": "bulk import", "Enabled": "TRUE",
-         "Confidence": "100", "Domain": domain, "AppExpressMode": "MONITOR"} for name, domain in apps]
+apps = [  # (type, name, domain or port, AppExpress mode)
+    ("DOMAIN", "crm-saas", "*.crm.example.com", "MONITOR"),
+    ("DOMAIN", "crm-saas", "crm.example.org", "MONITOR"),
+    ("TCP_PORT", "erp-app", "8443", "OFF"),
+    ("UDP_PORT", "voice-app", "5062", "OFF"),
+]
+rows = [{"DefinitionType": kind, "Name": name, "Notes": "bulk import", "Enabled": "TRUE", "Confidence": "100",
+         "Domain": value if kind == "DOMAIN" else "", "Port": value if kind != "DOMAIN" else "",
+         "AppExpressMode": mode} for kind, name, value, mode in apps]
 ```
 
-Write them with the template header as above. Port-based applications use `TCP_PORT` or `UDP_PORT` with `Port`. Several domains for one application are separate rows with the same `Name`: the domain (or port) is each row's identity, not the name. A domain or port an existing definition already owns is skipped as a conflict (exit `5`) while the rest are created.
+Write them with the template header as above. Several domains for one application are separate rows with the same `Name`: the domain (or port) is each row's identity, not the name. A domain or port an existing definition already owns is skipped as a conflict (exit `5`) while the rest are created.
 
 ## Worked examples
 
