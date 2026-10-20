@@ -10,6 +10,10 @@
 - `firewall validate` now reports a duplicate `rule_key` (`FW-21`) even when one of the colliding rows also has another error. `firewall delete` no longer labels every "already absent" rule with the last segment pair, and a blocked segment pair whose rows all failed parsing no longer says "none of its 0 rows".
 - Rule IDs: the plan-time duplicate-priority check is now `FW-35` (it shared `FW-21` with duplicate `rule_key`), and the plan-time duplicate-`rule_key` check is `FW-21` (it used `FW-20`, the priority range check).
 - The MCP server briefly added here now lives in its own repository, [edgeconnect-mcp](https://github.com/Crypto-Gi/edgeconnect-mcp).
+- New `setup.sh` (the same file is in edgeconnect-preconfig and edgeconnect-mcp) installs this CLI, the preconfig toolkit and both agent skills from `main` in one step, with one shared `.env`. It asks for the install folder, then whether the skills go only in that folder or in your user account; re-running it updates both repositories and keeps what is already installed. It also writes an `AGENTS.md` (which tool to use for which task) and a `CLAUDE.md` into the install folder, and runs on macOS's bash 3.2.
+- Licensed under the Apache License 2.0 (previously BSD-3-Clause), with a `NOTICE`.
+- The agent skill now says up front that the CLI is built for a person at a terminal: the agent prepares the CSVs and hands each write to the user as one block to paste. It uses an EdgeConnect MCP server only for reads and for tasks this CLI does not cover.
+- Tests and docs use neutral Orchestrator nicknames.
 
 ## 1.2.4 — 2026-10-16
 
