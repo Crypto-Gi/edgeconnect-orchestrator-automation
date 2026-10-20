@@ -151,8 +151,9 @@ Code: `src/edgeconnect_automation/firewall.py`. Write/isolation unit: **source/d
 
 | ID | Rule | Status |
 |---|---|---|
-| FW-20 | `priority` is a whole number 0-65535 or blank. (A duplicate `rule_key` is reported as `FW-21` by `validate`; the planner's second check at plan time still labels it `FW-20`.) | Done |
-| FW-21 | `rule_key` unique across the CSV (`validate`), and CSV priority unique per zone pair within the segment pair (plan time). Both use this ID today. | Done |
+| FW-20 | `priority` is a whole number 0-65535 or blank. | Done |
+| FW-21 | `rule_key` unique across the CSV, checked over every row by `validate` and again at plan time. | Done |
+| FW-35 | CSV priority unique per zone pair within the segment pair (plan time). | Done |
 | FW-22 | Explicit priorities are reserved before automatic allocation. | Done |
 | FW-23 | Automatic allocation only in an empty zone pair or one holding only a verified `65535` catch-all; starts at 20000, step 10, must stay < 65535. | Done |
 | FW-24 | Existing identical rule at the priority → no-op. Different rule → block the pair. | Done |

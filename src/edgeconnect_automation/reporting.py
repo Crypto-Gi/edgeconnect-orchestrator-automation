@@ -241,7 +241,8 @@ def _counts(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[str]:
         if pair.get("eligible"):
             lines.append("segment pair {}: {} rows, {} to create, {} already present".format(label, rows, len(pair.get("created_priorities", [])), len(pair.get("no_op_rows", []))))
         else:
-            lines.append("segment pair {}: BLOCKED by {} issue(s); none of its {} rows will be written".format(label, len(pair.get("errors", [])), rows))
+            # rows with parse errors are not in "rules", so a count of 0 would be misleading
+            lines.append("segment pair {}: BLOCKED by {} issue(s); none of its {}rows will be written".format(label, len(pair.get("errors", [])), "{} ".format(rows) if rows else ""))
     for group in plan.get("groups", []) if isinstance(plan.get("groups"), list) else []:
         state = "eligible" if group.get("eligible") else "BLOCKED"
         appliance_only = {item.get("acl") for item in group.get("appliance_only_deletions", [])}
@@ -463,7 +464,7 @@ def row_outcomes(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[Dic
                 outcome = "WOULD DELETE" if not result else "DELETE UNVERIFIED" if left or name not in deleted else "DELETED"
                 rows.append(_row("", name, "{} | zones {} | priority {}".format(scope, entry.get("zone_key", ""), entry.get("priority", "")), outcome, "still present on appliance {}".format(", ".join(sorted(left))) if left else ""))
         for name in _names(plan.get("absent")):
-            rows.append(_row("", name, scope if delete_plans else kind, "ALREADY ABSENT"))
+            rows.append(_row("", name, kind, "ALREADY ABSENT"))  # the absent list carries no segment pair
         return rows
     if pairs:
         after = {"{} -> {}".format(*item.get("pair", ["?", "?"])): (str(item.get("status", "")), str(item.get("message") or ""), _rejected(item)) for item in result.get("pairs", []) or [] if isinstance(item, Mapping)}

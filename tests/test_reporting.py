@@ -287,6 +287,20 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summary["row_outcomes"], {"WOULD DELETE": 1})
         self.assertEqual(summary["rows"][0], {"row": "", "item": "r1", "scope": "Default -> Default | zones 1_2 | priority 20000", "outcome": "WOULD DELETE", "reason": ""})
 
+    def test_already_absent_firewall_rules_are_not_attributed_to_the_last_segment_pair(self):
+        recorder = RunRecorder(["firewall", "delete"])
+        plans = [{"pair": ["corp", "corp"], "removed": []}, {"pair": ["guest_vrf", "corp"], "removed": [{"rule_key": "r1", "zone_key": "1_2", "priority": 20000}]}]
+        recorder.capture({"preview": {"kind": "firewall-delete", "plans": plans, "absent": ["gone"]}, "status": "DRY_RUN"})
+        summary = build_summary(recorder, SimpleNamespace(command="firewall", firewall_command="delete", dry_run=True, csv=None), 0)
+        absent = [row for row in summary["rows"] if row["outcome"] == "ALREADY ABSENT"]
+        self.assertEqual([(row["item"], row["scope"]) for row in absent], [("gone", "firewall-delete")])
+
+    def test_blocked_pair_without_parsed_rows_does_not_claim_zero_rows(self):
+        recorder = RunRecorder(["firewall", "deploy"])
+        recorder.capture({"preview": {"kind": "firewall", "pairs": [{"pair": ["Default", "Default"], "eligible": False, "errors": ["row 2 [FW-03] bad"], "rules": []}]}, "status": "BLOCKED"})
+        summary = build_summary(recorder, SimpleNamespace(command="firewall", firewall_command="deploy", dry_run=True, csv=None), 2)
+        self.assertIn("segment pair Default -> Default: BLOCKED by 1 issue(s); none of its rows will be written", summary["counts"])
+
     def test_live_cycle_summary_counts_for_delete_app_groups_and_appliance_cleanup(self):
         recorder = RunRecorder([])
         recorder.capture({"preview": {"kind": "firewall-delete", "plans": []}, "result": {"status": "success", "pairs": [{"pair": ["Default", "Default"], "deleted": [{"rule_key": "r"}], "readback_verified": True, "audit_verified": True}]}})
