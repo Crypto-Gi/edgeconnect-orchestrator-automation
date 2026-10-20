@@ -7,6 +7,8 @@
 - New `<nickname>_tls_sha256` (and `orchestrator_tls_sha256`) pins a self-signed Orchestrator certificate by SHA-256 fingerprint instead of disabling verification.
 - The API client no longer follows HTTP redirects. It used to follow them to any host, or to plain HTTP, with the API key header attached.
 - `--allow-http` now accepts only localhost, 127.x and ::1 base URLs.
+- `firewall validate` now reports a duplicate `rule_key` (`FW-21`) even when one of the colliding rows also has another error. `firewall delete` no longer labels every "already absent" rule with the last segment pair, and a blocked segment pair whose rows all failed parsing no longer says "none of its 0 rows".
+- Rule IDs: the plan-time duplicate-priority check is now `FW-35` (it shared `FW-21` with duplicate `rule_key`), and the plan-time duplicate-`rule_key` check is `FW-21` (it used `FW-20`, the priority range check).
 - The MCP server briefly added here now lives in its own repository, [edgeconnect-mcp](https://github.com/Crypto-Gi/edgeconnect-mcp).
 
 ## 1.2.4 — 2026-10-16

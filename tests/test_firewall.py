@@ -194,7 +194,7 @@ class FirewallPlanningTests(unittest.TestCase):
         rules = parse_firewall_text(HEADERS + "\n" + row("one", "100") + "\n" + row("two", "100", source_address="10.3.0.0/24"))
         plan = build_firewall_plan(rules, inventory())
         self.assertFalse(plan.pairs[0].eligible)
-        self.assertIn("duplicates CSV priority", " ".join(plan.pairs[0].errors))
+        self.assertIn("[FW-35] duplicates CSV priority", " ".join(plan.pairs[0].errors))
 
     def test_acl_requires_one_selected_nonempty_central_semantic_definition(self):
         rule = parse_firewall_text(ACL_HEADERS + "\n" + acl_row())[0]

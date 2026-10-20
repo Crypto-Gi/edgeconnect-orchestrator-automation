@@ -93,6 +93,11 @@ class FirewallHardeningTests(unittest.TestCase):
         self.assertIn("[FW-34]", " ".join(plan.pairs[0].errors))
         self.assertNotIn("[FW-24]", " ".join(plan.pairs[0].errors))
 
+    def test_duplicate_rule_key_is_reported_even_when_a_colliding_row_has_another_error(self):
+        document = parse_firewall_document(firewall_text({"priority": "1"}, {"priority": "2", "action": "bogus"}))
+        self.assertLessEqual({"FW-03", "FW-21"}, {issue["rule"] for issue in document.issues})
+        self.assertIn("rows 2,3 [FW-21]", " ".join(document.errors))
+
     def test_duplicate_rule_key_is_caught_by_validate(self):
         document = parse_firewall_document(firewall_text({"priority": "1", "source_address": "10.0.0.1"}, {"priority": "2", "source_address": "10.0.0.2"}))
         self.assertIn("FW-21", " ".join(document.errors))

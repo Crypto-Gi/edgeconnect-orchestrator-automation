@@ -96,6 +96,7 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
         raise ValidationError("missing firewall headers: {}".format(", ".join(sorted(missing))))
     result = FirewallParseResult()
     saw_row = False
+    key_rows: Dict[str, List[Tuple[int, Tuple[str, str]]]] = {}
     for row_number, values in enumerate(rows[1:], 2):
         if not values or all(not value.strip() for value in values):
             continue
@@ -105,6 +106,8 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
             continue
         row = {key: value.strip() for key, value in zip(normalized_headers, values)}
         pair = (row.get("source_segment", ""), row.get("destination_segment", ""))
+        if row.get("rule_key"):
+            key_rows.setdefault(row["rule_key"], []).append((row_number, pair))
         issues = Issues("segment pair {} -> {}".format(*pair) if all(pair) else "the whole CSV")
         warnings = Issues("")
         control_characters(row, issues, row_number)
@@ -118,15 +121,16 @@ def parse_firewall_document(text: str) -> FirewallParseResult:
                 result.pair_warnings.setdefault(pair, []).extend(warnings.messages())
     if not saw_row:
         raise ValidationError("firewall CSV has no rules")
-    keys: Dict[str, List[FirewallRule]] = {}
-    for rule in result.rules:
-        keys.setdefault(rule.rule_key, []).append(rule)
-    for key, rules in keys.items():
-        if len(rules) > 1:
-            message = "rows {} [FW-21] rule_key {!r} is used {} times; fix: give every row a unique rule_key".format(",".join(str(rule.row) for rule in rules), key, len(rules))
-            for pair in {rule.pair for rule in rules}:
+    # Checked over every row, so a duplicate is reported even when one of its rows also has another error.
+    for key, uses in key_rows.items():
+        if len(uses) > 1:
+            message = "rows {} [FW-21] rule_key {!r} is used {} times; fix: give every row a unique rule_key".format(",".join(str(number) for number, _ in uses), key, len(uses))
+            first_pair = uses[0][1]
+            for pair in {pair for _, pair in uses if all(pair)}:
                 result.pair_errors.setdefault(pair, []).append(message)
-            result.issues.append({"rule": "FW-21", "row": rules[0].row, "field": "rule_key", "value": key, "message": message, "fix": "give every row a unique rule_key", "blocks": "segment pair {} -> {}".format(*rules[0].pair)})
+            if not all(first_pair):
+                result.global_errors.append(message)
+            result.issues.append({"rule": "FW-21", "row": uses[0][0], "field": "rule_key", "value": key, "message": message, "fix": "give every row a unique rule_key", "blocks": "segment pair {} -> {}".format(*first_pair) if all(first_pair) else "the whole CSV"})
     return result
 
 
@@ -393,7 +397,7 @@ def build_firewall_plan(
         acl_inventory_fingerprint = fingerprint(_acl_snapshot(inventory.acls, acl_names)) if acl_names else ""
         for values in duplicate_keys.values():
             if len(values) > 1 and any(value.pair == pair for value in values):
-                errors.append("[FW-20] duplicate rule_key {} in rows {}; fix: give every row its own rule_key".format(values[0].rule_key, ", ".join(str(value.row) for value in values)))
+                errors.append("[FW-21] duplicate rule_key {} in rows {}; fix: give every row its own rule_key".format(values[0].rule_key, ", ".join(str(value.row) for value in values)))
         source_id = inventory.segments.get(pair[0])
         destination_id = inventory.segments.get(pair[1])
         if source_id is None or destination_id is None:
@@ -438,7 +442,7 @@ def build_firewall_plan(
                 allocated_by_scope[scope] = next_priority + 10
             used = seen.setdefault((zone_key, segment_map), set())
             if priority in used:
-                errors.append("row {} [FW-21] duplicates CSV priority {} in its scope (zone pair {}); fix: give each row in a zone pair its own priority".format(rule.row, priority, _zones(rule)))
+                errors.append("row {} [FW-35] duplicates CSV priority {} in its scope (zone pair {}); fix: give each row in a zone pair its own priority".format(rule.row, priority, _zones(rule)))
             used.add(priority)
             if priority in inventory.local_priorities.get(scope, set()):
                 errors.append("row {} [FW-25] priority {} collides with an appliance-local rule in zone pair {}; fix: choose another priority or remove the local rule on the appliance".format(rule.row, priority, _zones(rule)))
