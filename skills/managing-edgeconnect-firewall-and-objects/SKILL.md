@@ -48,7 +48,7 @@ Every command you run is read-only: `discovery`, `firewall validate`, `--dry-run
 | **Inventory** | `edgeconnect-auto discovery --output reports/discovery.json` | Segmentation state, segments, zones, segment zone map, address and service groups |
 | **Check offline** | `edgeconnect-auto firewall validate --csv <file>` | Firewall CSV only; every problem in every row with its rule ID and fix; no Orchestrator access |
 | **Preview** | `edgeconnect-auto <workflow> deploy --csv <file> --report reports/<name>-preview.json --dry-run` | Live dependency, collision and conflict checks and the full preview; zero writes. Firewall: add `--resolved-csv reports/<name>-resolved.csv` |
-| **Preview zones** | `edgeconnect-auto zones create --name <ZONE> [--name <ZONE> ...] --dry-run` | New zones only; never renames or deletes. Zone names use letters, digits and `_` only |
+| **Preview zones** | `edgeconnect-auto zones create --name <ZONE> [--name <ZONE> ...] --dry-run` | New zones only, mapped into every segment; never renames or deletes. Zone names use letters, digits and `_` only |
 | **Preview deletion** | `edgeconnect-auto <workflow> delete --csv <file> --dry-run` | Exact-match deletion table and reference checks; zero writes |
 | **Read a result** | `edgeconnect-auto report summarize reports/<workflow>.jsonl` | Summary and per-row table of the latest run (`--last N` for more); no Orchestrator access |
 
