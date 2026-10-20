@@ -266,13 +266,13 @@ class ConfigAndCliTests(IsolatedCwdTestCase):
                 with self.assertRaises(ConfigurationError):
                     load_config(path, environ={}, orchestrator="prod")
         self.assertEqual(load_config(environ={"orch_1": "only", "only_base_url": "https://only.invalid", "only_api_key": "k"}, prompt=refuse).name, "only")
-        legacy_and_named = {"orchestrator_base_url": "https://old.invalid", "orchestrator_api_key": "old", "orch_1": "ge", "ge_base_url": "https://ge.invalid", "ge_api_key": "g"}
-        with self.assertRaisesRegex(ConfigurationError, "ge, orchestrator"):
+        legacy_and_named = {"orchestrator_base_url": "https://old.invalid", "orchestrator_api_key": "old", "orch_1": "prod", "prod_base_url": "https://prod.invalid", "prod_api_key": "g"}
+        with self.assertRaisesRegex(ConfigurationError, "prod, orchestrator"):
             load_config(environ=legacy_and_named, interactive=False)
         self.assertEqual(load_config(environ=legacy_and_named, orchestrator="orchestrator").api_key, "old")
-        self.assertEqual(load_config(environ=legacy_and_named, interactive=True, prompt=lambda _: "1").name, "ge")
-        with self.assertRaisesRegex(ConfigurationError, "orch_x=semir: Orchestrator slots must be numbered, for example orch_2=semir with semir_base_url"):
-            load_config(environ=dict(legacy_and_named, orch_x="semir"))
+        self.assertEqual(load_config(environ=legacy_and_named, interactive=True, prompt=lambda _: "1").name, "prod")
+        with self.assertRaisesRegex(ConfigurationError, "orch_x=testlab: Orchestrator slots must be numbered, for example orch_2=testlab with testlab_base_url"):
+            load_config(environ=dict(legacy_and_named, orch_x="testlab"))
         with self.assertRaisesRegex(ConfigurationError, "no named Orchestrators"):
             load_config(environ={"EC_BASE_URL": "https://unit.invalid", "EC_API_KEY": "secret"}, orchestrator="lab")
 
