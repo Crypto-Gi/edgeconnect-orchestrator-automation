@@ -1,43 +1,104 @@
 # EdgeConnect Automation
 
-Safety-focused, CSV-driven automation for HPE Aruba Networking EdgeConnect Orchestrator.
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue) ![License BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-green) ![Tested on Orchestrator 9.7.1 and ECOS 9.5.4](https://img.shields.io/badge/tested-Orchestrator%209.7.1%20%7C%20ECOS%209.5.4-informational) ![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)
 
-Preview, validate, deploy, verify, and remove firewall policies and supporting objects without silently overwriting existing configuration. Every write is approval-gated, checked for drift, and verified through fresh readback.
+**Deploy HPE Aruba EdgeConnect firewall policy and application definitions from a CSV, with a dry run first, a typed `APPLY`, and a readback of every change.**
 
-EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
+Orchestrator's GUI has no bulk path for global firewall policies or application definitions. This CLI turns a reviewed spreadsheet into guarded Orchestrator API workflows, and refuses anything that would silently overwrite live configuration. Every write is approval-gated, checked for drift, and verified through fresh readback.
 
-**Current release:** `v1.2.4` / package version `1.2.4` — refuses HTTP redirects so API keys stay with the configured Orchestrator URL, correlates firewall audit comments per segment pair, applies the `FW-30` options contract to firewall deletion and rollback, reports any run that stops after writing as `PARTIAL`, previews AppExpress removals and downgrades before `APPLY`, and summarizes dry runs with skipped rows as `DRY_RUN`.
+Current release: `v1.2.4` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
 
-The tool implements:
+## What a run looks like
 
-- Central/global Routing Segmentation firewall policies
+Every command ends with a RUN SUMMARY, even when nothing was written. This one is a blocked dry run: the tool found a priority conflict, wrote nothing, and said how to fix it.
+
+```text
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall deploy
+Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
+Versions     : tool 1.2.4, Orchestrator 9.7.1.42046
+CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
+RESULT       : BLOCKED
+Changes made : no
+Exit code    : 2 = blocked by validation or planning; nothing was written
+
+What was planned or done
+  - segment pair Default -> Default: BLOCKED by 1 issue(s); none of its 73 rows will be written
+
+Rows (73): 1 BLOCKED, 72 NOT ATTEMPTED
+  ROW  OUTCOME        ITEM                 SCOPE / REASON
+  2    BLOCKED        1 (priority 20000)   Default -> Default | INSIDE -> OUTSIDE | [FW-24] ... priority 20000 conflicts ...
+  3    NOT ATTEMPTED  2 (priority 20005)   Default -> Default | INSIDE -> OUTSIDE | segment pair blocked by row 2
+  ...
+
+Why it stopped or what failed
+  - row 2 [FW-24] rule_key 1 priority 20000 conflicts with a different existing rule in zone pair INSIDE -> OUTSIDE (existing: allow disabled, match acl=EXAMPLE-ACL; this row: allow disabled, match dst_ip=192.0.2.0/24, either_port=443, protocol=tcp); fix: use a free priority such as 20001, or remove the existing rule first
+
+Warnings (do not block)
+  - target 3.NE (branch-03) is unreachable and will remain unverified
+
+Appliances
+  - 0.NE (hub-01): reachable
+  - 3.NE (branch-03): unreachable
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Fix every blocking issue listed above, then rerun the same command with --dry-run.
+==============================================================================
+```
+
+## Why not click it in the GUI or script the API?
+
+| Risk | What this tool does |
+|---|---|
+| A bad rule among hundreds is discovered after it is live | `validate` checks every row locally; one bad row blocks its whole segment pair and the report names the row, rule ID and fix |
+| A script silently replaces an existing rule or object | Deploy workflows preserve what exists; a conflicting rule is never overwritten |
+| Configuration changes between preview and write | Baselines are fingerprinted and re-read before the write; drift stops the run |
+| The API returns success but drops a field | Normalized readback fails the pair and triggers baseline restoration |
+| Orchestrator accepts a rule that the appliance refuses to compile | Appliance alarms are read after every write and the rejected row is reported as `FAILED` |
+| A deletion matches more than you meant | Deletion is exact-match only, with a fresh random code and a typed acknowledgment |
+
+## Quick start
+
+```bash
+git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
+cd edgeconnect-automation
+python3 -m venv .venv && source .venv/bin/activate && python -m pip install -e .
+cp .env.example .env && chmod 600 .env     # then set orchestrator_base_url and orchestrator_api_key
+
+cp templates/edgeconnect/firewall_rules.csv rules.csv                            # starter; edit it first
+edgeconnect-auto discovery                                                       # read-only
+edgeconnect-auto firewall validate --csv templates/edgeconnect/firewall_rules.csv  # local, no network
+edgeconnect-auto firewall deploy --csv rules.csv --dry-run                       # preview, no write
+```
+
+Edit `rules.csv` for your segments, zones and addresses, and dry-run it before anything is applied. Windows, several Orchestrators in one `.env`, private CA bundles and self-signed certificates are in [Setup and configuration](docs/SETUP_AND_CONFIGURATION.md). The step-by-step first run is in [Workflows](docs/WORKFLOWS.md#first-use-procedure).
+
+## Use it with an AI agent
+
+`skills/managing-edgeconnect-firewall-and-objects/` is an agent skill. With it, an agent such as Claude Code turns a plain-language request or the policy table you already have ("let the POS network reach the payment gateway on 443", a spreadsheet of 200 inter-segment flows, a list of SaaS domains to monitor) into firewall or application definition CSV rows from `templates/edgeconnect/`, runs `discovery`, `firewall validate` and `--dry-run` previews until they are clean, and shows you the preview. It never writes: it gives you the exact command, you run it in your own terminal and type `APPLY`, and it then reads the result with `report summarize`.
+
+Install it from a clone of this repository, since the skill uses the clone's templates and docs:
+
+```bash
+npx skills add https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation
+# or, for Claude Code only:
+cp -R skills/managing-edgeconnect-firewall-and-objects ~/.claude/skills/
+```
+
+## What it manages
+
+- Central/global Routing Segmentation firewall policies, including inter-segment
 - Firewall dependency inventory and prechecks
 - Missing-zone creation with explicit confirmation
-- Native address-group and service-group CSV imports
-- Application groups and parent relationships
-- IP protocol, TCP port, UDP port, domain, and compound application definitions
-- Application-definition-driven AppExpress OFF/MONITOR desired state
-- Strict exact-match CSV deletion workflows
-- Dry-run, drift checks, exact readback, appliance verification, audit correlation, and segment-pair rollback
+- Address groups and service groups (native CSV imports)
+- Application definitions (IP protocol, TCP/UDP port, domain, compound) and application groups, with AppExpress OFF/MONITOR desired state
+- Template-group ACL entries
+- Strict exact-match CSV deletion for all of the above
 
-## Contents
-
-- [Safety model](#safety-model)
-- [Supported scope](#supported-scope)
-- [Repository layout](#repository-layout)
-- [Installation](#new-machine-installation)
-- [First-use procedure](#first-use-procedure)
-- [Common workflows](#common-workflows)
-- [Using with an AI agent](#using-with-an-ai-agent)
-- [CSV-driven deletion](#csv-driven-deletion)
-- [Exit codes](#exit-codes)
-- [Run summary and report log](#run-summary-and-report-log)
-- [CSV templates and examples](#csv-templates-and-examples)
-- [Testing and development](#testing-and-development)
-- [Troubleshooting](#troubleshooting)
-- [Support](#support)
-- [Documentation](#additional-documentation)
-- [License](#license)
+Per-workflow commands, templates and rules are in [Workflows](docs/WORKFLOWS.md).
 
 ## Safety model
 
@@ -84,491 +145,6 @@ Not supported:
 - AppExpress steering
 - Automatic dependency deletion
 
-## Repository layout
-
-```text
-edgeconnect-automation/
-├── src/edgeconnect_automation/   Python package
-├── tests/                        Unit, contract, safety, and generated CSV cases
-├── templates/edgeconnect/        Clean starter CSV templates
-├── examples/edgeconnect/         Valid and intentionally invalid CSV examples
-├── docs/                         Operator, CSV, architecture, and design guides
-├── skills/                       Agent skill: plain-language requests to CSV rows and dry runs
-├── pyproject.toml                Python packaging and CLI entry point
-├── .env.example                  Safe configuration example
-├── SECURITY.md                   Security requirements
-├── CONTRIBUTING.md               Development workflow
-└── CHANGELOG.md                  Release history
-```
-
-## New-machine installation
-
-### Prerequisites
-
-Install:
-
-1. Git
-2. Python 3.9 or later
-3. Network connectivity to the Orchestrator HTTPS API
-4. An Orchestrator API key
-5. The private CA certificate bundle if the Orchestrator certificate is not trusted by the operating system
-
-No third-party runtime Python packages are required.
-
-### macOS or Linux
-
-```bash
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
-cd edgeconnect-automation
-
-python3 -m venv .venv
-source .venv/bin/activate
-
-python -m pip install --upgrade pip setuptools
-python -m pip install -e .
-
-cp .env.example .env
-chmod 600 .env
-```
-
-Edit `.env`:
-
-```dotenv
-orchestrator_base_url=https://<ORCHESTRATOR_FQDN>
-orchestrator_api_key=<ORCHESTRATOR_API_KEY>
-# orchestrator_ca_bundle=/absolute/path/to/ca-bundle.pem
-```
-
-When `--dotenv` is omitted, the CLI loads only `./.env` from the current working directory. It never searches parent or home directories. Process environment variables override values from the file. Use `--dotenv /absolute/path/to/other.env` to select a different file.
-
-### Several Orchestrators in one `.env`
-
-To switch between Orchestrators without editing `.env` or your CSV files, list each one under a nickname. The nickname is what you type on the command line.
-
-```dotenv
-orch_1=prod
-orch_2=test
-
-prod_base_url=https://<PROD_ORCHESTRATOR_FQDN>
-prod_api_key=<PROD_API_KEY>
-test_base_url=https://<TEST_ORCHESTRATOR_FQDN>
-test_api_key=<TEST_API_KEY>
-# Optional per nickname: <nickname>_ca_bundle, <nickname>_api_key_header,
-#   <nickname>_tls_sha256 (pin a self-signed certificate by its SHA-256 fingerprint)
-
-# Optional: used when the command does not name one
-orch_default=prod
-```
-
-- `orch_<number>=<nickname>` registers an Orchestrator. Add `orch_3`, `orch_4` and so on as needed. The numbers set the menu order.
-- `<nickname>_base_url` and `<nickname>_api_key` hold that Orchestrator's settings.
-- `orch_default` accepts a nickname (`prod`) or a slot (`orch_1`).
-- Nicknames use letters, digits and `_`, and capitals don't matter. Don't use `default`, `orchestrator`, `edgeconnect` or `ec`.
-
-The tool picks an Orchestrator in this order:
-
-1. `--orchestrator <nickname>` on the command (overrides the default)
-2. `orch_default`
-3. The only one, if just one is listed
-4. Otherwise, a numbered menu in an interactive terminal. A non-interactive run stops and lists the nicknames instead.
-
-```bash
-edgeconnect-auto firewall deploy --csv rules.csv --dry-run                       # uses orch_default
-edgeconnect-auto --orchestrator test firewall deploy --csv rules.csv --dry-run   # overrides it
-```
-
-The chosen Orchestrator is printed above every `APPLY` and deletion prompt (`Target Orchestrator: test (<host>)`) and on the `Orchestrator :` line of the RUN SUMMARY and report log. Check it before you confirm. The single-Orchestrator `orchestrator_base_url` / `orchestrator_api_key` lines work as before. If you add `orch_<number>` lines next to them, the old lines become one more choice with the nickname `orchestrator` (`--orchestrator orchestrator`, or `orch_default=orchestrator`). They are never silently ignored.
-
-Plan files (`plan --output`) and inventory files (`discovery --output`) record the Orchestrator they were made from. `apply --approved-plan` and `firewall deploy --inventory` refuse to use them on a different Orchestrator, before any approval prompt, and name only the Orchestrator the file belongs to:
-
-```text
-this plan is for Orchestrator semir (https://<FQDN>); rerun with --orchestrator semir to use it
-```
-
-A firewall plan built offline from `--inventory` inherits that inventory's Orchestrator. Files written by older versions have no record and are not checked. Deletion has no saved plan; its target is shown in the deletion table and before every confirmation.
-
-### Windows PowerShell
-
-```powershell
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
-Set-Location edgeconnect-automation
-
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-python -m pip install --upgrade pip setuptools
-python -m pip install -e .
-
-Copy-Item .env.example .env
-```
-
-Restrict access to `.env` using your organization’s Windows file-permission policy, then replace the placeholders.
-
-### Confirm installation
-
-```bash
-edgeconnect-auto --help
-edgeconnect-auto firewall deploy --help
-python -m unittest discover -v
-```
-
-If editable installation is not desired, run directly from the repository:
-
-```bash
-PYTHONPATH=src python3 -m edgeconnect_automation --help
-```
-
-## What to copy to another machine
-
-Preferred method: copy or clone the **entire standalone repository**.
-
-Required:
-
-```text
-src/
-templates/
-pyproject.toml
-README.md
-docs/
-```
-
-Recommended for validation and maintenance:
-
-```text
-tests/
-SECURITY.md
-CONTRIBUTING.md
-CHANGELOG.md
-```
-
-Never copy or commit:
-
-```text
-.env
-API keys
-credentials
-reports/
-customer exports
-production readbacks
-cookies or tokens
-```
-
-Create a new `.env` securely on each machine.
-
-## First-use procedure
-
-### 1. Run the test suite
-
-```bash
-python -m unittest discover -v
-```
-
-### 2. Perform read-only discovery
-
-```bash
-edgeconnect-auto discovery \
-  --output reports/discovery.json
-```
-
-Expected result:
-
-- Exit code `0`
-- No Orchestrator write
-- Orchestrator release, Routing Segmentation state, segments, zones, address groups, service groups, appliance reachability, and an inventory fingerprint
-
-### 3. Copy, edit, and validate a firewall CSV
-
-```bash
-cp templates/edgeconnect/firewall_rules.csv rules.csv
-```
-
-Edit `rules.csv` with the intended segments, zones, addresses, dependencies, actions, logging, and explicit priorities where required. Then validate it locally:
-
-```bash
-edgeconnect-auto firewall validate \
-  --csv rules.csv
-```
-
-Expected result for a valid file:
-
-```text
-status: valid
-exit code: 0
-```
-
-### 4. Perform an authenticated dry-run
-
-```bash
-edgeconnect-auto firewall deploy \
-  --csv rules.csv \
-  --resolved-csv reports/rules-resolved.csv \
-  --report reports/firewall-dry-run.json \
-  --dry-run
-```
-
-Expected result for an eligible plan:
-
-- Exit code `0`
-- No Orchestrator write
-- Complete baseline and candidate preview
-- Eligible segment pairs and final rule priorities
-- Warnings for paused or unreachable appliances
-- A JSON dry-run report; a resolved CSV is also written when eligible rows exist
-
-### 5. Review the complete preview
-
-Check:
-
-- Segment-pair eligibility
-- Missing dependencies
-- Existing policies
-- Global and local priority collisions
-- Generated priorities
-- Unreachable or paused appliances
-- Candidate payload
-- Baseline fingerprint
-- Expected verification and rollback
-
-### 6. Deploy
-
-```bash
-edgeconnect-auto firewall deploy \
-  --csv reports/rules-resolved.csv \
-  --report reports/firewall-run.json
-```
-
-When prompted, type:
-
-```text
-APPLY
-```
-
-Use the generated resolved CSV for every future rerun when the original CSV omitted priorities. See [Understanding the resolved firewall CSV](docs/RESOLVED_FIREWALL_CSV.md) for a beginner-friendly explanation, examples, rerun workflow, and troubleshooting.
-
-## Common workflows
-
-Unless a section states otherwise, a successful `--dry-run` exits `0`, performs no Orchestrator write, and prints the exact candidate. A real write requires interactive `APPLY`; a later exact rerun should be a verified no-op. Exit `5` means the result is intentionally incomplete and requires review, even when eligible changes succeeded.
-
-### Firewall rules
-
-Template:
-
-```text
-templates/edgeconnect/firewall_rules.csv
-```
-
-Dry-run:
-
-```bash
-edgeconnect-auto firewall deploy \
-  --csv firewall_rules.csv \
-  --resolved-csv reports/firewall_rules_resolved.csv \
-  --report reports/firewall_preview.json \
-  --dry-run
-```
-
-Apply:
-
-```bash
-edgeconnect-auto firewall deploy \
-  --csv reports/firewall_rules_resolved.csv \
-  --report reports/firewall_result.json
-```
-
-The tool evaluates each source/destination segment pair independently. Invalid pairs are excluded; valid pairs may proceed. Individual invalid rules are never skipped inside a submitted pair.
-
-#### Match-all safety: `broad_match_ack`
-
-A rule matches all traffic in its source/destination segment and zone-pair scope when every traffic match field is blank. `broad_match_ack` does not change that behavior; it is a local safety acknowledgment proving the empty criteria were intentional.
-
-| Match fields | `broad_match_ack` | Result |
-|---|---|---|
-| All blank | `TRUE` | Accepted as an intentional match-all rule |
-| All blank | `FALSE` or blank | Local validation fails; nothing is deployed |
-| One or more criteria present | `TRUE`, `FALSE`, or blank | Accepted; the supplied criteria determine the match |
-
-For example, an intentional final catch-all deny uses blank match fields and:
-
-```csv
-action,broad_match_ack
-deny,TRUE
-```
-
-With blank match fields, `FALSE` never means “match nothing.” It blocks the CSV during local validation. If the rule reached Orchestrator, an empty API `match` object would still mean “match everything.” The acknowledgment is not sent to Orchestrator, does not appear as a stored GUI property, and does not bypass dependency, priority, drift, approval, or verification checks. Disabled match-all rules also require `TRUE` because they could later be enabled. See [CSV reference](docs/CSV_REFERENCE.md#broad-match-acknowledgment) for the complete field list and examples.
-
-#### ACL firewall references
-
-Set `acl` to one exact centrally defined ACL name and leave every ordinary traffic-match field blank. ACL mode is exclusive: mixing an ACL with addresses, groups, applications, protocol, ports, or service groups fails local validation. The central ACL must be nonempty and selected in an Access Lists template.
-
-An unassociated source template is reported, but every reachable target must already contain an exact matching ACL body; a missing or mismatched ACL blocks the segment pair. Unreachable/paused targets still warn and produce PARTIAL because their state cannot be proven. Live 9.7.1 testing showed that one missing ACL makes Orchestrator reject the complete appliance security-map update, not only the ACL-referencing rule. Exact global and reachable-appliance readback must preserve the nonempty ACL name and matching ACL body. The firewall CSV does not require `broad_match_ack=TRUE` based on the ACL's internal rules. See [ACL match mode](docs/CSV_REFERENCE.md#acl-match-mode).
-
-### Template-group ACL creation and merge
-
-Use `templates/edgeconnect/template_acls.csv` with `template-acls deploy`. Existing groups and ACLs are merged by priority: matching priorities replace the complete rule, new priorities are added, and omitted priorities remain unchanged. Supported match criteria are application, application group, directional/either IP, address group, port, service group and domain, per-side segment (entered by name, resolved to its ID at runtime), and protocol, matching the firewall CSV's match fields. Group encodings copy what the Orchestrator GUI writes, verified against GUI-created rules on 9.7.1. Separate several groups with `|`, never with a comma. Phase one accepts only `MERGE`; `REPLACE` is rejected. A target group with the Security Policies template selected in replace mode is blocked (no rules) or warned (with rules), because associating it replaces the appliance firewall policy.
-
-```bash
-edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/template-acls.json --dry-run
-edgeconnect-auto template-acls deploy --csv template_acls.csv --report reports/template-acls.json
-```
-
-A missing group requires typing its exact name and then `APPLY`. Existing groups additionally require explicit confirmation before selecting Access Lists or changing native template mode to merge. New groups are never associated with appliances automatically.
-
-Strict deletion removes a complete ACL only when every live entry exactly matches the complete CSV definition. It preserves the template group, selection, associations, unrelated ACLs and unrelated templates. It blocks firewall, template, appliance route-map and unreachable-target references, requires the standard deletion code and abyss acknowledgment, removes the exact central ACL plus exact copies from associated appliances through documented passthrough, and verifies absence. This appliance step is required because native template merge does not remove an omitted ACL.
-
-```bash
-edgeconnect-auto template-acls delete --csv template_acls.csv --dry-run
-edgeconnect-auto template-acls delete --csv template_acls.csv
-```
-
-See [Template-group ACL CSV](docs/CSV_REFERENCE.md#template-group-acls).
-
-### Missing zones
-
-Firewall deployment detects missing zones. A missing base zone requires:
-
-1. Individual `CREATE <zone>` confirmation
-2. Final `APPLY` confirmation
-3. Full zone-collection preservation and drift check
-4. Zone readback verification
-5. A complete firewall rerun
-
-Zones can also be created directly:
-
-```bash
-edgeconnect-auto zones create \
-  --name POS \
-  --name RX \
-  --report reports/zones.json \
-  --dry-run
-```
-
-### Address groups
-
-Template:
-
-```text
-templates/edgeconnect/address_groups.csv
-```
-
-```bash
-edgeconnect-auto address-groups deploy \
-  --csv address_groups.csv \
-  --report reports/address-groups.json \
-  --dry-run
-```
-
-The file uses Orchestrator’s native GUI CSV format. List cells are comma-separated and quoted. Repeated group names create multiple rules. Address members support documented IPv4 addresses, CIDR or dotted-decimal masks, short octet ranges, ranged octets with masks, and wildcard octets with optional masks. IPv6 is rejected locally because the tested Orchestrator 9.7.1 native address-group importer rejects it.
-
-### Service groups
-
-Template:
-
-```text
-templates/edgeconnect/service_groups.csv
-```
-
-```bash
-edgeconnect-auto service-groups deploy \
-  --csv service_groups.csv \
-  --report reports/service-groups.json \
-  --dry-run
-```
-
-Supported local validation includes TCP, UDP, ICMP, and ICMPv6. The native 9.7.1 importer rejected the tested ICMPv6 type/code payload; runtime failures are reported rather than treated as success.
-
-### Application definitions
-
-Template:
-
-```text
-templates/edgeconnect/application_definitions.csv
-```
-
-```bash
-edgeconnect-auto app-definitions deploy \
-  --csv application_definitions.csv \
-  --report reports/application-definitions.json \
-  --dry-run
-```
-
-Supported types:
-
-- `IP_PROTOCOL`
-- `TCP_PORT`
-- `UDP_PORT`
-- `DOMAIN`
-- `COMPOUND`
-
-Defaults:
-
-- Enabled
-- Confidence 100
-- AppExpress Off
-
-`AppExpressMode` is authoritative in the application-definition CSV. `MONITOR` ensures a Monitor entry exists, while `OFF` removes an existing AppExpress entry for that named application. Both definition and AppExpress changes are shown in one preview and applied after one approval. Rows whose classifier identity conflicts with an existing different definition are shown under `skipped_conflicts`; they and their AppExpress intent are excluded while independent definitions may proceed. Any skipped conflict makes the command return partial exit code `5` even when all eligible rows verify.
-
-Compound definitions support directional/either port, IP/subnet, geo, domain, address map, DSCP, protocol, and interface selectors. Geo accepts ISO codes or country names, interface accepts label names or IDs, and address maps must exist; all are resolved against live inventory during planning. Compound numeric IDs are server ordering indices and are not treated as stable identities.
-
-Every CSV row is validated completely, and each problem is reported with a rule ID, field, value, suggested fix, and blocked scope. See [CSV constraints and dependencies](docs/CSV_CONSTRAINTS_AND_DEPENDENCIES.md) for the full rule catalogue.
-
-### Application groups
-
-Template:
-
-```text
-templates/edgeconnect/application_groups.csv
-```
-
-```bash
-edgeconnect-auto app-groups deploy \
-  --csv application_groups.csv \
-  --report reports/application-groups.json \
-  --dry-run
-```
-
-The workflow validates application membership, parent references, and cycles while preserving the complete existing collection. A group with missing applications, missing parents, conflicting existing semantics, a parent cycle, or invalid identity is listed under `skipped_conflicts`; groups that depend on a skipped parent are also skipped. Independent groups may proceed after `APPLY`, and any skips produce partial exit code `5`.
-
-## Using with an AI agent
-
-`skills/managing-edgeconnect-firewall-and-objects/` is an agent skill. With it, an agent such as Claude Code turns a plain-language request or the policy table you already have ("let the POS network reach the payment gateway on 443", a spreadsheet of 200 inter-segment flows, a list of SaaS domains to monitor) into firewall or application definition CSV rows from `templates/edgeconnect/`, runs `discovery`, `firewall validate` and `--dry-run` previews until they are clean, and shows you the preview. It never writes: it gives you the exact command, you run it in your own terminal and type `APPLY`, and it then reads the result with `report summarize`.
-
-Install it from a clone of this repository, since the skill uses the clone's templates and docs:
-
-```bash
-npx skills add https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation
-# or, for Claude Code only:
-cp -R skills/managing-edgeconnect-firewall-and-objects ~/.claude/skills/
-```
-
-## CSV-driven deletion
-
-Every configurable resource workflow supports `delete` with the same CSV used for deployment:
-
-```bash
-edgeconnect-auto firewall delete --csv firewall_rules.csv --report reports/firewall-delete.json --dry-run
-edgeconnect-auto address-groups delete --csv address_groups.csv --report reports/address-delete.json --dry-run
-edgeconnect-auto service-groups delete --csv service_groups.csv --report reports/service-delete.json --dry-run
-edgeconnect-auto app-groups delete --csv application_groups.csv --report reports/app-groups-delete.json --dry-run
-edgeconnect-auto app-definitions delete --csv application_definitions.csv --report reports/app-definitions-delete.json --dry-run
-```
-
-Deletion has no implicit name-prefix restriction. A live resource must match the CSV semantics exactly; absent resources are no-ops, while mismatches, external references detected by the workflow, or baseline drift block deletion. Always begin with `--dry-run`. Without it, the CLI displays the complete deletion table, requires a fresh random code, then requires typing `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. State is re-read after confirmation and absence is verified after deletion. Delete dependencies in this order when separate CSVs are involved: firewall rules, template ACLs, application groups, application definitions with their integrated AppExpress state, service groups, then address groups.
-
-## Verbose output
-
-```bash
-edgeconnect-auto -v discovery
-edgeconnect-auto -vv firewall deploy --csv rules.csv --dry-run
-```
-
-- Default: small results as JSON, a short change table before every `APPLY` prompt, and the [run summary](#run-summary-and-report-log) at the end. Large previews and plans are not printed; they are always saved in the report log.
-- `-v`: also prints the full preview JSON, plus API method/path, status, and response size
-- `-vv`: sanitized payload details, plus a Python traceback for unexpected runtime errors
-
-`-v`, `--dotenv`, `--orchestrator`, `--allow-http`, and `--report-dir` are global options: place them **before** the workflow name. `edgeconnect-auto firewall validate --csv rules.csv -v` fails with `unrecognized arguments: -v`. Verbosity only affects Orchestrator API calls, so local-only `validate` output looks the same at every level.
-
-Credentials and authorization headers are never logged.
-
 ## Exit codes
 
 | Code | Meaning |
@@ -582,120 +158,7 @@ Credentials and authorization headers are never logged.
 
 Automation systems must treat code 5 as incomplete deployment requiring operator review.
 
-## Run summary and report log
-
-Every command ends with a **RUN SUMMARY**, whatever happened: success, no-op, dry run, blocked, refused, drift, partial, interrupted, or an unexpected error. Think of it as the receipt at the end of a transaction: it tells you what happened, why, and what to do next, even when nothing was written.
-
-```text
-==============================================================================
-RUN SUMMARY
-==============================================================================
-Workflow     : firewall deploy
-Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
-Versions     : tool 1.2.3, Orchestrator 9.7.1.42046
-CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
-RESULT       : BLOCKED
-Changes made : no
-Exit code    : 2 = blocked by validation or planning; nothing was written
-
-What was planned or done
-  - segment pair Default -> Default: BLOCKED by 1 issue(s); none of its 73 rows will be written
-
-Rows (73): 1 BLOCKED, 72 NOT ATTEMPTED
-  ROW  OUTCOME        ITEM                 SCOPE / REASON
-  2    BLOCKED        1 (priority 20000)   Default -> Default | INSIDE -> OUTSIDE | [FW-24] ... priority 20000 conflicts ...
-  3    NOT ATTEMPTED  2 (priority 20005)   Default -> Default | INSIDE -> OUTSIDE | segment pair blocked by row 2
-  ...
-
-Why it stopped or what failed
-  - row 2 [FW-24] rule_key 1 priority 20000 conflicts with a different existing rule in zone pair INSIDE -> OUTSIDE (existing: allow disabled, match acl=EXAMPLE-ACL; this row: allow disabled, match dst_ip=192.0.2.0/24, either_port=443, protocol=tcp); fix: use a free priority such as 20001, or remove the existing rule first
-
-Warnings (do not block)
-  - target 3.NE (branch-03) is unreachable and will remain unverified
-
-Appliances
-  - 0.NE (hub-01): reachable
-  - 3.NE (branch-03): unreachable
-Report       : reports/firewall.jsonl
-Report       : reports/firewall.log
-
-Next step    : Fix every blocking issue listed above, then rerun the same command with --dry-run.
-==============================================================================
-```
-
-The summary is printed to standard error, so it still appears when standard output is redirected.
-
-| Line | Meaning |
-|---|---|
-| `RESULT` | `SUCCESS`, `NO_OP`, `DRY_RUN`, `VALID`, `PLANNED`, `BLOCKED`, `INVALID`, `REFUSED`, `DRIFT`, `PARTIAL`, `ZONES_CREATED_RERUN`, `INTERRUPTED`, or `ERROR` |
-| `Changes made` | `no`, `yes`, `possibly` (partial), or `unknown` (error or interruption after `APPLY`: check Orchestrator) |
-| `What was planned or done` | Counts per segment pair, template group, or object type; per-pair and per-group results, including rollback state |
-| `Rows` | One line per CSV row (or object): its outcome and why. Problem rows are listed first; the screen shows 25, the report log shows all |
-| `Why it stopped or what failed` | Every blocking issue, with its rule code, row, and fix |
-| `Appliances` | Reachability or verification per appliance, with hostname |
-| `Run ref` | Firewall writes only; each segment pair's Orchestrator audit log comment is this reference followed by `-<segment map>`, for example `-0_0` |
-
-### Row outcomes
-
-| Outcome | Meaning |
-|---|---|
-| `WOULD CREATE`, `WOULD ADD`, `WOULD OVERWRITE`, `WOULD DELETE` | Planned only (dry run, refused, or blocked elsewhere) |
-| `CREATED`, `ADDED`, `OVERWRITTEN`, `DELETED` | Written and verified |
-| `CREATED, UNVERIFIED` (and similar) | Written, but not every appliance or readback could be verified |
-| `ALREADY PRESENT`, `ALREADY ABSENT` | Nothing to do for this row |
-| `BLOCKED`, `INVALID` | This row has an error; the reason is shown |
-| `NOT ATTEMPTED` | This row is fine, but another row blocks its segment pair, template group, or the whole CSV |
-| `SKIPPED` | Row isolated from an otherwise successful run (application definitions and groups) |
-| `FAILED`, `NOT WRITTEN` | The write failed and was rolled back, drift stopped it, or an appliance refused to compile the rule (see below) |
-| `NOT DELETED` | A deletion run stopped or skipped this row after drift or an error; the reason is shown. Firewall deletion continues with other segment pairs; object deletion stops at the first problem |
-| `UNKNOWN` | The command stopped after it had started writing, and the result of this row is not known; check Orchestrator |
-
-A firewall error in one row blocks every row of the same segment pair, and a CSV validation error blocks the whole file. `NOT ATTEMPTED` makes that visible: fix the `BLOCKED` or `INVALID` rows and the rest can proceed.
-
-### Status fields in report files
-
-Every `--report` file and every report-log record starts with the same fields and words, whatever the workflow: `status` (the `RESULT` values above), `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (the nickname, or `unnamed` for the single-Orchestrator lines) and `orchestrator_url` (for example `https://<ORCHESTRATOR_FQDN>`). Commands that never contact Orchestrator, such as `validate`, record `not contacted`. Scripts should read these. To list every run against one Orchestrator: `grep '"orchestrator": "ge"' reports/firewall.jsonl`. The workflow-specific results underneath are unchanged (for example firewall `result.status: SUCCESS` or template ACL `result.status: success`); a different older top-level status is kept as `detail_status`.
-
-### Summarize a saved report
-
-```bash
-edgeconnect-auto report summarize reports/firewall-deploy.json
-edgeconnect-auto report summarize reports/firewall.jsonl --last 3
-edgeconnect-auto report summarize old-report.json --rows-csv rows.csv
-```
-
-This prints the RUN SUMMARY and the full row table from a saved `--report` file, a plan file, or the last runs of a `reports/<workflow>.jsonl` log. It also works on reports written by versions before this feature (the tool version then shows as unknown). `--rows-csv` exports the row table for Excel. It reads files only: it does not contact Orchestrator and does not add to the report log.
-
-### Automatic report log
-
-You do not need `--report` to keep a record. Every run is appended to a log for its workflow in `./reports/` (created if missing, and excluded from Git):
-
-| File | Contents |
-|---|---|
-| `reports/<workflow>.log` | The human-readable run summary of every run, newest at the end |
-| `reports/<workflow>.jsonl` | One JSON line per run: the summary (run ID, timestamp, versions, command, CSV checksum, status, issues) plus the complete preview and result |
-
-`<workflow>` is the command family: `firewall`, `template-acls`, `address-groups`, `service-groups`, `app-groups`, `app-definitions`, `zones`, or `discovery`. The log files grow with every run; archive or delete old ones when no longer needed.
-
-| Option | Effect |
-|---|---|
-| (none) | Log to `./reports/` in the current directory |
-| `--report-dir D:\ec-reports` or `EDGECONNECT_REPORT_DIR` | Log to another folder |
-| `--report-dir ""` | Disable the automatic log for this run |
-| `--report reports/x.json` (per command) | Additionally write that one run to an exact file, overwritten each time. It is always written, even on refusal or error, and includes the same `summary` block, so it never shows an older run's result. |
-
-To send a run for troubleshooting, send the matching block from `reports/<workflow>.log`; add the `.jsonl` line when the full preview is needed.
-
-## Reports
-
-Reports and report logs are:
-
-- Redacted
-- Fingerprinted
-- Written with restrictive permissions
-- Excluded from Git by default
-
-They may still contain sensitive network configuration. Store and transfer them only through approved systems.
+Row outcomes, report files and troubleshooting are in [Reports and troubleshooting](docs/REPORTS_AND_TROUBLESHOOTING.md).
 
 ## CSV templates and examples
 
@@ -715,100 +178,26 @@ Additional conflict, drift, merge, deletion, and release-regression cases remain
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -v
-PYTHONPATH=src python3 -m compileall -q src tests scripts
 ```
 
-The standard-library tests generate invalid and edge-case CSVs in temporary directories. The default suite uses fake transports and makes no network calls.
+The default suite uses fake transports and makes no network calls. Live testing rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Live contract testing requires:
+## Repository layout
 
-- Isolated lab
-- Exact payload preview
-- Impact and rollback plan
-- Explicit payload-specific approval
-- Verified cleanup
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Updating on an existing machine
-
-```bash
-git status
-git pull --ff-only
-source .venv/bin/activate
-python -m pip install -e .
-python -m unittest discover -v
+```text
+edgeconnect-automation/
+├── src/edgeconnect_automation/   Python package
+├── tests/                        Unit, contract, safety, and generated CSV cases
+├── templates/edgeconnect/        Clean starter CSV templates
+├── examples/edgeconnect/         Valid and intentionally invalid CSV examples
+├── docs/                         Operator, CSV, architecture, and design guides
+├── skills/                       Agent skill: plain-language requests to CSV rows and dry runs
+├── pyproject.toml                Python packaging and CLI entry point
+├── .env.example                  Safe configuration example
+├── SECURITY.md                   Security requirements
+├── CONTRIBUTING.md               Development workflow
+└── CHANGELOG.md                  Release history
 ```
-
-Review `CHANGELOG.md` before using a new version.
-
-## Troubleshooting
-
-### Configuration is missing
-
-Run from the repository directory containing `.env`, provide process environment variables, or select another file explicitly:
-
-```bash
-edgeconnect-auto discovery
-edgeconnect-auto --dotenv /absolute/path/to/other.env discovery
-```
-
-### Certificate verification fails
-
-Do not disable TLS verification. A failure shows as `transport failure: URLError`. Add the approved CA chain:
-
-```dotenv
-orchestrator_ca_bundle=/absolute/path/to/ca-bundle.pem
-```
-
-A CA bundle only helps when the certificate names the host in the base URL. For a self-signed certificate, such as a lab Orchestrator reached by IP address, pin that one certificate instead (colons are optional):
-
-```dotenv
-orchestrator_tls_sha256=<SHA-256 fingerprint>   # or <nickname>_tls_sha256
-```
-
-Read the fingerprint with `openssl s_client -connect <host>:443 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256` and compare it with the certificate shown in your browser before saving it.
-
-### `error: string indices must be integers, not 'str'`
-
-Versions before `1.1.2` crashed during firewall discovery when an Orchestrator returned user-defined port/protocol or compound application definitions in a shape other than a list of records per key. The crash happened before any write. Update to `1.1.2` or later (`pip show edgeconnect-automation` shows the installed version). Unrecognized entries are now skipped; a referenced application that still cannot be found is resolved through exact wildcard search or blocked with `DEP-01`.
-
-To see the full Python traceback for any unexpected runtime error, call the handler directly with a read-only dry run:
-
-```bash
-python -c "from edgeconnect_automation.cli import build_parser; a=build_parser().parse_args(['firewall','deploy','--csv','rules.csv','--dry-run']); a.handler(a)"
-```
-
-### Routing Segmentation is disabled
-
-Firewall deployment stops. This tool does not enable Routing Segmentation automatically because enabling it affects the complete fabric.
-
-### Missing zone
-
-Review the proposed full zone collection, confirm each zone, apply the separate zone change, and rerun firewall validation.
-
-### Priority conflict
-
-- Add explicit priorities to the CSV, or
-- Resolve the existing conflict outside the tool
-
-The tool never overwrites a conflicting rule.
-
-### Unreachable appliances
-
-The global policy may be saved, but verification remains incomplete. The command exits PARTIAL and identifies unverified targets.
-
-### Appliance alarm "ACL rule has invalid syntax"
-
-Orchestrator can store a firewall rule or ACL entry, copy it to every appliance, and log success, while the appliance policy engine refuses to compile it. The appliance then raises the service-affecting alarm "ACL rule has invalid syntax" with source `/policyEngine/acl/<priority>`, and the rule is not enforced. On 9.6.4 appliances this happens for single addresses without a prefix length (`10.1.1.1` instead of `10.1.1.1/32`) and for dotted masks (`/255.255.255.0` instead of `/24`); one such value in a list rejects the whole rule.
-
-- The tool sends these values as `/32` (`/128` for IPv6) and prefix lengths, and warns (`FW-33`, `ACL-29`).
-- After every firewall or template ACL write it reads the appliance alarms for the verified appliances (for up to 30 seconds) and reports each rejected row as `FAILED`, with the appliance and the reason. The run ends PARTIAL. Rules written by older versions are not rechecked.
-- A rule already deployed without `/32` blocks a redeploy at the same priority with `FW-34`. Remove it with `firewall delete` and the CSV it was deployed from (the delete still matches it), then deploy the corrected CSV.
-
-### API returns success but drops a field
-
-Normalized readback fails and the affected segment pair enters recovery. Unsupported fields are not silently accepted.
 
 ## Support
 
@@ -817,9 +206,12 @@ Normalized readback fails and the affected segment pair enters recovery. Unsuppo
 - Never post API keys, `.env`, authorization headers, customer configuration, production reports, or private topology.
 - Follow [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-## Additional documentation
+## Documentation
 
 - [Quick start](QUICKSTART.md)
+- [Setup and configuration](docs/SETUP_AND_CONFIGURATION.md)
+- [Workflows](docs/WORKFLOWS.md)
+- [Reports and troubleshooting](docs/REPORTS_AND_TROUBLESHOOTING.md)
 - [Installation and migration](docs/INSTALLATION.md)
 - [Operator guide](docs/OPERATOR_GUIDE.md)
 - [CSV reference](docs/CSV_REFERENCE.md)
