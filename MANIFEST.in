@@ -1,6 +1,7 @@
 include README.md
 include QUICKSTART.md
 include LICENSE
+include NOTICE
 include setup.py
 include setup.cfg
 include CHANGELOG.md

@@ -25,4 +25,4 @@ Report security issues privately to the internal project owner. Do not open a pu
 
 ## License
 
-This project is available under the BSD 3-Clause License. See `LICENSE`. The license does not authorize disclosure of customer data, credentials, proprietary configurations, or other material that is not part of this repository.
+This project is available under the Apache License 2.0. See `LICENSE` and `NOTICE`. The license does not authorize disclosure of customer data, credentials, proprietary configurations, or other material that is not part of this repository.
