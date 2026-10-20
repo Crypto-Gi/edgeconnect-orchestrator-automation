@@ -131,13 +131,13 @@ Code: `src/edgeconnect_automation/firewall.py`. Write/isolation unit: **source/d
 |---|---|---|
 | FW-01 | All required fields nonblank. | Done |
 | FW-02 | `acl` is mutually exclusive with every ordinary match field (IP, groups, app, app group, protocol, ports, service groups). | Done |
-| FW-03 | ACL internal broadness never requires `broad_match_ack`. | Done |
+| FW-03 | `action` is `allow`, `deny` or `inspect`. (An ACL's internal broadness never requires `broad_match_ack`; that has no rule ID.) | Done |
 | FW-04 | No match fields and no `acl` → `broad_match_ack=TRUE` required. | Done |
 | FW-05 | `broad_match_ack=TRUE` on a rule that **does** have criteria is meaningless; should warn. | Gap (warning) |
 | FW-06 | Literal ports require `protocol` = `tcp` or `udp`. | Done |
 | FW-07 | `protocol=icmp`/`icmpv6`/number with any port field → reject (covered by FW-06). | Done |
 | FW-08 | Service group + `protocol` allowed; criteria are ANDed. | Done (D8 approved) |
-| FW-09 | Within-family Either exclusivity (§1.3). | Done |
+| FW-09 | Within-family Either exclusivity (§1.3). Reported as `DIR-01`; `FW-09` is not emitted. | Done |
 | FW-10 | Cross-family mixed direction is allowed for compatibility; within-family Either exclusivity remains mandatory. | D1 resolved |
 | FW-11 | Duplicate/empty list members (VAL-03, VAL-04). | Gap |
 | FW-12 | Host bits in CIDR (e.g. `12.1.73.1/24`) are accepted and preserved verbatim for GUI compatibility; warn that the effective network is `12.1.73.0/24`. | D3 resolved: accept + warn |
@@ -151,8 +151,8 @@ Code: `src/edgeconnect_automation/firewall.py`. Write/isolation unit: **source/d
 
 | ID | Rule | Status |
 |---|---|---|
-| FW-20 | `rule_key` unique across the CSV. | Done |
-| FW-21 | Priority unique per zone pair within the segment pair. | Done |
+| FW-20 | `priority` is a whole number 0-65535 or blank. (A duplicate `rule_key` is reported as `FW-21` by `validate`; the planner's second check at plan time still labels it `FW-20`.) | Done |
+| FW-21 | `rule_key` unique across the CSV (`validate`), and CSV priority unique per zone pair within the segment pair (plan time). Both use this ID today. | Done |
 | FW-22 | Explicit priorities are reserved before automatic allocation. | Done |
 | FW-23 | Automatic allocation only in an empty zone pair or one holding only a verified `65535` catch-all; starts at 20000, step 10, must stay < 65535. | Done |
 | FW-24 | Existing identical rule at the priority → no-op. Different rule → block the pair. | Done |
@@ -265,11 +265,12 @@ Status: matrix **Done** (`_reject_unused_fields`).
 
 | ID | Rule | Status |
 |---|---|---|
-| AD-01 | `Name` `[A-Za-z0-9_-]{1,31}`. | Done |
+| AD-01 | `DefinitionType` is one of `IP_PROTOCOL`, `TCP_PORT`, `UDP_PORT`, `DOMAIN`, `COMPOUND`. | Done |
 | AD-02 | `Notes` cannot contain `\|`. Max length unknown. | Done / Test |
-| AD-03 | `Confidence` integer `1..100`. | Done |
-| AD-04 | `AppExpressMode` `OFF` or `MONITOR` only (single source of truth). | Done |
-| AD-05 | `DOMAIN` value passes VAL-09; wildcard only as leading `*.`. | Partial (VAL-09 Gap) |
+| AD-03 | Columns that do not apply to the `DefinitionType` are blank (the matrix above). | Done |
+| AD-04 | `Confidence` integer `1..100`. | Done |
+| AD-05 | `AppExpressMode` `OFF` or `MONITOR` only (single source of truth). | Done |
+| AD-06 | Each type's required value is present and in range: `DOMAIN` needs `Domain` (VAL-09: wildcard only as leading `*.`, partial gap), `IP_PROTOCOL` needs `ProtocolNumber` 0-255 and `Port` blank or 0, port types need one `Port` 1-65535. | Done / Partial (VAL-09 Gap) |
 | AD-07 | Application names are **not case-sensitive** (vendor doc). Duplicate detection and dependency lookups must compare case-insensitively. Name grammar is type-specific: compound stays `[A-Za-z0-9_-]{1,31}` (Swagger); TCP/UDP definitions accept dots (API exact-readback of `lab25.dot.probe`). | Gap (confirmed) |
 | AD-08 | AppExpress monitoring is limited to **50 applications** (vendor doc). Existing MONITOR entries + new MONITOR rows > 50 must block. | Gap |
 | AD-09 | Address Map definition type (IPv4 range, organization, country, Microsoft instance/category, proxy) is not supported by the CSV. | Unsupported (deferred) |
@@ -474,7 +475,7 @@ Every error/warning in console output and JSON report:
 
 ```json
 {
-  "rule": "FW-09",
+  "rule": "DIR-01",
   "severity": "error",
   "row": 14,
   "field": "either_port",
@@ -487,7 +488,7 @@ Every error/warning in console output and JSON report:
 ```
 
 `blocks` ∈ `row`, `group:<name>`, `segment_pair:<a>-><b>`, `template_group:<name>`, `batch`.
-Console form: `row 14 [FW-09] either_port=443: either_port cannot be combined with ... Fix: ...`
+Console form: `row 14 [DIR-01] either_port=443: either_port cannot be combined with ... Fix: ...`
 
 Exit codes unchanged: validation failure blocks everything → validation code; some units blocked and
 others succeeded → 5 (PARTIAL).
