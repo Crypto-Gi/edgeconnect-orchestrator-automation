@@ -6,7 +6,7 @@
 
 Orchestrator's GUI has no bulk path for global firewall policies or application definitions. This CLI turns a reviewed spreadsheet into guarded Orchestrator API workflows, and refuses anything that would silently overwrite live configuration. Every write is approval-gated, checked for drift, and verified through fresh readback.
 
-Current release: `v1.2.4` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
+Current release: `v1.2.5` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
 
 ## What a run looks like
 
@@ -18,7 +18,7 @@ RUN SUMMARY
 ==============================================================================
 Workflow     : firewall deploy
 Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
-Versions     : tool 1.2.4, Orchestrator 9.7.1.42046
+Versions     : tool 1.2.5, Orchestrator 9.7.1.42046
 CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
 RESULT       : BLOCKED
 Changes made : no

@@ -1,12 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.2.5 — 2026-10-20
 
 - A NUL byte anywhere in a CSV now rejects the whole file with `CSV-11` on every Python version. On Python 3.11 and later the csv module accepts NUL, so a firewall CSV with a NUL in one cell blocked only that segment pair (`CSV-10`) and the other pairs could still be deployed.
 - New agent skill `skills/managing-edgeconnect-firewall-and-objects/`: an agent writes CSV rows from a plain-language request and runs only read-only commands; every write stays with a person typing `APPLY` in a terminal. Tested on a 9.7.1 lab Orchestrator.
 - Redaction now also hides pre-shared keys, auth keys, private keys and passphrases, and no longer hides flags and numbers under secret-looking keys (`passwordMinLen`, `csrfProtection`). Found by a full read sweep of a 9.7.1 lab, where tunnel and template-group `presharedkey` values were returned in clear.
 - New `<nickname>_tls_sha256` (and `orchestrator_tls_sha256`) pins a self-signed Orchestrator certificate by SHA-256 fingerprint instead of disabling verification.
-- The API client no longer follows HTTP redirects. It used to follow them to any host, or to plain HTTP, with the API key header attached.
 - `--allow-http` now accepts only localhost, 127.x and ::1 base URLs.
 - `firewall validate` now reports a duplicate `rule_key` (`FW-21`) even when one of the colliding rows also has another error. `firewall delete` no longer labels every "already absent" rule with the last segment pair, and a blocked segment pair whose rows all failed parsing no longer says "none of its 0 rows".
 - Rule IDs: the plan-time duplicate-priority check is now `FW-35` (it shared `FW-21` with duplicate `rule_key`), and the plan-time duplicate-`rule_key` check is `FW-21` (it used `FW-20`, the priority range check).
