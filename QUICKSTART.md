@@ -2,7 +2,7 @@
 
 ## 1. Install
 
-To install this CLI, the preconfig toolkit and both agent skills in one step (macOS and Linux), run the setup script and skip to step 2; it creates `~/edgeconnect/.env` for you:
+To install this CLI, the preconfig toolkit and both agent skills in one step (macOS and Linux), run the setup script and skip to step 2; it asks for an install folder (default `~/edgeconnect`) and creates the `.env` there:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/setup.sh)

@@ -60,15 +60,29 @@ Next step    : Fix every blocking issue listed above, then rerun the same comman
 | Orchestrator accepts a rule that the appliance refuses to compile | Appliance alarms are read after every write and the rejected row is reported as `FAILED` |
 | A deletion matches more than you meant | Deletion is exact-match only, with a fresh random code and a typed acknowledgment |
 
-## Quick start
+## The EdgeConnect toolkit
 
-**Everything at once (macOS and Linux):** this CLI, the [preconfig toolkit](https://github.com/Crypto-Gi/edgeconnect-preconfig) and both agent skills, from `main`, with one shared `.env`:
+Three repositories that work together:
+
+| Repository | What it does | Agent skill |
+|---|---|---|
+| [edgeconnect-orchestrator-automation](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation) (this repository) | `edgeconnect-auto` CLI: deploys and removes firewall policies, zones, address, service and application groups, application definitions and template-group ACLs from reviewed CSVs, with a dry run, a typed `APPLY` and readback verification. | `managing-edgeconnect-firewall-and-objects` |
+| [edgeconnect-preconfig](https://github.com/Crypto-Gi/edgeconnect-preconfig) | Turns an existing appliance into a Jinja2 + CSV preconfiguration template, then renders, validates and uploads one preconfig per site. | `building-edgeconnect-preconfig-templates` |
+| [edgeconnect-mcp](https://github.com/Crypto-Gi/edgeconnect-mcp) | MCP server that lets Claude or any MCP client read, and with your approval change, an Orchestrator through its REST API. | `edgeconnect-guide` |
+
+**Install the CLI, the preconfig scripts and their two skills** (macOS and Linux; needs git, Python 3.9 or later and, for the skills, Node.js 18 or later):
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/setup.sh)
 ```
 
-It installs into `~/edgeconnect` (or `$EDGECONNECT_HOME`), adds `edgeconnect-auto` and `edgeconnect-preconfig` to `~/.local/bin`, never overwrites an existing `.env`, and asks which agents get the skills. Run it again to update.
+The same `setup.sh` is in all three repositories. It asks for an install folder (default `~/edgeconnect`) and whether the skills go in your home folder, for every project, or only inside that folder; the skills installer then asks which agents get them. Everything lands in the one folder: both repositories from `main`, a Python environment and one shared `.env`, plus `edgeconnect-auto` and `edgeconnect-preconfig` commands in `~/.local/bin`. Run it again to update: anything already installed is reported and kept, and only what is missing is added. Options: `--dir PATH`, `--skills home|folder`, `--agents claude-code,codex`, `--refresh-skills`, `--yes`. The skills installer may offer its own `find-skills` skill once; answer No unless you want it.
+
+`setup.sh` does not install the MCP server or its guide skill; the [edgeconnect-mcp README](https://github.com/Crypto-Gi/edgeconnect-mcp#install) covers those.
+
+## Quick start
+
+**Everything at once:** see [The EdgeConnect toolkit](#the-edgeconnect-toolkit) above.
 
 **This CLI only:**
 
