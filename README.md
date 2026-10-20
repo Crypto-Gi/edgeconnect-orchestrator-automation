@@ -102,7 +102,7 @@ Edit `rules.csv` for your segments, zones and addresses, and dry-run it before a
 
 ## Use it with an AI agent
 
-`skills/managing-edgeconnect-firewall-and-objects/` is an agent skill. With it, an agent such as Claude Code turns a plain-language request or the policy table you already have ("let the POS network reach the payment gateway on 443", a spreadsheet of 200 inter-segment flows, a list of SaaS domains to monitor) into firewall or application definition CSV rows from `templates/edgeconnect/`, runs `discovery`, `firewall validate` and `--dry-run` previews until they are clean, and shows you the preview. It never writes: it gives you the exact command, you run it in your own terminal and type `APPLY`, and it then reads the result with `report summarize`.
+`skills/managing-edgeconnect-firewall-and-objects/` is an agent skill. With it, an agent such as Claude Code turns a plain-language request or the policy table you already have ("let the POS network reach the payment gateway on 443", a spreadsheet of 200 inter-segment flows, a list of SaaS domains to monitor) into firewall or application definition CSV rows from `templates/edgeconnect/`, runs `discovery`, `firewall validate` and `--dry-run` previews until they are clean, and shows you the preview. It never writes. The CLI is built for a person at a terminal: the agent prepares the CSVs and the exact command, hands it to you as one block to paste, you run it and type `APPLY`, and it then reads the result with `report summarize`.
 
 Install it from a clone of this repository, since the skill uses the clone's templates and docs:
 
