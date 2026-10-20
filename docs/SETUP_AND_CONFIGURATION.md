@@ -83,7 +83,7 @@ The chosen Orchestrator is printed above every `APPLY` and deletion prompt (`Tar
 Plan files (`plan --output`) and inventory files (`discovery --output`) record the Orchestrator they were made from. `apply --approved-plan` and `firewall deploy --inventory` refuse to use them on a different Orchestrator, before any approval prompt, and name only the Orchestrator the file belongs to:
 
 ```text
-this plan is for Orchestrator semir (https://<FQDN>); rerun with --orchestrator semir to use it
+this plan is for Orchestrator test (https://<FQDN>); rerun with --orchestrator test to use it
 ```
 
 A firewall plan built offline from `--inventory` inherits that inventory's Orchestrator. Files written by older versions have no record and are not checked. Deletion has no saved plan; its target is shown in the deletion table and before every confirmation.

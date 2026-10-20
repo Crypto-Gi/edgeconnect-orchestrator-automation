@@ -120,10 +120,10 @@ class RunReportTests(unittest.TestCase):
     def test_summary_and_headline_name_the_orchestrator(self):
         from edgeconnect_automation.reporting import _headline
         recorder = RunRecorder([])
-        recorder.orchestrator_target, recorder.orchestrator_name, recorder.orchestrator_url = "ge (https://ge.invalid)", "ge", "https://ge.invalid"
+        recorder.orchestrator_target, recorder.orchestrator_name, recorder.orchestrator_url = "branch (https://branch.invalid)", "branch", "https://branch.invalid"
         summary = build_summary(recorder, SimpleNamespace(command="discovery", dry_run=False), 0)
-        self.assertEqual({key: _headline(summary)[key] for key in ("orchestrator", "orchestrator_url")}, {"orchestrator": "ge", "orchestrator_url": "https://ge.invalid"})
-        self.assertIn("Orchestrator : ge (https://ge.invalid)", render(summary))
+        self.assertEqual({key: _headline(summary)[key] for key in ("orchestrator", "orchestrator_url")}, {"orchestrator": "branch", "orchestrator_url": "https://branch.invalid"})
+        self.assertIn("Orchestrator : branch (https://branch.invalid)", render(summary))
         offline = build_summary(RunRecorder([]), SimpleNamespace(command="firewall", firewall_command="validate", dry_run=False), 0)
         self.assertEqual((offline["orchestrator"], offline["orchestrator_url"]), ("not contacted", "not contacted"))
 
@@ -136,29 +136,29 @@ class RunReportTests(unittest.TestCase):
         return connect
 
     def test_plan_is_refused_on_another_orchestrator_and_names_only_its_own(self):
-        plan = {"kind": "address-groups", "new_rows": [], "no_ops": 0, "conflicts": [], "content": "", "baseline_fingerprint": "x", "warnings": [], "orchestrator": {"name": "ge", "url": "https://ge.invalid"}}
+        plan = {"kind": "address-groups", "new_rows": [], "no_ops": 0, "conflicts": [], "content": "", "baseline_fingerprint": "x", "warnings": [], "orchestrator": {"name": "branch", "url": "https://branch.invalid"}}
         plan["report_fingerprint"] = fingerprint(plan)
         path = self.root / "plan.json"
         path.write_text(json.dumps(plan), encoding="utf-8")
-        with patch("edgeconnect_automation.cli._gateway", side_effect=self.target("https://other.invalid", "semir")), patch("builtins.input", side_effect=AssertionError("must not ask for approval")), patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", new_callable=io.StringIO) as err:
+        with patch("edgeconnect_automation.cli._gateway", side_effect=self.target("https://other.invalid", "staging")), patch("builtins.input", side_effect=AssertionError("must not ask for approval")), patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", new_callable=io.StringIO) as err:
             code = main(["--report-dir", "", "address-groups", "apply", "--approved-plan", str(path)])
         self.assertNotEqual(code, 0)
-        self.assertIn("this plan is for Orchestrator ge (https://ge.invalid); rerun with --orchestrator ge to use it", err.getvalue())
+        self.assertIn("this plan is for Orchestrator branch (https://branch.invalid); rerun with --orchestrator branch to use it", err.getvalue())
         refusals = [line for line in err.getvalue().splitlines() if "this plan is for" in line]
         self.assertTrue(refusals)
-        self.assertFalse(any("other.invalid" in line or "semir" in line for line in refusals))
-        with patch("edgeconnect_automation.cli._gateway", side_effect=self.target("https://ge.invalid", "ge")), patch("sys.stdin.isatty", return_value=False), patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", new_callable=io.StringIO) as err:
+        self.assertFalse(any("other.invalid" in line or "staging" in line for line in refusals))
+        with patch("edgeconnect_automation.cli._gateway", side_effect=self.target("https://branch.invalid", "branch")), patch("sys.stdin.isatty", return_value=False), patch("sys.stdout", new_callable=io.StringIO), patch("sys.stderr", new_callable=io.StringIO) as err:
             main(["--report-dir", "", "address-groups", "apply", "--approved-plan", str(path)])
         self.assertNotIn("this plan is for Orchestrator", err.getvalue())
         self.assertIn("non-interactive writes are refused", err.getvalue())
 
     def test_offline_firewall_plan_inherits_the_inventory_orchestrator(self):
         stamped = json.loads(self.clean_inventory.read_text(encoding="utf-8"))
-        stamped["orchestrator"] = {"name": "ge", "url": "https://ge.invalid"}
+        stamped["orchestrator"] = {"name": "branch", "url": "https://branch.invalid"}
         self.clean_inventory.write_text(json.dumps(stamped), encoding="utf-8")
         output = self.root / "fw-plan.json"
         self.run_cli("firewall", "plan", "--csv", str(self.csv), "--inventory", str(self.clean_inventory), "--output", str(output))
-        self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["orchestrator"], {"name": "ge", "url": "https://ge.invalid"})
+        self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["orchestrator"], {"name": "branch", "url": "https://branch.invalid"})
 
     def test_firewall_rule_rejected_by_appliance_is_failed_not_success(self):
         gateway = DeployGateway(baseline())
