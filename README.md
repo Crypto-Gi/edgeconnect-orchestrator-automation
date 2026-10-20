@@ -62,6 +62,16 @@ Next step    : Fix every blocking issue listed above, then rerun the same comman
 
 ## Quick start
 
+**Everything at once (macOS and Linux):** this CLI, the [preconfig toolkit](https://github.com/Crypto-Gi/edgeconnect-preconfig) and both agent skills, from `main`, with one shared `.env`:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/setup.sh)
+```
+
+It installs into `~/edgeconnect` (or `$EDGECONNECT_HOME`), adds `edgeconnect-auto` and `edgeconnect-preconfig` to `~/.local/bin`, never overwrites an existing `.env`, and asks which agents get the skills. Run it again to update. The preconfig repository is private, so git must be signed in to GitHub with access to it.
+
+**This CLI only:**
+
 ```bash
 git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
 cd edgeconnect-automation
