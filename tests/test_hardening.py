@@ -106,9 +106,14 @@ class FirewallHardeningTests(unittest.TestCase):
         self.assertIn("set an explicit priority", " ".join(occupied.pairs[0].errors))
 
     def test_malformed_csv_and_policy_shapes_raise_clear_errors(self):
-        for text in ('rule_key,action\n"k1,allow\n', "rule_key\x00,action\n"):
+        # Python 3.11+ csv accepts NUL bytes, so a NUL in a cell must still reject the whole file, not one segment pair.
+        for text in ('rule_key,action\n"k1,allow\n', "rule_key\x00,action\n", firewall_text({"source_address": "10.0.0.1", "description": "a\x00b"})):
             with self.assertRaisesRegex(ValidationError, "CSV-11"):
                 parse_firewall_document(text)
+        fixture = TempCsv(["Name", "Applications", "ParentGroups"], [{"Name": "a\x00b", "Applications": "app", "ParentGroups": ""}])
+        self.addCleanup(fixture.close)
+        with self.assertRaisesRegex(ValidationError, "CSV-11"):
+            parse_application_groups(str(fixture.path))
         for policy in ({"data": {"map1": {"1_2": "x"}}}, {"data": {"map1": {"1_2": {"prio": {"1": "x"}}}}}, {"data": {"map1": {"1_2": {"prio": []}}}}):
             with self.assertRaises(ResponseFormatError):
                 _policy_rules(policy, "1_2")

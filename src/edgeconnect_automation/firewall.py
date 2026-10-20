@@ -77,6 +77,9 @@ def parse_firewall_csv(path: str) -> List[FirewallRule]:
 
 
 def parse_firewall_document(text: str) -> FirewallParseResult:
+    if "\x00" in text:
+        # Python 3.11+ csv accepts NUL, which would block only one segment pair instead of the whole file.
+        raise ValidationError("[CSV-11] firewall CSV is not valid CSV near line {}: line contains NUL; fix: check for unbalanced quotes, NUL bytes, or a truncated file".format(text.count("\n", 0, text.index("\x00")) + 1))
     reader = csv.reader(io.StringIO(text, newline=""), strict=True)
     try:
         rows = list(reader)

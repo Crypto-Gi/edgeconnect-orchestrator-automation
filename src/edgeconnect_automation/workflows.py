@@ -53,7 +53,11 @@ def _read_exact_csv(path: str, expected: Sequence[str], issues: Optional[Issues]
     own = issues is None
     issues = Issues() if issues is None else issues
     with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle, strict=True)
+        text = handle.read()
+        if "\x00" in text:
+            # Python 3.11+ csv accepts NUL; keep rejecting the whole file on every version.
+            raise ValidationError("[CSV-11] {} is not valid CSV near line {}: line contains NUL; fix: check for unbalanced quotes, NUL bytes, or a truncated file".format(Path(path).name, text.count("\n", 0, text.index("\x00")) + 1))
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
         try:
             fieldnames = reader.fieldnames
             if fieldnames != list(expected) and (legacy is None or fieldnames != list(legacy)):
