@@ -2,9 +2,11 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from edgeconnect_automation.errors import ApprovalError, ValidationError
+from edgeconnect_automation.errors import ApprovalError, TransportError, ValidationError
 from edgeconnect_automation.firewall import FirewallExecutor, build_firewall_plan, parse_firewall_document, parse_firewall_text, rule_payload
+from edgeconnect_automation.gateway import OrchestratorGateway
 from edgeconnect_automation.models import Inventory
 
 
@@ -270,7 +272,36 @@ class FakeGateway:
         return dict(self.target_states or {"target": "verified"})
 
 
+class AuditedGateway(FakeGateway):
+    """Records one Orchestrator audit action per policy POST, carrying its comment; writes to failed_map complete with an error."""
+
+    correlate_audit = OrchestratorGateway.correlate_audit
+
+    def __init__(self, policies, failed_map):
+        super().__init__(policies)
+        self.failed_map = failed_map
+        self.actions = []
+        self.client = SimpleNamespace(config=SimpleNamespace(verification_timeout=0.05, poll_interval=0))
+
+    def post_policy(self, segment_map, value, comment):
+        super().post_policy(segment_map, value, comment)
+        ok = segment_map != self.failed_map
+        self.actions.append({"name": "Segment Security Policy Changed", "description": "comment: " + comment, "taskStatus": "COMPLETED", "completionStatus": ok})
+
+    def get_actions(self, start, end):
+        return list(self.actions)
+
+
 class FirewallExecutionTests(unittest.TestCase):
+    def test_audit_is_correlated_per_segment_pair(self):
+        text = HEADERS + "\n" + row("one") + "\n" + row("two", source_segment="C", destination_segment="D", source_zone="ZC", destination_zone="ZD", source_address="10.2.0.0/24")
+        inv = inventory({("A", "B"): policy(marker="first"), ("C", "D"): policy(marker="second")})
+        plan = build_firewall_plan(parse_firewall_text(text), inv)
+        fake = AuditedGateway({"10_20": policy(marker="first"), "30_40": policy(marker="second")}, failed_map="30_40")
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual([(item.status, item.message) for item in result.pairs], [("success", ""), ("partial", "audit correlation unresolved")])
+        self.assertEqual(result.status, "PARTIAL")
+
     def test_readback_loss_rolls_back_and_continues_other_pair(self):
         text = HEADERS + "\n" + row("one") + "\n" + row("two", source_segment="C", destination_segment="D", source_zone="ZC", destination_zone="ZD", source_address="10.2.0.0/24")
         inv = inventory({("A", "B"): policy(marker="first"), ("C", "D"): policy(marker="second")})
@@ -281,6 +312,35 @@ class FirewallExecutionTests(unittest.TestCase):
         self.assertEqual(result.pairs[0].rollback_status, "verified")
         self.assertEqual(result.pairs[1].status, "success")
         self.assertEqual(fake.policies["10_20"], policy(marker="first"))
+
+    def test_rollback_posts_the_tested_options_when_the_baseline_has_none(self):
+        bare = policy(marker="first")
+        del bare["options"]
+        plan = build_firewall_plan(parse_firewall_text(HEADERS + "\n" + row()), inventory({("A", "B"): bare}))
+        fake = FakeGateway({"10_20": bare}, corrupt_map="10_20")
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual(result.pairs[0].rollback_status, "verified")
+        self.assertEqual(fake.posts[-1][2], "run-10_20-rollback")
+        self.assertEqual(fake.posts[-1][1].get("options"), {"merge": False, "templateApply": False})
+        self.assertEqual(fake.posts[-1][1]["data"], bare["data"])
+
+    def test_failed_read_before_a_later_pair_keeps_the_earlier_result(self):
+        text = HEADERS + "\n" + row("one") + "\n" + row("two", source_segment="C", destination_segment="D", source_zone="ZC", destination_zone="ZD", source_address="10.2.0.0/24")
+        inv = inventory({("A", "B"): policy(marker="first"), ("C", "D"): policy(marker="second")})
+        plan = build_firewall_plan(parse_firewall_text(text), inv)
+        fake = FakeGateway({"10_20": policy(marker="first"), "30_40": policy(marker="second")})
+        original = fake.get_policy
+
+        def get_policy(segment_map):
+            if segment_map == "30_40":
+                raise TransportError("transport failure: TimeoutError", None, "GET", "/vrf/config/securityPolicies")
+            return original(segment_map)
+
+        fake.get_policy = get_policy
+        result = FirewallExecutor(fake).apply(plan, "run")
+        self.assertEqual([(item.status, item.message) for item in result.pairs], [("success", ""), ("failed", "not written: reading the policy before the write failed: transport failure: TimeoutError")])
+        self.assertEqual(result.status, "PARTIAL")
+        self.assertEqual([post[0] for post in fake.posts], ["10_20"])
 
     def test_unverified_target_is_partial(self):
         plan = build_firewall_plan(parse_firewall_text(HEADERS + "\n" + row()), inventory())

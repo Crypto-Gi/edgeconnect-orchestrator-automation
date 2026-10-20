@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
@@ -316,10 +317,10 @@ class OrchestratorGateway:
         return self._shape(self.client.get("/spPortal/internetDb/ipIntelligence/search", {"filter": name}), list, "address map search")
 
     def search_application(self, name: str) -> Any:
-        return self.client.request("POST", "/applicationDefinition/applications/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True)
+        return self.client.request("POST", "/applicationDefinition/applications/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True, read_only=True)
 
     def search_application_group(self, name: str) -> Any:
-        return self.client.request("POST", "/applicationDefinition/applicationTags/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True)
+        return self.client.request("POST", "/applicationDefinition/applicationTags/wildcard", json_body={"pattern": name, "limit": 100}, expected_status=(200,), expect_json=True, read_only=True)
 
     def get_appliances(self) -> Any:
         return self._shape(self.client.get("/appliance"), list, "appliances")
@@ -355,7 +356,7 @@ class OrchestratorGateway:
         # ponytail: alarms carry only the appliance timestamp; a 60 s skew allowance plus the priority filter limits misattribution.
         query = {"view": "active", "maxAlarms": 10000, "from": since_ms - 60000}
         while True:
-            alarms = self.client.request("POST", "/alarm/appliance", query=query, json_body={"nePks": targets}, expected_status=(200,), expect_json=True)
+            alarms = self.client.request("POST", "/alarm/appliance", query=query, json_body={"nePks": targets}, expected_status=(200,), expect_json=True, read_only=True)
             for alarm in alarms if isinstance(alarms, list) else []:
                 source = str(alarm.get("source", ""))
                 if source.startswith(self.POLICY_ALARM_SOURCE) and source[len(self.POLICY_ALARM_SOURCE):].isdigit():
@@ -368,13 +369,15 @@ class OrchestratorGateway:
 
     def correlate_audit(self, segment_map: str, run_reference: str) -> bool:
         start_time = int(time.time() * 1000) - 300000
+        # The whole comment must match: run-1_1 must not match run-1_10 or the run-1_1-rollback entry.
+        comment = re.compile(re.escape(run_reference) + r"(?![\w-])")
         deadline = time.monotonic() + getattr(getattr(self.client, "config", None), "verification_timeout", 120.0)
         while time.monotonic() < deadline:
             actions = self.get_actions(start_time, int(time.time() * 1000))
             if isinstance(actions, list):
                 for action in actions:
                     text = json.dumps(action, sort_keys=True)
-                    if run_reference in text and (segment_map in text or "Segment Security Policy Changed" in text):
+                    if comment.search(text) and (segment_map in text or "Segment Security Policy Changed" in text):
                         return action.get("taskStatus") == "COMPLETED" and action.get("completionStatus") is True
             time.sleep(getattr(getattr(self.client, "config", None), "poll_interval", 5.0))
         return False

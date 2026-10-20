@@ -18,6 +18,13 @@ from .errors import AuthenticationError, ConflictError, PermissionDeniedError, R
 from .util import redact
 
 
+class _RefuseRedirect(HTTPRedirectHandler):
+    """A redirect would resend the API key to the new location, possibly another host or plain HTTP; fail on the 3xx instead."""
+
+    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
+        return None
+
+
 class ApiClient:
     def __init__(
         self,
@@ -38,9 +45,10 @@ class ApiClient:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
             handler = _PinnedHTTPSHandler(context, config.tls_sha256)
-        self._opener = opener or build_opener(handler, _NoRedirect())
+        self._opener = opener or build_opener(handler, _RefuseRedirect)
         self._sleep = sleep
         self._jitter = jitter
+        self.write_requests = 0
 
     def request(
         self,
@@ -53,6 +61,7 @@ class ApiClient:
         expected_status: Iterable[int] = (200,),
         expect_json: bool = True,
         accept: str = "application/json",
+        read_only: bool = False,
     ) -> Any:
         method = method.upper()
         if json_body is not None and binary_body is not None:
@@ -72,6 +81,9 @@ class ApiClient:
         elif self.verbosity >= 2 and binary_body is not None:
             self._log(2, "binary_payload_bytes={}".format(len(binary_body)))
         attempts = self.config.max_read_attempts if method == "GET" else 1
+        if method != "GET" and not read_only:
+            # Counted before sending: a write that fails in transit may still have been applied.
+            self.write_requests += 1
         for attempt in range(attempts):
             try:
                 with self._opener.open(request, timeout=self.config.timeout) as response:
@@ -84,6 +96,8 @@ class ApiClient:
                     return self._decode(body, media_type, expect_json, status, method, path)
             except HTTPError as error:
                 status = int(error.code)
+                if 300 <= status < 400:
+                    raise TransportError("HTTP {} redirect refused; the API key is never sent to a redirected location, so set the base URL to the Orchestrator address that answers directly".format(status), status, method, path) from None
                 message = self._safe_error(error)
                 if method == "GET" and status in {429, 500, 502, 503, 504} and attempt + 1 < attempts:
                     self._sleep(self._delay(attempt, error.headers.get("Retry-After")))
@@ -205,13 +219,6 @@ class ApiClient:
                 except (TypeError, ValueError, OverflowError):
                     pass
         return min(0.5 * (2 ** attempt) + self._jitter() * 0.25, 10.0)
-
-
-class _NoRedirect(HTTPRedirectHandler):
-    """Turn every 3xx into an error: urllib would follow it to any host or to plain HTTP with the API key header."""
-
-    def redirect_request(self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str) -> None:
-        return None
 
 
 class _PinnedHTTPSHandler(HTTPSHandler):

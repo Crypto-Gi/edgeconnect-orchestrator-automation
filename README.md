@@ -6,7 +6,7 @@ Preview, validate, deploy, verify, and remove firewall policies and supporting o
 
 EdgeConnect Orchestrator is the central management system; this CLI turns reviewed CSV intent into guarded Orchestrator API workflows.
 
-**Current release:** `v1.2.3` / package version `1.2.3` — firewall rules and template ACL entries are sent in the address form appliances can compile, appliance-rejected rules are reported as FAILED, a RUN SUMMARY and per-row outcome report for every command, several Orchestrators in one `.env`, and strict template ACL deletion.
+**Current release:** `v1.2.4` / package version `1.2.4` — refuses HTTP redirects so API keys stay with the configured Orchestrator URL, correlates firewall audit comments per segment pair, applies the `FW-30` options contract to firewall deletion and rollback, reports any run that stops after writing as `PARTIAL`, previews AppExpress removals and downgrades before `APPLY`, and summarizes dry runs with skipped rows as `DRY_RUN`.
 
 The tool implements:
 
@@ -578,7 +578,7 @@ Credentials and authorization headers are never logged.
 | 2 | Validation failure or no eligible segment pair |
 | 3 | Approval refused or non-interactive write attempted |
 | 4 | Baseline drift |
-| 5 | PARTIAL or CRITICAL result |
+| 5 | PARTIAL or CRITICAL result, including a run that stopped (drift, validation, refusal) after it had started writing |
 
 Automation systems must treat code 5 as incomplete deployment requiring operator review.
 
@@ -633,7 +633,7 @@ The summary is printed to standard error, so it still appears when standard outp
 | `Rows` | One line per CSV row (or object): its outcome and why. Problem rows are listed first; the screen shows 25, the report log shows all |
 | `Why it stopped or what failed` | Every blocking issue, with its rule code, row, and fix |
 | `Appliances` | Reachability or verification per appliance, with hostname |
-| `Run ref` | Firewall writes only; the same reference appears in Orchestrator audit log comments |
+| `Run ref` | Firewall writes only; each segment pair's Orchestrator audit log comment is this reference followed by `-<segment map>`, for example `-0_0` |
 
 ### Row outcomes
 
@@ -647,6 +647,8 @@ The summary is printed to standard error, so it still appears when standard outp
 | `NOT ATTEMPTED` | This row is fine, but another row blocks its segment pair, template group, or the whole CSV |
 | `SKIPPED` | Row isolated from an otherwise successful run (application definitions and groups) |
 | `FAILED`, `NOT WRITTEN` | The write failed and was rolled back, drift stopped it, or an appliance refused to compile the rule (see below) |
+| `NOT DELETED` | A deletion run stopped or skipped this row after drift or an error; the reason is shown. Firewall deletion continues with other segment pairs; object deletion stops at the first problem |
+| `UNKNOWN` | The command stopped after it had started writing, and the result of this row is not known; check Orchestrator |
 
 A firewall error in one row blocks every row of the same segment pair, and a CSV validation error blocks the whole file. `NOT ATTEMPTED` makes that visible: fix the `BLOCKED` or `INVALID` rows and the rest can proceed.
 
@@ -703,7 +705,7 @@ Use the six concise deployment starters under:
 templates/edgeconnect/
 ```
 
-For broader testing, `examples/edgeconnect/` contains exactly two CSVs per workflow: one valid file covering supported field families and important boundaries, and one intentionally mixed valid/invalid file. The mixed files must fail validation and must never be applied.
+For broader testing, `examples/edgeconnect/` contains two CSVs per workflow: one valid file covering supported field families and important boundaries, and one intentionally mixed valid/invalid file, plus the `test3` template ACL pair. The mixed files must never be applied; use them only with validation or `--dry-run`. Validation rejects every mixed file as a whole. `app-groups deploy` is the exception: it skips invalid groups and the groups that depend on them, can still create the valid groups in the file, and ends PARTIAL (exit 5).
 
 Both valid sets form the same dependency chain: address groups and service groups → application definitions → application groups → template ACLs → firewall rules. Copy valid files before editing. Replace zone names, the template-group name, interface label, and any Address Map names with values from your Orchestrator. Always start with `validate`, `plan`, or `--dry-run`.
 

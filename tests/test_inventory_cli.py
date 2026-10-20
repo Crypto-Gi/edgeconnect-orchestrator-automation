@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from edgeconnect_automation.cli import DELETE_ACKNOWLEDGMENT, _approve_delete, _application_names, _approve_template_acls, _available_applications, _discover_inventory, _discover_template_acl_delete_plan, _template_acl_external_references, main
-from edgeconnect_automation.errors import ApprovalError
+from edgeconnect_automation.errors import ApprovalError, DriftError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
 from edgeconnect_automation.models import Inventory
 from edgeconnect_automation.workflows import ACL_HEADERS as TEMPLATE_ACL_HEADERS, APP_DEF_HEADERS, parse_template_acls
@@ -158,6 +158,39 @@ class DeployGateway:
         return [{"vrfName": "Default", "zoneName": "INSIDE", "zoneId": 1}, {"vrfName": "Default", "zoneName": "OUTSIDE", "zoneId": 2}]
 
 
+GUEST_ROW = "guest-rule,name,description,true,20000,Guest,Guest,GINSIDE,GOUTSIDE,10.1.0.0/24,,,,,,BuiltinApp,BuiltinGroup,tcp,,443,,,,,allow,true,2,false"
+
+
+class TwoPairGateway(DeployGateway):
+    """Segment pairs Default -> Default (map 0_0) and Guest -> Guest (map 1_1), each with its own policy and one rule at priority 20000."""
+
+    def __init__(self):
+        self.policies = {}
+        for segment_map, zone_key, line in (("0_0", "1_2", ROW), ("1_1", "3_4", GUEST_ROW)):
+            policy = baseline()
+            policy["data"]["map1"] = {zone_key: {"prio": {"20000": rule_payload(parse_firewall_text(HEADERS + "\n" + line)[0])}}}
+            self.policies[segment_map] = policy
+        self.references = []
+        self.reads = {}
+        self.change_on_read = {}
+
+    def get_policy(self, segment_map):
+        self.reads[segment_map] = self.reads.get(segment_map, 0) + 1
+        if (segment_map, self.reads[segment_map]) in self.change_on_read:
+            self.policies[segment_map]["settings"] = {"changed": "by someone else"}
+        return copy.deepcopy(self.policies[segment_map])
+
+    def post_policy(self, segment_map, candidate, reference):
+        self.references.append(reference)
+        self.policies[segment_map] = copy.deepcopy(candidate)
+
+    def get_segments(self):
+        return {"0": {"id": 0, "name": "Default"}, "1": {"id": 1, "name": "Guest"}}
+
+    def get_segment_zones(self):
+        return [{"vrfName": "Default", "zoneName": "INSIDE", "zoneId": 1}, {"vrfName": "Default", "zoneName": "OUTSIDE", "zoneId": 2}, {"vrfName": "Guest", "zoneName": "GINSIDE", "zoneId": 3}, {"vrfName": "Guest", "zoneName": "GOUTSIDE", "zoneId": 4}]
+
+
 class NoReferences:
     policy = {"data": {"map1": {}}}
     acls = {}
@@ -189,6 +222,24 @@ class BulkDeployGateway(NoReferences):
         self.values = [value for value in self.values if value["name"] != name]
 
 
+class ChangingBulkGateway(BulkDeployGateway):
+    """Two address groups; deleting the first one changes the second, as a concurrent operator would."""
+
+    def __init__(self):
+        super().__init__()
+        self.values = [
+            {"name": "new", "type": None, "rules": [{"includedIPs": ["10.0.0.0/24"], "excludedIPs": [], "includedGroups": [], "comment": None}]},
+            {"name": "other", "type": None, "rules": [{"includedIPs": ["10.1.0.0/24"], "excludedIPs": [], "includedGroups": [], "comment": None}]},
+        ]
+        self.deleted = []
+
+    def delete_address_group(self, name):
+        super().delete_address_group(name)
+        self.deleted.append(name)
+        for value in self.values:
+            value["rules"][0]["comment"] = "changed by someone else"
+
+
 class AppDefinitionDeployGateway(NoReferences):
     def __init__(self):
         self.inventories = {"portProtocolClassification": {}, "dnsClassification": [], "compoundClassification": {}}
@@ -216,6 +267,23 @@ class AppDefinitionDeployGateway(NoReferences):
     def delete_application_definition(self, base, identity):
         if base == "dnsClassification":
             self.inventories[base] = [value for value in self.inventories[base] if value.get("domain") != identity]
+
+
+class ChangingDefinitionGateway(AppDefinitionDeployGateway):
+    """Two domain definitions; deleting the first changes the second, as a concurrent operator would."""
+
+    def __init__(self):
+        super().__init__()
+        self.inventories["dnsClassification"] = [
+            {"domain": "monitor.example.com", "name": "monitor-app", "description": "monitor test", "priority": 100, "disabled": False},
+            {"domain": "second.example.com", "name": "second-app", "description": "second test", "priority": 100, "disabled": False},
+        ]
+        self.appexpress = {"monitor-app": {"id": 1, "name": "monitor-app", "monitor": True, "appExpressEnabled": False}}
+
+    def delete_application_definition(self, base, identity):
+        super().delete_application_definition(base, identity)
+        for value in self.inventories[base]:
+            value["description"] = "changed by someone else"
 
 
 class TemplateAclGateway:
@@ -488,6 +556,28 @@ class DeployCliTests(unittest.TestCase):
         self.assertTrue(apply_gateway.appexpress["monitor-app"]["monitor"])
         self.assertFalse(apply_gateway.appexpress["monitor-app"]["appExpressEnabled"])
 
+    def test_blank_appexpress_mode_removal_is_shown_before_apply(self):
+        row = {header: "" for header in APP_DEF_HEADERS}
+        row.update({"DefinitionType": "DOMAIN", "Name": "monitor-app", "Notes": "monitor test", "Enabled": "TRUE", "Confidence": "100", "Domain": "monitor.example.com", "AppExpressMode": ""})
+        with self.application_csv.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, APP_DEF_HEADERS)
+            writer.writeheader()
+            writer.writerow(row)
+        gateway = AppDefinitionDeployGateway()
+        gateway.inventories["dnsClassification"] = [{"domain": "monitor.example.com", "name": "monitor-app", "description": "monitor test", "priority": 100, "disabled": False}]
+        gateway.appexpress = {"monitor-app": {"id": 1, "name": "monitor-app", "monitor": False, "appExpressEnabled": True, "probes": [{"target": "monitor.example.com"}]}}
+        shown = []
+
+        def answer(prompt):
+            shown.append(stdout.getvalue())
+            return "N"
+
+        stdout = io.StringIO()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=answer), patch("sys.stdout", stdout):
+            self.assertEqual(main(["app-definitions", "deploy", "--csv", str(self.application_csv)]), 3)
+        self.assertIn("AppExpress: remove 1 (monitor-app)", shown[0])
+        self.assertEqual(gateway.appexpress_posts, 0)
+
     def test_application_group_missing_dependency_skips_group_and_dependents(self):
         groups_csv = Path(self.directory.name) / "application-groups-partial.csv"
         groups_csv.write_text("Name,Applications,ParentGroups\nbad-group,missing-app,\ndependent-group,present-app,bad-group\ngood-group,present-app,\n", encoding="utf-8")
@@ -507,9 +597,12 @@ class DeployCliTests(unittest.TestCase):
                 self.value = copy.deepcopy(value)
 
         dry_gateway = Gateway()
+        dry_report = Path(self.directory.name) / "application-groups-dry-run-report.json"
         with patch("edgeconnect_automation.cli._gateway", return_value=dry_gateway), patch("sys.stdin.isatty", return_value=False):
-            self.assertEqual(main(["app-groups", "deploy", "--csv", str(groups_csv), "--applications", str(applications), "--dry-run"]), 5)
+            self.assertEqual(main(["app-groups", "deploy", "--csv", str(groups_csv), "--applications", str(applications), "--dry-run", "--report", str(dry_report)]), 5)
         self.assertEqual(dry_gateway.posts, 0)
+        dry = json.loads(dry_report.read_text(encoding="utf-8"))
+        self.assertEqual((dry["status"], dry["changes_written"], dry["exit_code"]), ("DRY_RUN", "no", 5))
 
         apply_gateway = Gateway()
         report = Path(self.directory.name) / "application-groups-partial-report.json"
@@ -580,6 +673,20 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["address-groups", "delete", "--csv", str(self.address_csv)]), 0)
         self.assertFalse(apply_gateway.values)
 
+    def test_address_group_delete_stops_at_a_changed_group_and_reports_what_was_deleted(self):
+        self.address_csv.write_text("Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment\nnew,10.0.0.0/24,,,\nother,10.1.0.0/24,,,\n", encoding="utf-8")
+        report = Path(self.directory.name) / "delete-report.json"
+        gateway = ChangingBulkGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["address-groups", "delete", "--csv", str(self.address_csv), "--report", str(report)]), 5)
+        self.assertEqual(len(gateway.deleted), 1)
+        saved = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual((saved["status"], saved["changes_written"]), ("PARTIAL", "possibly; see the result details"))
+        kept = ({"new", "other"} - set(gateway.deleted)).pop()
+        self.assertEqual(saved["result"]["deleted"], gateway.deleted)
+        self.assertEqual(saved["result"]["not_deleted"], [kept])
+        self.assertEqual({row["item"]: row["outcome"] for row in saved["summary"]["rows"]}, {gateway.deleted[0]: "DELETED", kept: "NOT DELETED"})
+
     def test_service_group_delete_dry_run_and_confirmed_apply(self):
         service_csv = Path(self.directory.name) / "service.csv"
         service_csv.write_text("Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment\nweb,TCP,443,,,,,,\n", encoding="utf-8")
@@ -629,6 +736,72 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
         self.assertNotIn("1_2", gateway.policy["data"]["map1"])
 
+    def test_firewall_delete_gives_each_segment_pair_its_own_audit_comment(self):
+        self.csv.write_text(HEADERS + "\n" + ROW + "\n" + GUEST_ROW + "\n", encoding="utf-8")
+        gateway = TwoPairGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]), patch("edgeconnect_automation.cli.time.time", return_value=1000.0):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
+        self.assertEqual(gateway.references, ["edgeconnect-auto-delete-1000-0_0", "edgeconnect-auto-delete-1000-1_1"])
+
+    def test_firewall_delete_refuses_baseline_options_outside_the_tested_contract(self):
+        rule = parse_firewall_text(HEADERS + "\n" + ROW)[0]
+        policy = baseline()
+        policy["options"] = {"merge": True, "templateApply": False}
+        policy["data"]["map1"] = {"1_2": {"prio": {"20000": rule_payload(rule)}}}
+        gateway = DeployGateway(policy)
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=AssertionError("no confirmation expected")):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 2)
+        self.assertEqual(gateway.posts, 0)
+
+    def test_firewall_delete_sends_the_tested_options_when_the_baseline_has_none(self):
+        rule = parse_firewall_text(HEADERS + "\n" + ROW)[0]
+        policy = baseline()
+        del policy["options"]
+        policy["data"]["map1"] = {"1_2": {"prio": {"20000": rule_payload(rule)}}}
+        gateway = DeployGateway(policy)
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv)]), 0)
+        self.assertEqual(gateway.policy.get("options"), {"merge": False, "templateApply": False})
+
+    def test_firewall_delete_drift_after_an_earlier_pair_reports_partial_with_what_was_deleted(self):
+        self.csv.write_text(HEADERS + "\n" + ROW + "\n" + GUEST_ROW + "\n", encoding="utf-8")
+        report = Path(self.directory.name) / "delete-report.json"
+        gateway = TwoPairGateway()
+        gateway.change_on_read = {("1_1", 2): True}
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv), "--report", str(report)]), 5)
+        self.assertEqual(gateway.policies["0_0"]["data"]["map1"], {})
+        self.assertIn("3_4", gateway.policies["1_1"]["data"]["map1"])
+        saved = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual((saved["status"], saved["changes_written"]), ("PARTIAL", "possibly; see the result details"))
+        self.assertEqual({row["item"]: row["outcome"] for row in saved["summary"]["rows"]}, {"rule": "DELETED", "guest-rule": "NOT DELETED"})
+        self.assertEqual(saved["result"]["pairs"][1]["error"], "firewall policy changed after confirmation for 1_1")
+
+    def test_error_after_a_write_request_is_partial_never_nothing_written(self):
+        report = Path(self.directory.name) / "report.json"
+
+        def handler(args):
+            import edgeconnect_automation.cli as cli
+            cli._RUN.client = type("Client", (), {"write_requests": 1})()
+            raise DriftError("template group changed before its second write")
+
+        with patch("edgeconnect_automation.cli._firewall_delete", handler):
+            code = main(["firewall", "delete", "--csv", str(self.csv), "--report", str(report)])
+        saved = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual((code, saved["status"], saved["changes_written"], saved["exit_code"]), (5, "PARTIAL", "possibly; see the result details", 5))
+        self.assertEqual([row["outcome"] for row in saved["summary"]["rows"]], ["UNKNOWN"])
+
+    def test_firewall_delete_drift_before_any_write_is_still_drift_with_nothing_written(self):
+        self.csv.write_text(HEADERS + "\n" + ROW + "\n" + GUEST_ROW + "\n", encoding="utf-8")
+        report = Path(self.directory.name) / "delete-report.json"
+        gateway = TwoPairGateway()
+        gateway.change_on_read = {("0_0", 2): True, ("1_1", 2): True}
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["firewall", "delete", "--csv", str(self.csv), "--report", str(report)]), 4)
+        self.assertEqual(gateway.references, [])
+        saved = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual((saved["status"], saved["changes_written"]), ("DRIFT", "no"))
+
     def test_firewall_delete_matches_a_live_rule_written_without_prefix(self):
         bare = ROW.replace("10.0.0.0/24", "10.0.0.1")
         self.csv.write_text(HEADERS + "\n" + bare + "\n", encoding="utf-8")
@@ -677,6 +850,26 @@ class DeployCliTests(unittest.TestCase):
             self.assertEqual(main(["app-definitions", "delete", "--csv", str(self.application_csv)]), 0)
         self.assertFalse(gateway.inventories["dnsClassification"])
         self.assertFalse(gateway.appexpress)
+
+    def test_application_definition_delete_stops_at_a_changed_definition_and_reports_what_was_deleted(self):
+        rows = []
+        for name, domain, notes, mode in (("monitor-app", "monitor.example.com", "monitor test", "MONITOR"), ("second-app", "second.example.com", "second test", "OFF")):
+            row = {header: "" for header in APP_DEF_HEADERS}
+            row.update({"DefinitionType": "DOMAIN", "Name": name, "Notes": notes, "Enabled": "TRUE", "Confidence": "100", "Domain": domain, "AppExpressMode": mode})
+            rows.append(row)
+        with self.application_csv.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, APP_DEF_HEADERS)
+            writer.writeheader()
+            writer.writerows(rows)
+        report = Path(self.directory.name) / "delete-report.json"
+        gateway = ChangingDefinitionGateway()
+        with patch("edgeconnect_automation.cli._gateway", return_value=gateway), patch("sys.stdin.isatty", return_value=True), patch("secrets.choice", return_value="A"), patch("builtins.input", side_effect=["DELETE-AAAAAAAA", DELETE_ACKNOWLEDGMENT]):
+            self.assertEqual(main(["app-definitions", "delete", "--csv", str(self.application_csv), "--report", str(report)]), 5)
+        self.assertEqual([value["name"] for value in gateway.inventories["dnsClassification"]], ["second-app"])
+        saved = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual((saved["status"], saved["changes_written"]), ("PARTIAL", "possibly; see the result details"))
+        self.assertEqual((saved["result"]["deleted"], saved["result"]["not_deleted"], saved["result"]["deleted_appexpress"]), (["monitor-app"], ["second-app"], ["monitor-app"]))
+        self.assertEqual({row["item"]: row["outcome"] for row in saved["summary"]["rows"]}, {"monitor-app": "DELETED", "second-app": "NOT DELETED"})
 
     def test_firewall_deploy_tty_apply_writes(self):
         gateway = DeployGateway(baseline())

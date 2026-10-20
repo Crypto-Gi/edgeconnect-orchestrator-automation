@@ -9,8 +9,9 @@ from unittest.mock import patch
 from edgeconnect_automation.cli import main
 from edgeconnect_automation.errors import DriftError, ValidationError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
-from edgeconnect_automation.reporting import RunRecorder, build_summary, render
+from edgeconnect_automation.reporting import RunRecorder, build_summary, preview_text, render
 from edgeconnect_automation.util import fingerprint
+from edgeconnect_automation.workflows import plan_appexpress_modes
 from tests.test_hardening import firewall_text
 from tests.test_inventory_cli import DeployGateway, baseline
 
@@ -28,6 +29,18 @@ def inventory(policy):
 
 
 class RunReportTests(unittest.TestCase):
+    def test_appexpress_changes_are_listed_before_apply(self):
+        current = {
+            "zoom": {"id": 1, "name": "Zoom", "monitor": False, "appExpressEnabled": True, "probes": [{"target": "zoom.example.com"}]},
+            "teams": {"id": 2, "name": "Teams", "monitor": False, "appExpressEnabled": True, "probes": None},
+            "keep": {"id": 3, "name": "Keep", "monitor": True, "appExpressEnabled": False},
+        }
+        appexpress = plan_appexpress_modes({"Zoom": "OFF", "Teams": "MONITOR", "Webex": "MONITOR", "Keep": "MONITOR"}, current)
+        text = preview_text({"preview": {"kind": "app-definitions", "new": [], "no_ops": ["Zoom", "Teams", "Webex", "Keep"], "appexpress": appexpress}})
+        self.assertIn("AppExpress: remove 1 (Zoom), change 1 to monitor-only (Teams), add 1 (Webex)", text)
+        unchanged = plan_appexpress_modes({"Keep": "MONITOR"}, current)
+        self.assertNotIn("AppExpress", preview_text({"preview": {"kind": "app-definitions", "new": [], "no_ops": ["Keep"], "appexpress": unchanged}}))
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)

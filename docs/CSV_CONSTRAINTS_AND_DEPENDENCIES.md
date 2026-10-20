@@ -161,7 +161,7 @@ Code: `src/edgeconnect_automation/firewall.py`. Write/isolation unit: **source/d
 | FW-27 | Referenced address groups, service groups, applications, application groups exist in live inventory. | Done |
 | FW-28 | `acl` resolves to exactly one selected, nonempty central definition; conflicting central definitions block; missing association/appliance copy warns. | Done |
 | FW-29 | Routing segmentation must be enabled; inventories must be complete. | Done |
-| FW-30 | Baseline `options` must be `merge=false`, `templateApply=false`. | Done |
+| FW-30 | Baseline `options` must be `merge=false`, `templateApply=false`; checked by deploy and by `firewall delete`, and every policy write (deploy, delete, rollback) sends those options. | Done |
 
 ### 2.4 Isolation and outcome
 
@@ -752,7 +752,7 @@ matches, URL matching.
 
 ## 17. Implementation status (2026-09-24)
 
-Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edgeconnect/` contains six clean starter files. `examples/edgeconnect/` contains one broader valid CSV and one intentionally mixed valid/invalid CSV per workflow; tests prove every valid file parses, every mixed file is rejected, and cross-file dependencies resolve. Additional edge cases are generated in temporary directories by the standard-library test suite.
+Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edgeconnect/` contains six clean starter files. `examples/edgeconnect/` contains one broader valid CSV and one intentionally mixed valid/invalid CSV per workflow; tests prove every valid file parses, every mixed file is rejected by its strict parser, and cross-file dependencies resolve. `app-groups deploy` is the exception: it skips invalid groups and the groups that depend on them, can still create the valid groups in the file, and ends PARTIAL (exit 5). Additional edge cases are generated in temporary directories by the standard-library test suite.
 
 ### 17.1 Implemented
 

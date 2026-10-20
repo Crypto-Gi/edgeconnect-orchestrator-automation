@@ -6,11 +6,13 @@ from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.request import BaseHandler
+from urllib.response import addinfourl
 
 from edgeconnect_automation.cli import _approve, build_parser
 from edgeconnect_automation.client import ApiClient
 from edgeconnect_automation.config import Config, load_config, parse_dotenv
-from edgeconnect_automation.errors import ApprovalError, ConfigurationError, ResponseFormatError, ServerError
+from edgeconnect_automation.errors import ApprovalError, ConfigurationError, ResponseFormatError, ServerError, TransportError
 from edgeconnect_automation.util import redact
 
 
@@ -96,6 +98,43 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(request.data.endswith(("--" + boundary + "--\r\n").encode("ascii")))
         self.assertEqual(result, {"success": True})
 
+    def test_redirect_is_refused_and_api_key_never_follows_it(self):
+        seen = []
+
+        class Transport(BaseHandler):
+            handler_order = 100
+
+            def https_open(self, request):
+                seen.append((request.full_url, request.get_header("X-auth-token")))
+                headers = Message()
+                headers["Location"] = "http://elsewhere.invalid/gms/rest/x"
+                response = addinfourl(io.BytesIO(b""), headers, request.full_url, 302)
+                response.msg = "Found"
+                return response
+
+            def http_open(self, request):
+                seen.append((request.full_url, request.get_header("X-auth-token")))
+                response = addinfourl(io.BytesIO(b"{}"), Message(), request.full_url, 200)
+                response.msg = "OK"
+                return response
+
+        for method in ("GET", "POST"):
+            seen.clear()
+            client = ApiClient(self.config(), sleep=lambda _: None)
+            client._opener.add_handler(Transport())
+            with self.assertRaisesRegex(TransportError, "redirect refused"):
+                client.request(method, "/x", json_body={} if method == "POST" else None, expect_json=method == "GET")
+            self.assertEqual(seen, [("https://unit.invalid/x", "super-secret")])
+
+    def test_write_requests_are_counted_reads_are_not(self):
+        opener = Opener([Response(), Response(b"", 204), Response(b"[]"), Response(b"", 204)])
+        client = ApiClient(self.config(), opener=opener)
+        client.get("/zones")
+        client.post_json("/zones", {})
+        client.request("POST", "/applicationDefinition/applications/wildcard", json_body={}, read_only=True)
+        client.request("DELETE", "/ipObjects/addressGroup", query={"name": "x"}, expected_status=(204,), expect_json=False)
+        self.assertEqual(client.write_requests, 2)
+
     def test_strict_media_type_and_empty_json(self):
         with self.assertRaises(ResponseFormatError):
             ApiClient(self.config(), opener=Opener([Response(b"<html>", content_type="text/html")])).get("/x")
@@ -129,7 +168,7 @@ class ClientTests(unittest.TestCase):
         Thread(target=httpd.serve_forever, daemon=True).start()
         try:
             config = load_config(environ={"orchestrator_base_url": "http://127.0.0.1:{}".format(httpd.server_port), "orchestrator_api_key": "K"}, allow_http=True)
-            with self.assertRaises(ResponseFormatError):
+            with self.assertRaisesRegex(TransportError, "redirect refused"):
                 ApiClient(config).get("/x")
         finally:
             httpd.shutdown()

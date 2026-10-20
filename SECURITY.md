@@ -6,6 +6,7 @@
 - The CLI automatically reads only `./.env` from the current working directory; it never searches parents or the home directory. Verify your current directory before running a command.
 - Use an expiring least-privilege Orchestrator API key restricted by source IP where practical.
 - Keep TLS certificate and hostname verification enabled. Use a private CA bundle when required.
+- The client refuses HTTP redirects so the API key is only ever sent to the configured base URL. If Orchestrator sits behind a redirecting front end, configure the address that answers directly.
 - Treat CSV inputs, plans, reports, and readbacks as sensitive network configuration.
 
 ## Safe operation

@@ -279,6 +279,14 @@ def _policy_rules(policy: Mapping[str, Any], zone_key: str) -> Dict[str, Any]:
     return dict(rules)
 
 
+def options_error(baseline: Mapping[str, Any]) -> str:
+    """Policy writes are contract-tested only with merge=false/templateApply=false; another baseline mode could merge instead of replace."""
+    options = baseline.get("options")
+    if options is not None and (options.get("merge") is not False or options.get("templateApply") is not False):
+        return "[FW-30] baseline options are incompatible with the contract-tested merge=false/templateApply=false adapter; fix: review this segment pair's Security Policies settings in Orchestrator"
+    return ""
+
+
 def _ensure_candidate_shape(baseline: Mapping[str, Any]) -> Dict[str, Any]:
     candidate = copy.deepcopy(dict(baseline))
     candidate.setdefault("data", {}).setdefault("map1", {})
@@ -394,9 +402,8 @@ def build_firewall_plan(
         else:
             segment_map = "{}_{}".format(source_id, destination_id)
         baseline = copy.deepcopy(dict(inventory.policies.get(pair, {})))
-        options = baseline.get("options")
-        if options is not None and (options.get("merge") is not False or options.get("templateApply") is not False):
-            errors.append("[FW-30] baseline options are incompatible with the contract-tested merge=false/templateApply=false adapter; fix: review this segment pair's Security Policies settings in Orchestrator")
+        if options_error(baseline):
+            errors.append(options_error(baseline))
         candidate = _ensure_candidate_shape(baseline)
         seen: Dict[Tuple[str, str], Set[int]] = {}
         allocated_by_scope: Dict[ScopeKey, int] = {}
@@ -522,12 +529,16 @@ class FirewallExecutor:
             if not pair.eligible:
                 results.append(PairResult(pair.pair, "ineligible", "; ".join(pair.errors)))
                 continue
-            if pair.acl_dependencies:
-                current_acls = self.gateway.get_central_acls(set(pair.acl_dependencies))
-                if fingerprint(_acl_snapshot(current_acls, pair.acl_dependencies)) != pair.acl_inventory_fingerprint:
-                    results.append(PairResult(pair.pair, "drift", "central ACL dependency changed before write"))
-                    continue
-            current = self.gateway.get_policy(pair.segment_map)
+            try:
+                current_acls = self.gateway.get_central_acls(set(pair.acl_dependencies)) if pair.acl_dependencies else {}
+                current = self.gateway.get_policy(pair.segment_map)
+            except Exception as error:
+                # Earlier pairs may already be written: record this one and go on, never lose their results.
+                results.append(PairResult(pair.pair, "failed", "not written: reading the policy before the write failed: {}".format(error)))
+                continue
+            if pair.acl_dependencies and fingerprint(_acl_snapshot(current_acls, pair.acl_dependencies)) != pair.acl_inventory_fingerprint:
+                results.append(PairResult(pair.pair, "drift", "central ACL dependency changed before write"))
+                continue
             if fingerprint(current) != pair.baseline_fingerprint:
                 results.append(PairResult(pair.pair, "drift", "baseline changed before write"))
                 continue
@@ -541,9 +552,11 @@ class FirewallExecutor:
                 unresolved = any(status != "verified" for status in targets.values())
                 results.append(PairResult(pair.pair, "partial" if unresolved else "no_op", targets=targets))
                 continue
+            # One audit comment per segment pair: every pair's audit entry has the same action name, so a shared comment lets one pair's result stand in for another's.
+            pair_reference = "{}-{}".format(reference, pair.segment_map)
             try:
                 written_at = int(time.time() * 1000)
-                self.gateway.post_policy(pair.segment_map, pair.candidate, reference)
+                self.gateway.post_policy(pair.segment_map, pair.candidate, pair_reference)
                 readback = self.gateway.get_policy(pair.segment_map)
                 if not semantic_equal(readback, pair.candidate):
                     raise DriftError("normalized readback differs from candidate")
@@ -552,13 +565,13 @@ class FirewallExecutor:
                 targets = self.gateway.verify_targets(pair.segment_map, pair.candidate, reference, pair.acl_dependencies) if pair.acl_dependencies else self.gateway.verify_targets(pair.segment_map, pair.candidate, reference)
                 if not targets:
                     targets = {"expected_targets": "unknown"}
-                audit_verified = self.gateway.correlate_audit(pair.segment_map, reference) if hasattr(self.gateway, "correlate_audit") else True
+                audit_verified = self.gateway.correlate_audit(pair.segment_map, pair_reference) if hasattr(self.gateway, "correlate_audit") else True
                 message = "audit correlation unresolved" if not audit_verified else ""
                 message = "; ".join(filter(None, [message, appliance_rejections(self.gateway, targets, written_at, [priority for _, priority in pair.created_priorities])]))
                 unresolved = any(status != "verified" for status in targets.values()) or not audit_verified
                 results.append(PairResult(pair.pair, "partial" if unresolved else "success", message, targets=targets))
             except Exception as error:
-                rollback = self._rollback(pair, reference)
+                rollback = self._rollback(pair, pair_reference)
                 results.append(PairResult(pair.pair, "critical" if rollback != "verified" else "failed", str(error), rollback))
         statuses = {result.status for result in results}
         if statuses <= {"success", "no_op"}:
@@ -586,14 +599,16 @@ class FirewallExecutor:
                 rollback_maps = rollback_candidate.get("data", {}).get("map1", {})
                 if zone_key not in baseline_maps and not rollback_maps.get(zone_key, {}).get("prio"):
                     rollback_maps.pop(zone_key, None)
-            for key in set(rollback_candidate) - set(pair.baseline):
-                if key in {"options", "settings"}:
-                    rollback_candidate.pop(key, None)
-            if not semantic_equal(rollback_candidate, pair.baseline):
+
+            def comparable(value: Mapping[str, Any]) -> Dict[str, Any]:
+                # options/settings the write added to a baseline that had none are not a difference from that baseline.
+                return {key: item for key, item in value.items() if key in pair.baseline or key not in {"options", "settings"}}
+
+            if not semantic_equal(comparable(rollback_candidate), pair.baseline):
                 return "unresolved"
-            self.gateway.post_policy(pair.segment_map, rollback_candidate, reference + "-rollback")
+            self.gateway.post_policy(pair.segment_map, _ensure_candidate_shape(comparable(rollback_candidate)), reference + "-rollback")
             restored = self.gateway.get_policy(pair.segment_map)
-            return "verified" if semantic_equal(restored, pair.baseline) else "unverified"
+            return "verified" if semantic_equal(comparable(restored), pair.baseline) else "unverified"
         except Exception:
             return "unresolved"
 
