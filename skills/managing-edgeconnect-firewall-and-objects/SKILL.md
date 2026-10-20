@@ -1,16 +1,16 @@
 ---
 name: managing-edgeconnect-firewall-and-objects
-description: Use when creating, previewing or deleting HPE Aruba EdgeConnect Orchestrator Routing Segmentation firewall rules, zones, address groups, service groups, application definitions, application groups, AppExpress Monitor entries or template-group ACLs with the edgeconnect-auto CLI, or when writing, editing or fixing those CSV files from a plain-language request.
+description: Use when generating HPE Aruba EdgeConnect Orchestrator global Routing Segmentation firewall policies (including inter-segment) or application definitions in bulk with the edgeconnect-auto CLI, or when creating, previewing or deleting zones, address groups, service groups, application groups, AppExpress Monitor entries or template-group ACLs with it, or writing, editing or fixing those CSV files from a plain-language request.
 ---
 
 # Managing EdgeConnect Firewall Rules and Objects
 
 ## Overview
 
-Turn the user's request into CSV rows, prove them with the `edgeconnect-auto` CLI, and hand the one write step to the user. The CLI owns validation, dependency and collision checks, priorities, preview, drift detection, readback, rollback and reports. The CSV is the only file you edit.
+Turn the user's request into CSV rows, prove them with the `edgeconnect-auto` CLI, and hand the one write step to the user. The tool's main job is bulk: many global Routing Segmentation firewall policies across segment pairs, and many application definitions, neither of which the Orchestrator GUI can create in bulk. Everything else (zones, groups, application groups, template ACLs) exists so those rows have what they reference. The CLI owns validation, dependency and collision checks, priorities, preview, drift detection, readback, rollback and reports. The CSV is the only file you edit.
 
 **You never write to the Orchestrator; the user does, by typing `APPLY` in their own terminal.** Your part:
-1. **Turn the user's words into CSV rows.** Copy the matching file from `templates/edgeconnect/`, keep its header exactly, add or change rows, and show the user the rows you changed as a table before running anything. `references/request-to-csv.md` maps common requests to columns and shows how to edit a CSV without breaking its quoting.
+1. **Turn the user's words into CSV rows.** Copy the matching file from `templates/edgeconnect/`, keep its header exactly, and generate the rows with a script from the user's list, table or spreadsheet (see Bulk Work). Show the user the result before running anything: every row when there are a few, a summary plus the risky rows when there are many. `references/request-to-csv.md` maps common requests to columns and shows how to edit a CSV without breaking its quoting.
 2. **Run the read-only commands** below in order and stop at the first non-zero exit; show the user the message. Fix each blocking issue by editing the CSV as its `fix:` text says, then re-run. Never get past a check by blanking a field the user asked for, setting `broad_match_ack=TRUE`, or dropping a row, unless the user says yes to exactly that.
 3. **Hand the write to the user** with the exact command to run in their own terminal, from the same folder. Afterwards read the result with `report summarize` and tell them what changed.
 
@@ -24,9 +24,9 @@ Turn the user's request into CSV rows, prove them with the `edgeconnect-auto` CL
 
 ## When to Use
 
-- Add or delete Routing Segmentation firewall rules between zones, or create missing zones
-- Create or delete native address groups and service groups
-- Create or delete application definitions (IP protocol, TCP or UDP port, domain, compound), application groups and AppExpress Monitor entries
+- Generate many global Routing Segmentation firewall policies, within a segment or between segments, from a list, matrix or spreadsheet; or delete them
+- Generate many application definitions (IP protocol, TCP or UDP port, domain, compound) with their AppExpress Monitor state; or delete them
+- Create the zones, address groups, service groups and application groups those rows reference
 - Merge entries into template-group ACLs, or delete a complete ACL
 - Write, fix or explain one of these CSV files
 
@@ -55,6 +55,15 @@ Every command you run is read-only: `discovery`, `firewall validate`, `--dry-run
 `<workflow>` is `firewall`, `template-acls`, `address-groups`, `service-groups`, `app-definitions` or `app-groups`. The user runs the same `deploy`, `delete` or `zones create` command **without `--dry-run`** in their own terminal; the CLI shows a short change table, re-reads the baseline, and asks them to type `APPLY` (a zone also `CREATE <zone>`, a new template group its exact name; deletion a generated code and a final sentence).
 
 Exit codes: `0` success, verified no-op or clean preview; `1` runtime or API error; `2` validation failure; `3` approval refused or no terminal (nothing was written; a mistyped `APPLY` or code is safe, re-run the same command and finished rows show as already present or absent); `4` the live state changed since the preview (re-run the preview); `5` PARTIAL (rows skipped as conflicts or missing dependencies, unreachable appliances, or appliance-rejected rules: read the row table; a dry run can also exit `5`); `130` interrupted.
+
+## Bulk Work
+
+- **Generate, never retype.** Write a short Python script that reads the user's source (pasted table, CSV or spreadsheet export, list of hosts and ports, matrix of segments) and writes the CSV with the `csv` module. Keep the script beside the CSV so the batch can be regenerated after a fix. `references/request-to-csv.md` has generator examples.
+- **Stable keys.** Derive each firewall `rule_key` from the row's own fields (`corp-to-dc-web-443`) so reruns and deletes match; keys must be unique (`FW-21`). Application definition names are their identity: one name, one meaning.
+- **One pass finds every problem.** `firewall validate` reports every issue in every row at once; fix them all before the dry run.
+- **Blast radius.** One bad firewall row blocks its whole segment pair: no rule in that pair is written, other pairs continue. A row with a blank segment blocks the whole file. Application definitions are independent per row: a conflict is skipped and the rest proceed (exit `5`).
+- **Priorities.** Blank priorities are allocated per zone pair in CSV row order, from 20000 in steps of 10, so row order is rule order. That works only in an empty zone pair (`FW-23` otherwise); for a pair that already has rules, ask the user for a free priority range and fill it in. Always hand over the resolved CSV.
+- **Show a summary.** For many rows, report counts per segment pair, zone pair and action, then list every row that is broad (`0.0.0.0/0`, `::/0`, no port, `broad_match_ack=TRUE`) or denies traffic, so the user reviews what matters.
 
 ## Workflow
 

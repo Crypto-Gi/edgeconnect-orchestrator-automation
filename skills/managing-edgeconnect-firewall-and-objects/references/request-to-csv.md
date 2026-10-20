@@ -40,6 +40,54 @@ with open(OUT, "w", newline="", encoding="utf-8") as f:
 
 For other workflows change `TEMPLATE` and the row keys to that file's header. When adding to the user's own CSV, skip the copy and keep every row they already have. Before running anything, show the user the added or changed rows as a table with only the filled columns.
 
+## Bulk generation
+
+### Many firewall policies from the user's table
+
+The user often has the policy as a table: one line per flow, possibly across segments. Read it as it is and map each line to one row. Here the user's file `flows.csv` has columns `src_segment, src_zone, dst_segment, dst_zone, src, dst, proto, ports, action`:
+
+```python
+import csv
+
+TEMPLATE = "<clone>/templates/edgeconnect/firewall_rules.csv"
+with open(TEMPLATE, newline="", encoding="utf-8") as f:
+    header = csv.DictReader(f).fieldnames
+
+rows = []
+with open("flows.csv", newline="", encoding="utf-8") as f:
+    for flow in csv.DictReader(f):
+        key = "-".join([flow["src_segment"], flow["src_zone"], flow["dst_segment"], flow["dst_zone"],
+                        flow["proto"], flow["ports"].replace("|", "_")]).lower()
+        rows.append({
+            "rule_key": key, "rule_name": key[:60], "enabled": "TRUE",
+            "source_segment": flow["src_segment"], "destination_segment": flow["dst_segment"],
+            "source_zone": flow["src_zone"], "destination_zone": flow["dst_zone"],
+            "source_address": flow["src"], "destination_address": flow["dst"],
+            "protocol": flow["proto"], "destination_port": flow["ports"],
+            "action": flow["action"], "logging": "FALSE", "broad_match_ack": "FALSE",
+        })
+
+with open("firewall_rules.csv", "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_ALL, restval="")
+    writer.writeheader()
+    writer.writerows(rows)
+print(len(rows), "rows")
+```
+
+Rows with different `source_segment` and `destination_segment` are inter-segment policies; they are checked and written as their own segment pair. Rows in the same zone pair get priorities 20000, 20010, ... in file order, so sort the source first if the user cares about order. Then `firewall validate`, fix everything it lists, and preview with `--resolved-csv`.
+
+### Many application definitions from a list
+
+For "monitor these SaaS apps with AppExpress", one `DOMAIN` row per name and domain:
+
+```python
+apps = [("crm-saas", "*.crm.example.com"), ("hr-saas", "*.hr.example.net"), ("erp-saas", "erp.example.org")]
+rows = [{"DefinitionType": "DOMAIN", "Name": name, "Notes": "bulk import", "Enabled": "TRUE",
+         "Confidence": "100", "Domain": domain, "AppExpressMode": "MONITOR"} for name, domain in apps]
+```
+
+Write them with the template header as above. Port-based applications use `TCP_PORT` or `UDP_PORT` with `Port`. Several domains for one application are separate rows with the same `Name`: the domain (or port) is each row's identity, not the name. A domain or port an existing definition already owns is skipped as a conflict (exit `5`) while the rest are created.
+
 ## Worked examples
 
 ### "Let the POS network reach the payment gateway on HTTPS"
