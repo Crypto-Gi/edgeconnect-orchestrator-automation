@@ -60,6 +60,28 @@ Next step    : Fix every blocking issue listed above, then rerun the same comman
 | Orchestrator accepts a rule that the appliance refuses to compile | Appliance alarms are read after every write and the rejected row is reported as `FAILED` |
 | A deletion matches more than you meant | Deletion is exact-match only, with a fresh random code and a typed acknowledgment |
 
+## The EdgeConnect toolset
+
+Three repositories work together and read the same `.env` (`orch_N=<nickname>`, `<nickname>_base_url`, `<nickname>_api_key`):
+
+- **[edgeconnect-orchestrator-automation](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation)**: the `edgeconnect-auto` command line for bulk firewall rules, zones, address and service groups, application definitions and template ACLs, driven by CSV files with a dry run, drift checks and readback.
+- **[edgeconnect-preconfig](https://github.com/Crypto-Gi/edgeconnect-preconfig)**: turns a captured EdgeConnect appliance into a Jinja2 and CSV template, then renders, validates and (on approval) uploads one preconfiguration per site.
+- **[edgeconnect-mcp](https://github.com/Crypto-Gi/edgeconnect-mcp)**: an MCP server that gives an AI assistant guarded access to the Orchestrator REST API for lookups, troubleshooting and read-back. It is installed separately (plugin, `npx`, Docker); `setup.sh` does not install it.
+
+### One-step install of the tools and skills
+
+`setup.sh` installs the two command-line tools and the agent skills of all three repositories into one folder. It never installs or configures the MCP server.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/setup.sh)
+```
+
+It asks, with a default for every question (`-y` accepts them all):
+1. the install folder (default `~/edgeconnect`), where it clones or updates `main` of the repositories, builds one Python environment and one shared `.env`, and adds `edgeconnect-auto` and `edgeconnect-preconfig` to `~/.local/bin`;
+2. where the skills go: your account (`~`, every project) or only the current project folder.
+
+Running it again is safe: repositories are updated, an existing `.env` is kept, and skills that are already installed are reported and skipped while the missing ones are installed (`--update` refreshes the installed ones, `--skip-skills` installs only the tools). Needs `git`, Python 3.9+ and, for the skills, Node.js 18+. The script is the same file in all three repositories.
+
 ## Quick start
 
 ```bash
