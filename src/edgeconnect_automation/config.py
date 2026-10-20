@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import re
 import sys
@@ -17,6 +18,7 @@ ALIASES = {
     "api_key": ("orchestrator_api_key", "ORCHESTRATOR_API_KEY", "EDGECONNECT_API_KEY", "EC_API_KEY"),
     "ca_bundle": ("orchestrator_ca_bundle", "ORCHESTRATOR_CA_BUNDLE", "EDGECONNECT_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE"),
     "api_key_header": ("orchestrator_api_key_header", "ORCHESTRATOR_API_KEY_HEADER", "EDGECONNECT_API_KEY_HEADER"),
+    "tls_sha256": ("orchestrator_tls_sha256", "ORCHESTRATOR_TLS_SHA256"),
 }
 _SLOT = re.compile(r"^orch_(\d+)$")
 _NICKNAME = re.compile(r"^[a-z0-9_]+$")
@@ -36,6 +38,7 @@ class Config:
     alarm_wait: float = 30.0
     allow_http: bool = False
     name: str = ""
+    tls_sha256: Optional[str] = None
 
 
 def parse_dotenv(path: str) -> Dict[str, str]:
@@ -81,7 +84,7 @@ def _profiles(merged: Mapping[str, str]) -> Dict[str, Dict[str, str]]:
         if name in profiles:
             raise ConfigurationError("Orchestrator nickname {!r} is used by both {} and {}".format(name, profiles[name]["slot"], slot))
         profiles[name] = {"slot": slot}
-        for field in ("base_url", "api_key", "ca_bundle", "api_key_header"):
+        for field in ("base_url", "api_key", "ca_bundle", "api_key_header", "tls_sha256"):
             if merged.get("{}_{}".format(name, field)):
                 profiles[name][field] = merged["{}_{}".format(name, field)]
     return profiles
@@ -145,6 +148,7 @@ def load_config(
             raise ConfigurationError("Orchestrator {!r} ({}) needs both {}_base_url and {}_api_key".format(name, profile["slot"], name, name))
         ca_bundle = profile.get("ca_bundle") or configured_value("ca_bundle")
         api_key_header = profile.get("api_key_header") or configured_value("api_key_header")
+        tls_sha256 = profile.get("tls_sha256")
     else:
         if orchestrator:
             raise ConfigurationError("--orchestrator {} was given, but no named Orchestrators are configured; add orch_1={} plus {}_base_url and {}_api_key".format(orchestrator, orchestrator, orchestrator, orchestrator))
@@ -152,11 +156,14 @@ def load_config(
         api_key = configured_value("api_key")
         ca_bundle = configured_value("ca_bundle")
         api_key_header = configured_value("api_key_header")
+        tls_sha256 = configured_value("tls_sha256")
     if not base_url or not api_key:
         raise ConfigurationError("Orchestrator base URL and API key are required; provide them in ./.env, process environment variables, or --dotenv <path>")
     parsed = urlsplit(base_url)
     if parsed.scheme not in ({"https"} if not allow_http else {"https", "http"}) or not parsed.netloc:
         raise ConfigurationError("base URL must be an absolute {} URL".format("HTTPS" if not allow_http else "HTTP(S)"))
+    if parsed.scheme == "http" and not _is_loopback(parsed.hostname or ""):
+        raise ConfigurationError("HTTP is only allowed for localhost, 127.x and ::1 test fixtures; use HTTPS")
     if parsed.query or parsed.fragment or parsed.username or parsed.password:
         raise ConfigurationError("base URL must not include credentials, query, or fragment")
     path = parsed.path.rstrip("/")
@@ -167,6 +174,10 @@ def load_config(
     normalized_url = urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
     if ca_bundle and not Path(ca_bundle).is_file():
         raise ConfigurationError("CA bundle does not exist")
+    if tls_sha256:
+        tls_sha256 = tls_sha256.replace(":", "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", tls_sha256):
+            raise ConfigurationError("TLS certificate pin must be a SHA-256 fingerprint (64 hex digits, colons allowed)")
     return Config(
         base_url=normalized_url,
         api_key=api_key,
@@ -174,4 +185,14 @@ def load_config(
         api_key_header=api_key_header or "X-Auth-Token",
         allow_http=allow_http,
         name=name,
+        tls_sha256=tls_sha256 or None,
     )
+
+
+def _is_loopback(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
