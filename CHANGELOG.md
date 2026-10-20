@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New agent skill `skills/managing-edgeconnect-firewall-and-objects/`: an agent writes CSV rows from a plain-language request and runs only read-only commands; every write stays with a person typing `APPLY` in a terminal. Tested on a 9.7.1 lab Orchestrator.
 - Redaction now also hides pre-shared keys, auth keys, private keys and passphrases, and no longer hides flags and numbers under secret-looking keys (`passwordMinLen`, `csrfProtection`). Found by a full read sweep of a 9.7.1 lab, where tunnel and template-group `presharedkey` values were returned in clear.
 - New `<nickname>_tls_sha256` (and `orchestrator_tls_sha256`) pins a self-signed Orchestrator certificate by SHA-256 fingerprint instead of disabling verification.
 - The API client no longer follows HTTP redirects. It used to follow them to any host, or to plain HTTP, with the API key header attached.

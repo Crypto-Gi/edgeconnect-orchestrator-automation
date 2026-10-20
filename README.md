@@ -28,6 +28,7 @@ The tool implements:
 - [Installation](#new-machine-installation)
 - [First-use procedure](#first-use-procedure)
 - [Common workflows](#common-workflows)
+- [Using with an AI agent](#using-with-an-ai-agent)
 - [CSV-driven deletion](#csv-driven-deletion)
 - [Exit codes](#exit-codes)
 - [Run summary and report log](#run-summary-and-report-log)
@@ -92,6 +93,7 @@ edgeconnect-automation/
 ├── templates/edgeconnect/        Clean starter CSV templates
 ├── examples/edgeconnect/         Valid and intentionally invalid CSV examples
 ├── docs/                         Operator, CSV, architecture, and design guides
+├── skills/                       Agent skill: plain-language requests to CSV rows and dry runs
 ├── pyproject.toml                Python packaging and CLI entry point
 ├── .env.example                  Safe configuration example
 ├── SECURITY.md                   Security requirements
@@ -151,7 +153,8 @@ prod_base_url=https://<PROD_ORCHESTRATOR_FQDN>
 prod_api_key=<PROD_API_KEY>
 test_base_url=https://<TEST_ORCHESTRATOR_FQDN>
 test_api_key=<TEST_API_KEY>
-# Optional per nickname: <nickname>_ca_bundle, <nickname>_api_key_header
+# Optional per nickname: <nickname>_ca_bundle, <nickname>_api_key_header,
+#   <nickname>_tls_sha256 (pin a self-signed certificate by its SHA-256 fingerprint)
 
 # Optional: used when the command does not name one
 orch_default=prod
@@ -525,6 +528,18 @@ edgeconnect-auto app-groups deploy \
 
 The workflow validates application membership, parent references, and cycles while preserving the complete existing collection. A group with missing applications, missing parents, conflicting existing semantics, a parent cycle, or invalid identity is listed under `skipped_conflicts`; groups that depend on a skipped parent are also skipped. Independent groups may proceed after `APPLY`, and any skips produce partial exit code `5`.
 
+## Using with an AI agent
+
+`skills/managing-edgeconnect-firewall-and-objects/` is an agent skill. With it, an agent such as Claude Code turns a plain-language request or the policy table you already have ("let the POS network reach the payment gateway on 443", a spreadsheet of 200 inter-segment flows, a list of SaaS domains to monitor) into firewall or application definition CSV rows from `templates/edgeconnect/`, runs `discovery`, `firewall validate` and `--dry-run` previews until they are clean, and shows you the preview. It never writes: it gives you the exact command, you run it in your own terminal and type `APPLY`, and it then reads the result with `report summarize`.
+
+Install it from a clone of this repository, since the skill uses the clone's templates and docs:
+
+```bash
+npx skills add https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation
+# or, for Claude Code only:
+cp -R skills/managing-edgeconnect-firewall-and-objects ~/.claude/skills/
+```
+
 ## CSV-driven deletion
 
 Every configurable resource workflow supports `delete` with the same CSV used for deployment:
@@ -738,11 +753,19 @@ edgeconnect-auto --dotenv /absolute/path/to/other.env discovery
 
 ### Certificate verification fails
 
-Do not disable TLS verification. Add the approved CA chain:
+Do not disable TLS verification. A failure shows as `transport failure: URLError`. Add the approved CA chain:
 
 ```dotenv
 orchestrator_ca_bundle=/absolute/path/to/ca-bundle.pem
 ```
+
+A CA bundle only helps when the certificate names the host in the base URL. For a self-signed certificate, such as a lab Orchestrator reached by IP address, pin that one certificate instead (colons are optional):
+
+```dotenv
+orchestrator_tls_sha256=<SHA-256 fingerprint>   # or <nickname>_tls_sha256
+```
+
+Read the fingerprint with `openssl s_client -connect <host>:443 </dev/null 2>/dev/null | openssl x509 -noout -fingerprint -sha256` and compare it with the certificate shown in your browser before saving it.
 
 ### `error: string indices must be integers, not 'str'`
 
