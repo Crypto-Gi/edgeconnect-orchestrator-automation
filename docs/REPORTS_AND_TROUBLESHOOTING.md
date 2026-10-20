@@ -74,7 +74,7 @@ A firewall error in one row blocks every row of the same segment pair, and a CSV
 
 ### Status fields in report files
 
-Every `--report` file and every report-log record starts with the same fields and words, whatever the workflow: `status` (the `RESULT` values above), `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (the nickname, or `unnamed` for the single-Orchestrator lines) and `orchestrator_url` (for example `https://<ORCHESTRATOR_FQDN>`). Commands that never contact Orchestrator, such as `validate`, record `not contacted`. Scripts should read these. To list every run against one Orchestrator: `grep '"orchestrator": "ge"' reports/firewall.jsonl`. The workflow-specific results underneath are unchanged (for example firewall `result.status: SUCCESS` or template ACL `result.status: success`); a different older top-level status is kept as `detail_status`.
+Every `--report` file and every report-log record starts with the same fields and words, whatever the workflow: `status` (the `RESULT` values above), `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (the nickname, or `unnamed` for the single-Orchestrator lines) and `orchestrator_url` (for example `https://<ORCHESTRATOR_FQDN>`). Commands that never contact Orchestrator, such as `validate`, record `not contacted`. Scripts should read these. To list every run against one Orchestrator: `grep '"orchestrator": "prod"' reports/firewall.jsonl`. The workflow-specific results underneath are unchanged (for example firewall `result.status: SUCCESS` or template ACL `result.status: success`); a different older top-level status is kept as `detail_status`.
 
 ### Summarize a saved report
 
