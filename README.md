@@ -178,9 +178,12 @@ Additional conflict, drift, merge, deletion, and release-regression cases remain
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -v
+PYTHONPATH=src python3 -m compileall -q src tests scripts
 ```
 
-The default suite uses fake transports and makes no network calls. Live testing rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
+The standard-library tests generate invalid and edge-case CSVs in temporary directories. The default suite uses fake transports and makes no network calls.
+
+Live contract testing requires an isolated lab, an exact payload preview, an impact and rollback plan, explicit payload-specific approval, and verified cleanup. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Repository layout
 
