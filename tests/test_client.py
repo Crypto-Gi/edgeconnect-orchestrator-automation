@@ -55,7 +55,18 @@ def http_error(status, body=b""):
     return HTTPError("https://unit.invalid/x", status, "error", headers, io.BytesIO(body))
 
 
-class ClientTests(unittest.TestCase):
+class IsolatedCwdTestCase(unittest.TestCase):
+    """Run each test in an empty directory so load_config never picks up a real ./.env."""
+
+    def setUp(self):
+        workdir = tempfile.TemporaryDirectory()
+        previous = os.getcwd()
+        os.chdir(workdir.name)
+        self.addCleanup(workdir.cleanup)
+        self.addCleanup(os.chdir, previous)
+
+
+class ClientTests(IsolatedCwdTestCase):
     def config(self):
         return Config("https://unit.invalid", "super-secret", max_read_attempts=3)
 
@@ -189,14 +200,7 @@ class ClientTests(unittest.TestCase):
             load_config(environ=dict(env, lab_tls_sha256="abc"), orchestrator="lab")
 
 
-class ConfigAndCliTests(unittest.TestCase):
-    def setUp(self):
-        workdir = tempfile.TemporaryDirectory()
-        previous = os.getcwd()
-        os.chdir(workdir.name)
-        self.addCleanup(workdir.cleanup)
-        self.addCleanup(os.chdir, previous)
-
+class ConfigAndCliTests(IsolatedCwdTestCase):
     def test_config_aliases_and_https(self):
         config = load_config(environ={"EC_BASE_URL": "https://unit.invalid", "EC_API_KEY": "secret"})
         self.assertEqual(config.base_url, "https://unit.invalid/gms/rest")
