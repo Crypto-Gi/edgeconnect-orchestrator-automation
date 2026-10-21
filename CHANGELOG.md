@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.9 — 2026-10-21
+
+- `setup.sh` (the same file is in edgeconnect-preconfig and edgeconnect-mcp) keeps an `AGENTS.md` it wrote up to date: when you have not edited it, including one written by an earlier release, it is replaced and the run says "updated (you had not edited it)". A file you have edited is still kept, with the new text in `AGENTS.md.new`. It remembers what it wrote in `.AGENTS.md.setup-sha256`.
+- The last screen states the MCP server's state plainly: local (with its launcher), Docker (with the guide), not installed (and which answer installs it), or not part of this install.
+
 ## 1.2.8 — 2026-10-21
 
 - `setup.sh` (the same file is in edgeconnect-preconfig and edgeconnect-mcp) asks which agents to use once, from a table of 20. That answer applies to every picked skill, including ones already installed, and to the MCP server. The MCP server is added through `add-mcp` (tool calls are not auto-approved), through `devin mcp add` for Devin, or as a printed config to paste. When you choose the install folder, each agent that keeps MCP servers only for the whole user account (Windsurf, Cline, Goose, Antigravity, Claude Desktop) is asked about separately (y/n); with `--yes` it is skipped and the last screen shows the command to add it. `setup.sh` prints each agent's MCP settings file. Before adding the server it asks to continue, since an existing `edgeconnect` entry is replaced; with `--yes` it adds the server only when `--mcp stdio` is given, so a re-run never replaces your own `edgeconnect` entry silently. A Devin entry that points at another install folder is reported with the commands to switch it. The last screen shows how to fill in `.env` for what you picked. `--agents` now takes numbers or names for both skills and the MCP server; `--mcp-agents` remains an alias and `--refresh-skills` is no longer needed.
