@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.6 — 2026-10-21
+
+- `setup.sh` (the same file is in edgeconnect-preconfig and edgeconnect-mcp) first shows a table of the three repositories, with what each one does and the skill it installs, and asks which to install: numbers separated by commas (`1,3`) or `all`, the default. Only what you pick is cloned and set up; picking only the MCP repository installs just its guide skill, with no Python environment or `.env`. `--repos 1,3` (or `all`) answers it without asking. The MCP server itself is still never installed.
+
 ## 1.2.5 — 2026-10-20
 
 - A NUL byte anywhere in a CSV now rejects the whole file with `CSV-11` on every Python version. On Python 3.11 and later the csv module accepts NUL, so a firewall CSV with a NUL in one cell blocked only that segment pair (`CSV-10`) and the other pairs could still be deployed.
