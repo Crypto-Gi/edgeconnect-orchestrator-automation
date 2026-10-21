@@ -281,7 +281,7 @@ AGENTS_NEW="$ROOT/.AGENTS.md.setup"
 cat > "$AGENTS_NEW" <<'EOF'
 # EdgeConnect tools: which one to use, and how
 
-You are working with HPE Aruba EdgeConnect SD-WAN through an Orchestrator. Three tools are available here. Choose the tool first, using the table below, then follow that tool's skill. This file only routes and sets the answer style; it never replaces a skill's safety rules, so do not restate or relax them.
+You are working with HPE Aruba EdgeConnect SD-WAN through an Orchestrator. Three tools exist; "Installed here" at the end of this file says which ones this folder has. Choose the tool first, using the table below, then follow that tool's skill. This file only routes and sets the answer style; it never replaces a skill's safety rules, so do not restate or relax them.
 
 ## How these tools are used
 
@@ -326,7 +326,7 @@ Each tool has its own way of making sure a person approves a write. Never skip o
 ## This folder
 
 - `.env`: the one settings file shared by `edgeconnect-auto` and `edgeconnect-preconfig` (Orchestrator nicknames, URLs, API keys, TLS pins). Both commands find it by themselves, so run them from any folder.
-- `edgeconnect-orchestrator-automation/` and `edgeconnect-preconfig/`: the tools' source, kept current by `setup.sh`. Read them, do not edit them.
+- `edgeconnect-orchestrator-automation/` and `edgeconnect-preconfig/`, when installed: the tools' source, kept current by `setup.sh`. Read them, do not edit them.
 - Keep your own CSVs, reports and captures in a separate work folder, not in the tool folders. Never commit them or `.env`.
 - `edgeconnect-mcp/`, if it was picked, is there only for its guide skill. The MCP server is installed and run separately (for example in Docker) and is not part of this folder. If its tools are not available, say so and continue with the other two; do not try to install or start it.
 
@@ -340,16 +340,36 @@ Each tool has its own way of making sure a person approves a write. Never skip o
 - Keep replies short. Ask one question at a time, and only when a wrong guess would change what traffic or configuration is affected.
 - If a command fails, show the message as printed and the fix it suggests. Do not retry with different flags to get past a check.
 EOF
+# Listed from what the folder holds, so a later run that picks fewer repositories keeps the earlier ones.
+LIST_AUTO='- `edgeconnect-auto` and the skill `managing-edgeconnect-firewall-and-objects` (edgeconnect-orchestrator-automation)'
+LIST_PRECONFIG='- `edgeconnect-preconfig` and the skill `building-edgeconnect-preconfig-templates` (edgeconnect-preconfig)'
+LIST_MCP='- the skill `edgeconnect-guide` for the MCP server (edgeconnect-mcp); the server itself runs separately'
+LIST_END='A tool not listed here is not installed in this folder: do not run its commands. If the user needs it, tell them to run setup.sh again and pick it.'
+{
+  printf '\n## Installed here\n\n'
+  if [ -d "$ROOT/edgeconnect-orchestrator-automation/.git" ]; then printf '%s\n' "$LIST_AUTO"; fi
+  if [ -d "$ROOT/edgeconnect-preconfig/.git" ]; then printf '%s\n' "$LIST_PRECONFIG"; fi
+  if [ -d "$ROOT/edgeconnect-mcp/.git" ]; then printf '%s\n' "$LIST_MCP"; fi
+  printf '\n%s\n' "$LIST_END"
+} >> "$AGENTS_NEW"
+section() { sed -n '/^## Installed here$/,/^A tool not listed here is not installed/p' "$1"; }
+rest() { sed '/^## Installed here$/,/^A tool not listed here is not installed/d' "$1"; }
+LIST_LINES="$ROOT/.AGENTS.md.lines"
+printf '%s\n' '## Installed here' '' "$LIST_AUTO" "$LIST_PRECONFIG" "$LIST_MCP" "$LIST_END" > "$LIST_LINES"
 if [ ! -e "$ROOT/AGENTS.md" ]; then
   mv "$AGENTS_NEW" "$ROOT/AGENTS.md"
   echo "AGENTS.md: created"
 elif cmp -s "$AGENTS_NEW" "$ROOT/AGENTS.md"; then
   rm -f "$AGENTS_NEW"
   echo "AGENTS.md: already present, up to date"
+elif cmp -s <(rest "$AGENTS_NEW") <(rest "$ROOT/AGENTS.md") && ! section "$ROOT/AGENTS.md" | grep -qvxF -f "$LIST_LINES"; then
+  mv "$AGENTS_NEW" "$ROOT/AGENTS.md"  # only the generated list changed, and nobody edited it: keep it true
+  echo "AGENTS.md: already present, its Installed here list updated"
 else
   mv "$AGENTS_NEW" "$ROOT/AGENTS.md.new"
   echo "AGENTS.md: already exists and differs, kept unchanged; the current version is in AGENTS.md.new"
 fi
+rm -f "$LIST_LINES"
 if [ ! -e "$ROOT/CLAUDE.md" ]; then
   printf '@AGENTS.md\n' > "$ROOT/CLAUDE.md"
   echo "CLAUDE.md: created (points to AGENTS.md)"
