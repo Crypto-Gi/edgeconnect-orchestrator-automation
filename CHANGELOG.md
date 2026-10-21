@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.10 — 2026-10-21
+
+- The agent skills show the exact command for every operation the agent runs or proposes, in its own code block, ready to paste into a terminal, even when the agent runs it itself. Only the command lines are shown, not the files the agent prepared. This skill: every read-only `edgeconnect-auto` command, not only the write hand-off. The `AGENTS.md` that `setup.sh` writes says the same for all three tools (for an MCP call, the tool and request), and CSV edits are named file and cell first, then the command that uses them.
+
 ## 1.2.9 — 2026-10-21
 
 - `setup.sh` (the same file is in edgeconnect-preconfig and edgeconnect-mcp) keeps an `AGENTS.md` it wrote up to date: when you have not edited it, including one written by an earlier release, it is replaced and the run says "updated (you had not edited it)". A file you have edited is still kept, with the new text in `AGENTS.md.new`. It remembers what it wrote in `.AGENTS.md.setup-sha256`.
