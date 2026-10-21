@@ -6,7 +6,7 @@
 
 Orchestrator's GUI has no bulk path for global firewall policies or application definitions. This CLI turns a reviewed spreadsheet into guarded Orchestrator API workflows, and refuses anything that would silently overwrite live configuration. Every write is approval-gated, checked for drift, and verified through fresh readback.
 
-Current release: `v1.2.6` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
+Current release: `v1.2.7` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
 
 ## What a run looks like
 
@@ -18,7 +18,7 @@ RUN SUMMARY
 ==============================================================================
 Workflow     : firewall deploy
 Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
-Versions     : tool 1.2.6, Orchestrator 9.7.1.42046
+Versions     : tool 1.2.7, Orchestrator 9.7.1.42046
 CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
 RESULT       : BLOCKED
 Changes made : no
@@ -76,9 +76,9 @@ Three repositories that work together:
 bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/setup.sh)
 ```
 
-The same `setup.sh` is in all three repositories. It first shows a table of the three repositories, with what each one does and the skill it installs, and asks which to install: type the numbers separated by commas (for example `1,3`) or `all` (the default). Then it asks for the install folder (default: the folder you run it from, or `~/edgeconnect` when run from your home folder), then where the skills go: 1) only in that folder (the default) or 2) your user account (`~`). The skills installer then asks which agents get them. Everything you picked lands in the one folder, from `main`: the repositories, each one's skill, and for 1 and 2 a Python environment, one shared `.env` and the `edgeconnect-auto` (1) and `edgeconnect-preconfig` (2) commands in `~/.local/bin`. It also writes `AGENTS.md` (which tool an agent should use for which task) and a `CLAUDE.md` that points to it into that folder, so start your agent there; an `AGENTS.md` you have edited is never overwritten (the new text goes to `AGENTS.md.new`). Run it again to update: anything already installed is reported and kept, and only what is missing is added. Options: `--repos 1,3` (or `all`), `--dir PATH`, `--skills home|folder`, `--agents claude-code,codex`, `--refresh-skills`, `--yes`. The skills installer may offer its own `find-skills` skill once; answer No unless you want it.
+The same `setup.sh` is in all three repositories. It first shows a table of the three repositories, with what each one does and the skill it installs, and asks which to install: type the numbers separated by commas (for example `1,3`) or `all` (the default). If you pick 3, it also asks whether to install the MCP server: locally (stdio), added to the agents you choose (Claude Code and Codex through their own `mcp add` commands; for other apps it prints the config to paste), or in Docker over HTTPS, which you install by hand with the [MCP install guide](https://github.com/Crypto-Gi/edgeconnect-mcp/blob/main/docs/install.md). Then it asks for the install folder (default: the folder you run it from, or `~/edgeconnect` when run from your home folder), then where the skills and the MCP server go, one answer for both: 1) only in that folder (the default) or 2) your user account (`~`). The skills installer then asks which agents get them. Everything you picked lands in the one folder, from `main`: the repositories, each one's skill, and for 1 and 2 a Python environment, one shared `.env` and the `edgeconnect-auto` (1) and `edgeconnect-preconfig` (2) commands in `~/.local/bin`. It also writes `AGENTS.md` (which tool an agent should use for which task) and a `CLAUDE.md` that points to it into that folder, so start your agent there; an `AGENTS.md` you have edited is never overwritten (the new text goes to `AGENTS.md.new`). Run it again to update: anything already installed is reported and kept, and only what is missing is added. The local MCP server runs from `<folder>/bin/edgeconnect-mcp` with the shared `.env`. Options: `--repos 1,3` (or `all`), `--mcp stdio|docker|no`, `--mcp-agents claude-code,codex,other`, `--dir PATH`, `--skills home|folder`, `--agents claude-code,codex`, `--refresh-skills`, `--yes`. The skills installer may offer its own `find-skills` skill once; answer No unless you want it.
 
-Picking 3 installs only the MCP guide skill, `edgeconnect-guide`; `setup.sh` never installs the MCP server itself, which the [edgeconnect-mcp README](https://github.com/Crypto-Gi/edgeconnect-mcp#install) covers.
+Picking 3 installs the MCP guide skill, `edgeconnect-guide`, and, if you choose local, the stdio MCP server for your agents; a Docker server is installed by hand, as the [edgeconnect-mcp README](https://github.com/Crypto-Gi/edgeconnect-mcp#install) covers.
 
 ## Quick start
 
