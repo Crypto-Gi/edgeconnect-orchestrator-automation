@@ -2,7 +2,7 @@
 
 ## Scope and safety
 
-`edgeconnect-auto` is a Python 3.9+ standard-library-only tool for global routing-segmentation firewall policy, zones, native address/service groups, application groups, application definitions with integrated AppExpress desired state, and strict exact-match CSV deletion. It does not manage templates, appliance-local rule modification, Routing Segmentation enablement, semantically different existing-object updates, or automatic dependency deletion.
+`edgeconnect-auto` is a Python 3.9+ standard-library-only tool for global routing-segmentation firewall policy, template-group ACLs, zones, native address/service groups, application groups, application definitions with integrated AppExpress desired state, and strict exact-match CSV deletion. It does not manage firewall templates, appliance-local rule modification, Routing Segmentation enablement, semantically different existing-object updates, or automatic dependency deletion.
 
 The implementation is locally unit tested. API contracts were separately exercised in an isolated Orchestrator 9.7.1.42046 lab with one reachable ECOS 9.5.4.1 appliance: global policy create/readback/apply/rollback, native address/service imports, application definitions including compound, application groups, AppExpress monitor, audit correlation, and cleanup. This is not production certification or multi-appliance/multi-release validation. The global policy adapter uses the confirmed `merge=false` and `templateApply=false`; other releases require version-matched validation.
 
@@ -16,7 +16,7 @@ Every normal write command performs discovery, validation and preview in the sam
 4. Re-reads the affected baseline and aborts on drift.
 5. Verifies normalized saved-state readback.
 
-Zone creation additionally requires `CREATE <zone>` for each new zone. `--dry-run` performs reads and preview only, makes no writes, requires no TTY, and returns success when validation succeeds.
+Zone creation additionally requires `CREATE <zone>` for each new zone. `--dry-run` performs reads and preview only, makes no writes, requires no TTY, and returns success when validation succeeds (exit 5 when application groups or definitions skip rows).
 
 ## Installation and configuration
 
@@ -28,15 +28,15 @@ PYTHONPATH=src python3 -m edgeconnect_automation --help
 
 Supported runtime aliases include `orchestrator_base_url` / `ORCHESTRATOR_BASE_URL` / `EDGECONNECT_BASE_URL` / `EC_BASE_URL`, corresponding API-key aliases, CA-bundle aliases, and API-key-header aliases.
 
-Several Orchestrators can share one `.env`: register each with `orch_<N>=<nickname>` and set `<nickname>_base_url`, `<nickname>_api_key`, and optionally `<nickname>_ca_bundle` / `<nickname>_api_key_header`. Selection order: global `--orchestrator <nickname>`, then `orch_default` (a nickname or slot such as `orch_1`), then the only listed Orchestrator, then an interactive numbered menu. Non-interactive runs with several Orchestrators and no choice stop with a configuration error. Duplicate, reserved or invalid nicknames are rejected. The selected nickname and host are printed before every `APPLY` and deletion confirmation and in the RUN SUMMARY. When `orch_<N>` lines exist alongside the single-Orchestrator keys, those keys become one more choice with the nickname `orchestrator`. Plan and inventory files record their Orchestrator (`orchestrator: {name, url}`); `apply --approved-plan` and `firewall deploy --inventory` refuse them on any other Orchestrator before approval, naming only the Orchestrator the file belongs to. Never place credentials in command arguments, reports, templates or source files.
+Several Orchestrators can share one `.env`: register each with `orch_<N>=<nickname>` and set `<nickname>_base_url`, `<nickname>_api_key`, and optionally `<nickname>_ca_bundle` / `<nickname>_api_key_header` / `<nickname>_tls_sha256`. `orchestrator_ca_bundle` and `orchestrator_api_key_header` are the default for nicknames without their own; `orchestrator_tls_sha256` is not used once `orch_<N>` lines exist. Selection order: global `--orchestrator <nickname>`, then `orch_default` (a nickname or slot such as `orch_1`), then the only listed Orchestrator, then an interactive numbered menu. Non-interactive runs with several Orchestrators and no choice stop with a configuration error. Duplicate, reserved or invalid nicknames are rejected. The selected nickname and host are printed before every `APPLY` and deletion confirmation and in the RUN SUMMARY. When `orch_<N>` lines exist alongside the single-Orchestrator keys, those keys become one more choice with the nickname `orchestrator`. Plan and inventory files record their Orchestrator (`orchestrator: {name, url}`); `apply --approved-plan` and `firewall deploy --inventory` refuse them on any other Orchestrator before approval, naming only the Orchestrator the file belongs to. Never place credentials in command arguments, reports, templates or source files.
 
 ## Exit codes
 
 | Code | Meaning |
 |---:|---|
 | 0 | Success, verified no-op, or valid dry-run preview |
-| 1 | Runtime or API error |
-| 2 | Validation failure or no eligible firewall pair |
+| 1 | Runtime or API error; after `APPLY` the summary says `Changes made: unknown`, so check Orchestrator |
+| 2 | Validation failure, no eligible firewall pair, configuration error (for example a missing `.env` value) or command-line usage error |
 | 3 | Approval refusal or non-TTY write refusal |
 | 4 | Baseline drift |
 | 5 | PARTIAL or CRITICAL, including unresolved appliance verification, and any run that stopped (drift, validation, refusal) after it had started writing; exit codes 2, 3 and 4 always mean nothing was written |
@@ -44,7 +44,7 @@ Several Orchestrators can share one `.env`: register each with `orch_<N>=<nickna
 
 ## Run summary and report log
 
-Every command, including failed and refused runs, ends with a RUN SUMMARY on standard error: result, whether changes were made, exit-code meaning, counts, every blocking issue with its rule code and fix, warnings, appliance states with hostnames, and the next step. Each run is also appended to `reports/<workflow>.log` (summary text) and `reports/<workflow>.jsonl` (summary plus the complete preview and result) in the current directory. Use `--report-dir <folder>` or `EDGECONNECT_REPORT_DIR` to relocate the log and `--report-dir ""` to disable it. An explicit `--report <file>` is written on every outcome, including refusal and errors, and contains the same `summary`. Every report file and log record carries the same top-level `status`, `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (nickname) and `orchestrator_url`. The summary includes a per-row table (`BLOCKED`, `NOT ATTEMPTED`, `CREATED`, `ALREADY PRESENT` and so on). `edgeconnect-auto report summarize <file> [--last N] [--rows-csv rows.csv]` prints the summary and row table of any saved report or log, including reports from earlier versions, without contacting Orchestrator. See the README section "Run summary and report log".
+Every workflow command, including failed and refused runs, ends with a RUN SUMMARY on standard error (`report summarize` prints the saved summary instead and adds nothing to the log): result, whether changes were made, exit-code meaning, counts, every blocking issue with its rule code and fix, warnings, appliance states with hostnames, and the next step. Each run is also appended to `reports/<workflow>.log` (summary text) and `reports/<workflow>.jsonl` (summary plus the complete preview and result) in the current directory. Use `--report-dir <folder>` or the process environment variable `EDGECONNECT_REPORT_DIR` (it is not read from `.env`) to relocate the log and `--report-dir ""` to disable it. An explicit `--report <file>` is written on every outcome, including refusal and errors, and contains the same `summary`. Every report file and log record carries the same top-level `status`, `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (nickname) and `orchestrator_url`. The summary includes a per-row table (`BLOCKED`, `NOT ATTEMPTED`, `CREATED`, `ALREADY PRESENT` and so on). `edgeconnect-auto report summarize <file> [--last N] [--rows-csv rows.csv]` prints the summary and row table of any saved report or log, including reports from earlier versions, without contacting Orchestrator. See [Reports and troubleshooting](REPORTS_AND_TROUBLESHOOTING.md#run-summary-and-report-log).
 
 ## Default one-command workflows
 
@@ -63,7 +63,7 @@ A rule with every traffic match field blank produces API `match: {}` and matches
 
 A populated `acl` is an exclusive match mode and produces `match.acl` in the policy payload. Leave all ordinary match fields blank. The central ACL must be selected and nonempty; conflicting central definitions block the affected segment pair. An absent template association is reported, but a missing or mismatched ACL on a reachable target blocks submission for that segment pair. Live 9.7.1 testing proved that Orchestrator otherwise rejects the complete appliance security-map update. Unreachable/paused targets warn and remain PARTIAL. Global/effective readback must preserve the nonempty ACL, and reachable appliance ACL semantics are checked. ACL internal broadness does not require firewall `broad_match_ack`; firewall deletion never deletes the ACL. See [ACL match mode](CSV_REFERENCE.md#acl-match-mode).
 
-Discovery reads all managed appliances from `/appliance`, paused state from `/pauseOrchestration`, reachability per appliance from `/reachability/gms`, fresh effective policy from `/securityMaps?cached=false`, central ACLs from `/template/templateGroups`, template associations from `/template/applianceAssociation`, and fresh ACL inventories from `/acls?cached=false` for reachable targets when ACL references are requested. Built-in applications and groups are resolved with exact wildcard searches in addition to user-defined inventories. Global policy targets every managed appliance. Unreachable and paused targets warn and continue, but remain unverified and therefore produce PARTIAL after a write.
+Discovery reads all managed appliances from `/appliance`, paused state from `/pauseOrchestration`, reachability per appliance from `/reachability/gms`, fresh effective policy from `/securityMaps?cached=false`, central ACLs from `/template/templateGroups`, template associations from `/template/applianceAssociation`, and fresh ACL inventories from `/acls?cached=false` for reachable targets when ACL references are requested. Built-in applications and groups are resolved with exact wildcard searches in addition to user-defined inventories. Global policy targets every managed appliance. Unreachable and paused targets, and reachable appliances running ECOS below 9.5 (reported `unsupported`), warn and continue, but remain unverified and therefore produce PARTIAL after a write. After a write the tool polls each reachable appliance for up to 120 seconds per segment pair and then reads appliance alarms for up to 30 seconds, so a run with many pairs takes minutes.
 
 Exact local/global priority collisions invalidate that segment pair. Different local priorities receive no semantic analysis or warning. Zone IDs are unique per segment in the all-VRF mapping, so local priorities are checked by the effective source/destination zone-ID pair for both default and non-default segment pairs.
 
@@ -142,6 +142,25 @@ Use dependency order across commands: firewall rules, template ACLs, application
 ## Advanced read-only and plan-file commands
 
 `firewall validate`, `firewall plan`, object `plan`, and `firewall verify` remain available for diagnostics and offline contract tests. Advanced `apply --approved-plan` commands still show the exact preview and require TTY `APPLY`; they do not bypass drift checks. The default operator procedure is the one-command `deploy` or `zones create` workflow.
+
+Global options (`--dotenv`, `--orchestrator`, `--allow-http`, `-v`, `--report-dir`) go before the workflow name. Every option below comes from the command's own `--help`.
+
+| Command | Options | Notes |
+|---|---|---|
+| `discovery` | `[--output FILE]` | Read-only: release, segmentation state, segments, zones, segment-zone map, address and service groups, fingerprint |
+| `firewall validate` | `--csv FILE` | Local only; exit 0 valid, 2 invalid |
+| `firewall plan` | `--csv FILE --output PLAN [--inventory JSON] [--resolved-csv FILE] [--dry-run]` | Read-only. With `--inventory` it does not contact Orchestrator. Exit 0, 2 (no eligible pair) or 5 (some pairs ineligible) |
+| `firewall apply` | `--approved-plan PLAN [--report FILE] [--dry-run]` | Re-reads each baseline; drift stops that pair |
+| `firewall deploy` | `--csv FILE [--resolved-csv FILE] [--report FILE] [--inventory JSON] [--dry-run]` | `--inventory` still contacts Orchestrator to check the target |
+| `firewall delete` | `--csv FILE [--report FILE] [--dry-run]` | Explicit priority on every row |
+| `firewall verify` | `--run-id REF [--output FILE]` | Searches the last 24 hours of Orchestrator audit actions for `REF` (the `Run ref` of the summary); exit 5 when nothing matches |
+| `template-acls plan` / `apply` / `deploy` / `delete` | `plan --csv FILE --output PLAN`; `apply --approved-plan PLAN [--report FILE]`; `deploy` and `delete --csv FILE [--report FILE]`; all `[--dry-run]` | |
+| `zones plan-missing` / `apply` / `create` | `plan-missing --name ZONE [--name ZONE ...] --output PLAN`; `apply --approved-plan PLAN`; `create --name ZONE [...] [--report FILE]`; all `[--dry-run]` | Zone names: letters, digits, `_`; `Default` is reserved |
+| `address-groups`, `service-groups`, `app-definitions` `plan` / `apply` / `deploy` / `delete` | `plan --csv FILE --output PLAN`; `apply --approved-plan PLAN`; `deploy` and `delete --csv FILE [--report FILE]`; all `[--dry-run]` | `apply` has no `--report`; the report log still records it |
+| `app-groups plan` / `apply` / `deploy` / `delete` | as above, plus `[--applications JSON]` on `plan` and `deploy` | `--applications` is an offline JSON list of complete application names used instead of the live lookup |
+| `report summarize` | `FILE [--last N] [--rows-csv FILE]` | Files only; `--last 0` shows every run of a `.jsonl` log |
+
+Plan files carry a `report_fingerprint` and the Orchestrator they were made for. An edited plan fails with `approved plan fingerprint does not match` (firewall: `approved firewall plan is invalid or changed`); rebuild it with `plan` instead of editing it.
 
 ## Remaining release validation
 

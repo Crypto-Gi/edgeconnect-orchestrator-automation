@@ -44,7 +44,7 @@ orchestrator_api_key=<API_KEY>
 # orchestrator_ca_bundle=/absolute/path/to/private-ca.pem
 ```
 
-The base URL may be the host URL or may end in `/gms/rest`; it must not contain credentials, a query string, or another path. Commands load `./.env` from the current working directory by default, never search parent directories, and accept `--dotenv <PATH>` as an explicit override. Process environment variables take precedence.
+The base URL must use HTTPS and may be the host URL or may end in `/gms/rest`; it must not contain credentials, a query string, or another path. Commands load `./.env` from the current working directory by default, never search parent directories, and accept `--dotenv <PATH>` as an explicit override. Process environment variables take precedence. Several Orchestrators in one `.env`, self-signed certificates and the shared `.env` that `setup.sh` writes are in [Setup and configuration](SETUP_AND_CONFIGURATION.md).
 
 ## Verify
 

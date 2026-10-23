@@ -42,6 +42,8 @@ orchestrator_api_key=<ORCHESTRATOR_API_KEY>
 
 When `--dotenv` is omitted, the CLI loads only `./.env` from the current working directory. It never searches parent or home directories. Process environment variables override values from the file. Use `--dotenv /absolute/path/to/other.env` to select a different file.
 
+After `setup.sh`, the `edgeconnect-auto` command in `~/.local/bin` is a wrapper that always passes `--dotenv <install folder>/.env`, so it reads that shared file from any folder; CSVs and `reports/` still use the current folder. That `.env` starts with one Orchestrator under the nickname `lab` (`orch_1=lab`, `lab_base_url`, `lab_api_key`). It also holds keys for `edgeconnect-preconfig` (`EC_VALIDATORS`) and the MCP server (such as `<nickname>_mcp_get_only`); this CLI ignores them.
+
 ### Several Orchestrators in one `.env`
 
 To switch between Orchestrators without editing `.env` or your CSV files, list each one under a nickname. The nickname is what you type on the command line.
@@ -65,6 +67,7 @@ orch_default=prod
 - `<nickname>_base_url` and `<nickname>_api_key` hold that Orchestrator's settings.
 - `orch_default` accepts a nickname (`prod`) or a slot (`orch_1`).
 - Nicknames use letters, digits and `_`, and capitals don't matter. Don't use `default`, `orchestrator`, `edgeconnect` or `ec`.
+- `orchestrator_ca_bundle` and `orchestrator_api_key_header` are the default for every nickname that does not set its own. `orchestrator_tls_sha256` is not: once `orch_<number>` lines exist, set `<nickname>_tls_sha256` for each pinned Orchestrator.
 
 The tool picks an Orchestrator in this order:
 
@@ -80,7 +83,7 @@ edgeconnect-auto --orchestrator test firewall deploy --csv rules.csv --dry-run  
 
 The chosen Orchestrator is printed above every `APPLY` and deletion prompt (`Target Orchestrator: test (<host>)`) and on the `Orchestrator :` line of the RUN SUMMARY and report log. Check it before you confirm. The single-Orchestrator `orchestrator_base_url` / `orchestrator_api_key` lines work as before. If you add `orch_<number>` lines next to them, the old lines become one more choice with the nickname `orchestrator` (`--orchestrator orchestrator`, or `orch_default=orchestrator`). They are never silently ignored.
 
-Plan files (`plan --output`) and inventory files (`discovery --output`) record the Orchestrator they were made from. `apply --approved-plan` and `firewall deploy --inventory` refuse to use them on a different Orchestrator, before any approval prompt, and name only the Orchestrator the file belongs to:
+Plan files (`plan --output`) record the Orchestrator they were made from, and so do `discovery --output` files. `apply --approved-plan` refuses a plan made on a different Orchestrator, and `firewall deploy --inventory` refuses such an inventory file, before any approval prompt, naming only the Orchestrator the file belongs to. (`--inventory` takes the offline contract-test inventory format used by the tests, not a `discovery` file.)
 
 ```text
 this plan is for Orchestrator lab (https://<FQDN>); rerun with --orchestrator lab to use it

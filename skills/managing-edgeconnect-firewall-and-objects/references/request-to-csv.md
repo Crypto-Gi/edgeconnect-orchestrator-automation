@@ -150,7 +150,7 @@ List cells in this file use `|`, never a comma. Show the user the appliance list
 
 ### "Remove the rule we added for the old payment gateway"
 
-Deletion matches exactly. Copy that rule's row from the resolved CSV of the run that created it (its `priority` filled in) into a new file, then preview `firewall delete --csv <file> --dry-run`. If no resolved CSV exists, find the rule in `discovery` output and fill its live priority. The user approves deletion with three prompts; the agent never answers them.
+Deletion matches exactly. Copy that rule's row from the resolved CSV of the run that created it (its `priority` filled in) into a new file, then preview `firewall delete --csv <file> --dry-run`. If no resolved CSV exists, find the rule's live priority in the `baseline` of a firewall `deploy --dry-run` report (the `--report` file or `reports/firewall.jsonl`; `discovery` does not read firewall policies), or read it with the MCP server. The user approves deletion with three prompts; the agent never answers them.
 
 ## Questions to ask before writing
 

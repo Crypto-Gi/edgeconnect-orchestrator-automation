@@ -4,7 +4,7 @@ The RUN SUMMARY, row outcomes, report files and logs, and troubleshooting. Moved
 
 ## Run summary and report log
 
-Every command ends with a **RUN SUMMARY**, whatever happened: success, no-op, dry run, blocked, refused, drift, partial, interrupted, or an unexpected error. Think of it as the receipt at the end of a transaction: it tells you what happened, why, and what to do next, even when nothing was written.
+Every workflow command ends with a **RUN SUMMARY**, whatever happened: success, no-op, dry run, blocked, refused, drift, partial, interrupted, or an unexpected error. Think of it as the receipt at the end of a transaction: it tells you what happened, why, and what to do next, even when nothing was written.
 
 ```text
 ==============================================================================
@@ -12,7 +12,8 @@ RUN SUMMARY
 ==============================================================================
 Workflow     : firewall deploy
 Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
-Versions     : tool 1.2.3, Orchestrator 9.7.1.42046
+Versions     : tool 1.2.10, Orchestrator 9.7.1.42046
+Orchestrator : lab (https://<ORCHESTRATOR_FQDN>)
 CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
 RESULT       : BLOCKED
 Changes made : no
@@ -43,10 +44,11 @@ Next step    : Fix every blocking issue listed above, then rerun the same comman
 ==============================================================================
 ```
 
-The summary is printed to standard error, so it still appears when standard output is redirected.
+The summary is printed to standard error, so it still appears when standard output is redirected. `report summarize` is the one command without its own summary: it prints the saved one.
 
 | Line | Meaning |
 |---|---|
+| `Orchestrator` | The nickname and address the command used (only the address for the single-Orchestrator lines); not shown when Orchestrator was not contacted |
 | `RESULT` | `SUCCESS`, `NO_OP`, `DRY_RUN`, `VALID`, `PLANNED`, `BLOCKED`, `INVALID`, `REFUSED`, `DRIFT`, `PARTIAL`, `ZONES_CREATED_RERUN`, `INTERRUPTED`, or `ERROR` |
 | `Changes made` | `no`, `yes`, `possibly` (partial), or `unknown` (error or interruption after `APPLY`: check Orchestrator) |
 | `What was planned or done` | Counts per segment pair, template group, or object type; per-pair and per-group results, including rollback state |
@@ -100,7 +102,7 @@ You do not need `--report` to keep a record. Every run is appended to a log for 
 | Option | Effect |
 |---|---|
 | (none) | Log to `./reports/` in the current directory |
-| `--report-dir D:\ec-reports` or `EDGECONNECT_REPORT_DIR` | Log to another folder |
+| `--report-dir D:\ec-reports`, or `EDGECONNECT_REPORT_DIR` set in the process environment (not in `.env`) | Log to another folder |
 | `--report-dir ""` | Disable the automatic log for this run |
 | `--report reports/x.json` (per command) | Additionally write that one run to an exact file, overwritten each time. It is always written, even on refusal or error, and includes the same `summary` block, so it never shows an older run's result. |
 
@@ -121,12 +123,36 @@ They may still contain sensitive network configuration. Store and transfer them 
 
 ### Configuration is missing
 
-Run from the repository directory containing `.env`, provide process environment variables, or select another file explicitly:
+`Orchestrator base URL and API key are required; provide them in ./.env, process environment variables, or --dotenv <path>` (exit 2). Run from the directory containing `.env`, provide process environment variables, or select another file explicitly. The `edgeconnect-auto` command that `setup.sh` installs always reads `<install folder>/.env`.
 
 ```bash
 edgeconnect-auto discovery
 edgeconnect-auto --dotenv /absolute/path/to/other.env discovery
 ```
+
+### Several Orchestrators and no choice
+
+`multiple Orchestrators are configured (lab, prod); choose one with --orchestrator NAME or set orch_default in .env` (exit 2). Outside a terminal the tool cannot show its menu. Put `--orchestrator <nickname>` before the workflow name, or set `orch_default`. `unknown Orchestrator 'x'` lists the nicknames that exist.
+
+### `non-interactive writes are refused` or `non-interactive deletion is refused`
+
+Exit 3, nothing written. A write or deletion needs a person at a terminal to type `APPLY` (and the deletion code); it refuses to run from a script, a pipe or an agent tool. Run the command without `--dry-run` in your own terminal.
+
+### `this plan is for Orchestrator ...`
+
+A plan or inventory file made on another Orchestrator. Rerun with the `--orchestrator` it names, or build a new plan against this one.
+
+### `approved plan fingerprint does not match`
+
+The plan file was edited after `plan` wrote it (firewall: `approved firewall plan is invalid or changed`). Never edit a plan; change the CSV and run `plan` again.
+
+### `Orchestrator 9.3 or later is required`
+
+The tool refuses older releases before any write.
+
+### `HTTP 3xx redirect refused`
+
+Set the base URL to the address that answers directly; the API key is never sent to a redirected location.
 
 ### Certificate verification fails
 
@@ -148,7 +174,7 @@ Read the fingerprint with `openssl s_client -connect <host>:443 </dev/null 2>/de
 
 Versions before `1.1.2` crashed during firewall discovery when an Orchestrator returned user-defined port/protocol or compound application definitions in a shape other than a list of records per key. The crash happened before any write. Update to `1.1.2` or later (`pip show edgeconnect-automation` shows the installed version). Unrecognized entries are now skipped; a referenced application that still cannot be found is resolved through exact wildcard search or blocked with `DEP-01`.
 
-To see the full Python traceback for any unexpected runtime error, call the handler directly with a read-only dry run:
+To see the full Python traceback for an unexpected runtime error, add `-vv` before the workflow name (`edgeconnect-auto -vv firewall deploy --csv rules.csv --dry-run`), or call the handler directly with a read-only dry run:
 
 ```bash
 python -c "from edgeconnect_automation.cli import build_parser; a=build_parser().parse_args(['firewall','deploy','--csv','rules.csv','--dry-run']); a.handler(a)"

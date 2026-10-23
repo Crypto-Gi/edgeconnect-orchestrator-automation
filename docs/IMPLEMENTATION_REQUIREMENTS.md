@@ -164,7 +164,7 @@ If any other existing global rule is present and any incoming row lacks a priori
 
 After a successful automatic allocation, output a resolved CSV/plan containing the assigned priorities. A later rerun of the original priority-less CSV will encounter the now-populated pair and must stop rather than generate different identities.
 
-Maximum supported priority from the agreed requirement is 65535. No lower bound was established for explicit priorities; validate it against runtime behavior before writes.
+Explicit priorities are whole numbers 0–65535 (`FW-20`); automatic allocation stays below 65535.
 
 ## 7. Phase-One Firewall Fields
 
@@ -213,19 +213,27 @@ source_address
 source_address_group
 destination_address
 destination_address_group
+either_address
+either_address_group
 application
 application_group
 protocol
 source_port
 destination_port
-service_group
+either_port
+source_service_group
+destination_service_group
+either_service_group
 source_domain
 destination_domain
 either_domain
 action
 logging
 logging_level
+broad_match_ack
 ```
+
+Only `rule_key`, the four segment and zone columns, and `action` must be present; the others are optional and may be in any order (`templates/edgeconnect/firewall_rules.csv` has them all).
 
 Rules:
 
@@ -380,7 +388,7 @@ Additional phase-one create-only workflows:
 - Service groups: use Orchestrator's native GUI bulk-import CSV unchanged: `Name,Protocol,IncludedPorts,ExcludedPorts,IncludedGroups,ExcludedGroups,IcmpTypes,IcmpCodes,Comment`; direct multipart/form-data `/ipObjects/serviceGroup/bulkUpload` with `csvFile`. List cells are comma-separated and CSV-quoted. Protocols: TCP/UDP/ICMP/ICMPV6; native validation is all-or-nothing; same-name rows merge into multiple group rules; maximum nesting depth 2.
 - Pre-parse native CSVs for syntax, references, cycles, existing identities and conflicts; submit only create-only eligible groups, then verify full object readback. Identical existing groups are no-ops; differing existing groups are conflicts. Contract testing confirmed address include/exclude/nesting/multi-rule and TCP/ICMP service features. The 9.7.1 native importer rejected ICMPv6 type/code despite Swagger validation; treat that as a release-specific runtime failure, never as successful creation.
 - Application groups: application members plus parent-group relationships, with cycle/reference validation and full-collection preservation.
-- Application definitions: one universal CSV with `definition_type` and conditional type-specific fields.
+- Application definitions: one universal CSV with `DefinitionType` and conditional type-specific fields.
 - AppExpress desired state is managed only through each application-definition row's `AppExpressMode`. `OFF` requires no AppExpress entry; `MONITOR` ensures one exists. Preserve collection insertion order and append new entries. Orchestrator may reassign all numeric IDs from collection order, so verify names and semantic configuration while treating IDs as server-managed. If the AppExpress phase fails, report PARTIAL without deleting the valid application definition.
 
 All object workflows are create-only: identical existing identity is a no-op; different existing content is a conflict. Runtime partial failures stop subsequent writes and are reported; no automatic deletion rollback.
@@ -408,15 +416,15 @@ Firewall domain matching (`source_domain`, `destination_domain`, `either_domain`
 
 ## 15. CLI and Approval Model
 
-Proposed commands:
+Implemented plan-file commands (the everyday path is the one-command `deploy`; every command is listed in the [operator guide](OPERATOR_GUIDE.md#advanced-read-only-and-plan-file-commands)):
 
 ```text
 edgeconnect-auto firewall validate --csv rules.csv
-edgeconnect-auto firewall plan --csv rules.csv --dry-run
-edgeconnect-auto zones plan-missing --from-firewall-plan <plan>
-edgeconnect-auto zones apply --approved-plan <zone-plan>
-edgeconnect-auto firewall apply --approved-plan <firewall-plan>
-edgeconnect-auto firewall verify --run-id <id>
+edgeconnect-auto firewall plan --csv rules.csv --output firewall-plan.json [--resolved-csv rules-resolved.csv]
+edgeconnect-auto zones plan-missing --name POS --name RX --output zone-plan.json
+edgeconnect-auto zones apply --approved-plan zone-plan.json
+edgeconnect-auto firewall apply --approved-plan firewall-plan.json
+edgeconnect-auto firewall verify --run-id <run ref>
 ```
 
 Approval boundaries:
@@ -442,9 +450,9 @@ Never hard-code or display values. Prefer an expiring least-privilege API key, I
 
 Logging:
 
-- Default: stages, counts, validation failures, planned changes, verification status
-- `-v`: endpoint/method, sanitized diffs, resolution decisions, response status and timing
-- `-vv`: sanitized diagnostics without headers, cookies, credentials, or raw sensitive responses
+- Default: small results as JSON, a short change table before every approval prompt, and the RUN SUMMARY (counts, row outcomes, blocking issues, warnings, appliance states, next step)
+- `-v`: also the full sanitized preview, and each API method, path, status and response size
+- `-vv`: also sanitized request payloads and a Python traceback for unexpected runtime errors; never headers, cookies or credentials
 
 Reports and rollback snapshots are sensitive configuration data and require restricted permissions.
 

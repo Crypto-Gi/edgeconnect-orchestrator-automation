@@ -6,6 +6,8 @@ First-use procedure, every workflow with its template and commands, CSV-driven d
 
 ### 1. Run the test suite
 
+From a clone install (a `setup.sh` install can skip this step):
+
 ```bash
 python -m unittest discover -v
 ```
@@ -21,7 +23,7 @@ Expected result:
 
 - Exit code `0`
 - No Orchestrator write
-- Orchestrator release, Routing Segmentation state, segments, zones, address groups, service groups, appliance reachability, and an inventory fingerprint
+- Orchestrator release, Routing Segmentation state, segments, zones, the segment-zone map, address groups, service groups, and an inventory fingerprint (appliance reachability is read later, by each workflow's own discovery)
 
 ### 3. Copy, edit, and validate a firewall CSV
 
@@ -57,7 +59,7 @@ Expected result for an eligible plan:
 
 - Exit code `0`
 - No Orchestrator write
-- Complete baseline and candidate preview
+- A RUN SUMMARY with the planned changes per segment pair and one line per CSV row (`WOULD CREATE`, `ALREADY PRESENT`, `BLOCKED` and so on); the complete baseline and candidate are in the report file and the report log, and `-v` prints them
 - Eligible segment pairs and final rule priorities
 - Warnings for paused or unreachable appliances
 - A JSON dry-run report; a resolved CSV is also written when eligible rows exist
@@ -94,7 +96,7 @@ Use the generated resolved CSV for every future rerun when the original CSV omit
 
 ## Common workflows
 
-Unless a section states otherwise, a successful `--dry-run` exits `0`, performs no Orchestrator write, and prints the exact candidate. A real write requires interactive `APPLY`; a later exact rerun should be a verified no-op. Exit `5` means the result is intentionally incomplete and requires review, even when eligible changes succeeded.
+Unless a section states otherwise, a successful `--dry-run` exits `0`, performs no Orchestrator write, and ends with a RUN SUMMARY of the planned changes; the exact candidate is in the report log (and `--report` file) and `-v` prints it. A real write requires interactive `APPLY`; a later exact rerun should be a verified no-op. Exit `5` means the result is intentionally incomplete and requires review, even when eligible changes succeeded.
 
 ### Firewall rules
 
@@ -178,6 +180,8 @@ Firewall deployment detects missing zones. A missing base zone requires:
 3. Full zone-collection preservation and drift check
 4. Zone readback verification
 5. A complete firewall rerun
+
+After the zones are created the command exits `2` with RESULT `ZONES_CREATED_RERUN` and writes no firewall rule; run the same firewall command again. A zone that already exists but is not mapped to the row's segment is not created again: the run stops with `BLOCKED_SEGMENT_MAPPING` (exit `2`), and the mapping must be fixed in Orchestrator. Zones are offered only when the CSV has no validation errors.
 
 Zones can also be created directly:
 
@@ -281,6 +285,7 @@ Every configurable resource workflow supports `delete` with the same CSV used fo
 
 ```bash
 edgeconnect-auto firewall delete --csv firewall_rules.csv --report reports/firewall-delete.json --dry-run
+edgeconnect-auto template-acls delete --csv template_acls.csv --report reports/template-acls-delete.json --dry-run
 edgeconnect-auto address-groups delete --csv address_groups.csv --report reports/address-delete.json --dry-run
 edgeconnect-auto service-groups delete --csv service_groups.csv --report reports/service-delete.json --dry-run
 edgeconnect-auto app-groups delete --csv application_groups.csv --report reports/app-groups-delete.json --dry-run

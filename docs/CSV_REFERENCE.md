@@ -22,7 +22,7 @@ Shared rules for every CSV:
 - Numbers use plain ASCII digits without leading zeros (`443`, not `0443`, `４４３` or `006`); IP octets follow the same rule (`10.0.0.10`, not `10.0.0.010`). Priorities and confidence values are converted to integers, so `01` is still accepted there.
 - Domains reject labels that start or end with `-`, all-numeric names such as `10.0.0.1`, and the word `any`. IPv6 zone identifiers (`fe80::1%eth0`) are rejected.
 - `firewall validate` rejects a `rule_key` used on more than one row (`FW-21`).
-- Booleans accept `TRUE/FALSE`, `YES/NO`, `1/0`, `ENABLED/DISABLED`.
+- Booleans accept `TRUE/FALSE`, `YES/NO`, `1/0`, `ENABLED/DISABLED`, `ENABLE/DISABLE`, in any case.
 - Domains accept `example.com`, `*.example.com`, or `*example.com`. A wildcard anywhere else, empty labels, leading or trailing dots, and labels over 63 characters are rejected.
 - Protocol values are `ip`, `tcp`, `udp`, `tcp/udp`, `icmp`, `icmpv6`, or a protocol number 0–255.
 
@@ -93,7 +93,7 @@ A nonempty `acl` selects an exclusive match mode. Leave every address, address-g
 
 ```csv
 rule_key,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,acl,action,logging,broad_match_ack
-acl-001,FALSE,30000,Default,Default,H_INSIDE,H_OUTSIDE,lab25-test1,allow,FALSE,FALSE
+acl-001,FALSE,30000,Default,Default,H_INSIDE,H_OUTSIDE,test-51-acl,allow,FALSE,FALSE
 ```
 
 The ACL must exist with at least one entry in a selected central Access Lists template. Identical definitions in multiple groups are accepted with a warning; conflicting definitions block the affected segment pair. An absent template association is reported. A missing or semantically different ACL on any reachable target blocks the affected segment pair because Orchestrator 9.7.1 rejects the complete appliance security-map update. Unreachable or paused targets warn and remain PARTIAL because their ACL state cannot be proven. Post-write verification requires the nonempty ACL name in global and effective policy readback and checks the ACL body on reachable appliances.
@@ -297,13 +297,14 @@ Compound rules:
 
 ## Delete reuse
 
-The same firewall, address-group, service-group, application-group, and application-definition CSVs are accepted by each workflow's `delete` subcommand. Delete never interprets a partial row as a selector: every live rule or object must match the complete parsed CSV semantics. Firewall deletion also requires explicit priorities on every row. Missing resources are no-ops; different live semantics block the command.
+The same firewall, template ACL, address-group, service-group, application-group, and application-definition CSVs are accepted by each workflow's `delete` subcommand. Delete never interprets a partial row as a selector: every live rule or object must match the complete parsed CSV semantics. Firewall deletion also requires explicit priorities on every row. Missing resources are no-ops; different live semantics block the command.
 
 References also block deletion:
 
 - Address and service groups referenced by any global firewall rule or a central template ACL (including `|` group lists).
 - Application groups referenced by a global firewall rule or a central template ACL.
-- Application definitions whose application name would disappear while a global firewall rule or a central template ACL still references it (matched case-insensitively).
+- Application definitions whose application name would disappear while a global firewall rule or a central template ACL still references it (matched case-insensitively), and any definition named in an application group.
+- Template ACLs referenced by a global firewall rule, another template, or an appliance route map, or associated with an unreachable appliance (`DEL-08`). `template-acls delete` removes a complete ACL only when every live entry matches the CSV, and leaves the template group in place.
 
 The error lists every referencing rule.
 

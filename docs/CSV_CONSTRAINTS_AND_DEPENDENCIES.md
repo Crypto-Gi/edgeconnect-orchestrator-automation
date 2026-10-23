@@ -1,6 +1,6 @@
 # CSV Constraints and Dependencies
 
-Status: **Implemented (2026-09-24).** All decisions D1–D14 are resolved. §17 records what was implemented, the deliberate deviations from the plan, and deferred items; it takes precedence over the per-row status tags below, which record the pre-implementation analysis.
+Status: **Implemented (2026-09-24), with later additions in §18 and §19.** All decisions D1–D14 are resolved. §17 records what was implemented, the deliberate deviations from the plan, and deferred items; §17 to §19 take precedence over the per-row status tags below, which record the pre-implementation analysis. For the current user-facing rules read [CSV reference](CSV_REFERENCE.md).
 
 Scope: every CSV the CLI accepts, the rules each row must satisfy, the rules between rows, the
 dependencies between workflows, and the implementation/test plan for the missing checks.
@@ -140,7 +140,7 @@ Code: `src/edgeconnect_automation/firewall.py`. Write/isolation unit: **source/d
 | FW-09 | Within-family Either exclusivity (§1.3). Reported as `DIR-01`; `FW-09` is not emitted. | Done |
 | FW-10 | Cross-family mixed direction is allowed for compatibility; within-family Either exclusivity remains mandatory. | D1 resolved |
 | FW-11 | Duplicate/empty list members (VAL-03, VAL-04). | Gap |
-| FW-12 | Host bits in CIDR (e.g. `12.1.73.1/24`) are accepted and preserved verbatim for GUI compatibility; warn that the effective network is `12.1.73.0/24`. | D3 resolved: accept + warn |
+| FW-12 | Host bits in CIDR (e.g. `198.51.100.1/24`) are accepted and preserved verbatim for GUI compatibility; warn that the effective network is `198.51.100.0/24`. | D3 resolved: accept + warn |
 | FW-14 | IP literals use the compatibility grammar (§14.2): address/CIDR/dotted mask/ranged octets/wildcard octets, including range/wildcard + mask combinations observed in GUI/API. Today firewall rejects ranges/wildcards. | Gap (confirmed) |
 | FW-15 | Protocol `tcp/udp` is a valid literal (Swagger/portal definitions/API exact readback); allow with ports. | Gap (confirmed) |
 | FW-16 | `application` + `application_group` together are ANDed (vendor ACL doc/readback); keep allowed. | Done |
@@ -272,7 +272,7 @@ Status: matrix **Done** (`_reject_unused_fields`).
 | AD-04 | `Confidence` integer `1..100`. | Done |
 | AD-05 | `AppExpressMode` `OFF` or `MONITOR` only (single source of truth). | Done |
 | AD-06 | Each type's required value is present and in range: `DOMAIN` needs `Domain` (VAL-09: wildcard only as leading `*.`, partial gap), `IP_PROTOCOL` needs `ProtocolNumber` 0-255 and `Port` blank or 0, port types need one `Port` 1-65535. | Done / Partial (VAL-09 Gap) |
-| AD-07 | Application names are **not case-sensitive** (vendor doc). Duplicate detection and dependency lookups must compare case-insensitively. Name grammar is type-specific: compound stays `[A-Za-z0-9_-]{1,31}` (Swagger); TCP/UDP definitions accept dots (API exact-readback of `lab25.dot.probe`). | Gap (confirmed) |
+| AD-07 | Application names are **not case-sensitive** (vendor doc). Duplicate detection and dependency lookups must compare case-insensitively. Name grammar is type-specific: compound stays `[A-Za-z0-9_-]{1,31}` (Swagger); TCP/UDP definitions accept dots (API exact-readback of `test-51.dot.probe`). | Gap (confirmed) |
 | AD-08 | AppExpress monitoring is limited to **50 applications** (vendor doc). Existing MONITOR entries + new MONITOR rows > 50 must block. | Gap |
 | AD-09 | Address Map definition type (IPv4 range, organization, country, Microsoft instance/category, proxy) is not supported by the CSV. | Unsupported (deferred) |
 | AD-06 | `IP_PROTOCOL` with `ProtocolNumber` 6 or 17 should use `TCP_PORT`/`UDP_PORT` if a port is intended; `IP_PROTOCOL 6` with port `0` is legal (all TCP). Document only. | Done (doc) |
@@ -428,7 +428,7 @@ Application definitions (+ AppExpress) ─┬→ App groups ┤
 ### 9.2 Delete order
 
 ```text
-Firewall rules → Template ACLs (separate, OI-032) → App groups
+Firewall rules → Template ACLs (`template-acls delete`) → App groups
 → Application definitions (+ AppExpress) → Service groups → Address groups
 ```
 
@@ -438,8 +438,8 @@ Firewall rules → Template ACLs (separate, OI-032) → App groups
 | DEL-02 | Full table + generated code + `I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION`. | Done |
 | DEL-03 | Group deletion order computed within the batch; non-target group referencing a target blocks. | Done |
 | DEL-04 | App definition deletion blocked if an app group references it. | Done |
-| DEL-05 | Address/service group deletion **not** blocked when a global firewall rule references the group. | Gap — must block |
-| DEL-06 | App definition / app group deletion **not** blocked when a firewall rule or a template ACL references it. | Gap — must block |
+| DEL-05 | Address/service group deletion is blocked while a global firewall rule or a central template ACL references the group. | Done (was a gap before 1.1.0) |
+| DEL-06 | App definition / app group deletion is blocked while a firewall rule or a template ACL references it. | Done (was a gap before 1.1.0) |
 | DEL-07 | Compound deletion: resolve current ID immediately before delete, re-verify body. | Done |
 | DEL-08 | Template ACL deletion: complete exact CSV/central/appliance semantics; zero firewall/template/route-map references; reachable associated targets; strict confirmations; central and exact passthrough appliance deletion; absence and preservation verification. | Done |
 
@@ -646,8 +646,8 @@ The GUI (and the native bulk importers) are the only real validators, so they ar
 | `src_port` **and** `either_port` in one rule (`20-30\|90` both) | global firewall 20030, also on 0.NE | API does not enforce Either exclusivity. Keep our rule (ambiguous semantics); likely a stale GUI toggle value. |
 | `dst_ip` literal + `either_addrgrp_groups` in one rule | firewall 20030 | D1 resolved: allow cross-family mixed direction for compatibility. |
 | `application` + `app_group` together (incl. `app_group=any`) | firewall 20040, ACLs | Coexistence is real (FW-16). Swagger says "mutually exclusive" for ACL entries — Swagger text is wrong or stale. |
-| `dst_ip 12.1.73.1/24`, ACL `dst_ip 10.10.10.1/24` | firewall 20010, ACL test3 | Host bits kept verbatim, no normalization. D3 is a semantics question only; no readback mismatch. |
-| ACL `src_ip 1.1.1.1-255/32` (range + CIDR) | test3 ACL | Compatibility form: GUI-created and API-preserved; accept with warning despite vendor-doc conflict. |
+| `dst_ip 198.51.100.1/24`, ACL `dst_ip 10.10.10.1/24` | firewall 20010, ACL test3 | Host bits kept verbatim, no normalization. D3 is a semantics question only; no readback mismatch. |
+| ACL `src_ip 192.0.2.1-255/32` (range + CIDR) | test3 ACL | Compatibility form: GUI-created and API-preserved; accept with warning despite vendor-doc conflict. |
 | Domain `*youtube.com`, `*google.com`, `*nametests.com` | ACL, compound, firewall | Wildcard **without** a dot is accepted by GUI. VAL-09 must allow a leading `*` prefix; do not force `*.`. |
 | Firewall `either_dns` | firewall 20000 | Global firewall supports a domain family; our firewall CSV has no domain columns (new gap FW-17). |
 | Compound `protocol=ip` with `src_port`/`dst_port` | compound id 2 | Ports do not require tcp/udp in compound (CMP-05 resolved: allowed). |
@@ -678,7 +678,7 @@ Owner approved temporary unassociated template/API probes and native importer pr
 | ACL priority `0` | API stores it, but vendor range is 1..65535 → reject locally. |
 | ACL priority `65535` | Accepted/read back exactly → allow. |
 | Disabled compound canonical payload | `tcp/udp`, comma-separated ports/IP, ISO geo `US`, DSCP `46`, label ID `15`, address map `Office365Common` accepted/read back exactly; deleted; baseline restored. |
-| Disabled TCP definition `lab25.dot.probe` | Dot in non-compound app name accepted/read back; deleted. |
+| Disabled TCP definition `test-51.dot.probe` | Dot in non-compound app name accepted/read back; deleted. |
 | Address group range + dotted mask | Native importer accepted/read back `10.10-20.0.0/255.255.0.0`. |
 | Address group name length | 64 accepted; 65 rejected: `Group name cannot be longer than 64 characters.` |
 | Service group ICMP type range | Native importer accepted/read back `4-8`. |
@@ -775,7 +775,7 @@ Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edg
 
 | Plan item | Implemented behaviour | Evidence |
 |---|---|---|
-| FW-06 / ACL-03 "ports require tcp, udp or tcp/udp" | Ports are also allowed with a **blank** protocol (and `6`/`17`); any other explicit protocol is rejected | GUI-created firewall rule 20030 and GUI-created ACL `test3/lab25-test3` priority 1020 store ports with no protocol; rejecting blank would refuse real GUI configuration |
+| FW-06 / ACL-03 "ports require tcp, udp or tcp/udp" | Ports are also allowed with a **blank** protocol (and `6`/`17`); any other explicit protocol is rejected | GUI-created firewall rule 20030 and GUI-created ACL `test3/<probe ACL>` priority 1020 store ports with no protocol; rejecting blank would refuse real GUI configuration |
 | AD-11 "reject the same name across definition types" | Allowed; instead, all rows for one application must use one spelling (case-insensitive) | Portal definitions reuse one application name across several entries (e.g. `Teams-Audio` compounds 50002/50003); an application defined by port plus domain is a normal pattern |
 | Lab example `*gamma*` domain | Replaced with `*gamma.example.com` | All 108,605 vendor portal domain definitions use `*.` form; `*gamma*` was API-only |
 | Lab/template compound interface `lan0`, `lan0.10` | Replaced with interface-label names (`Data`, `Voice`) | Interface is stored as a label ID; raw interface names remain deferred |
@@ -830,3 +830,19 @@ Code: shared rules in `src/edgeconnect_automation/validation.py`. `templates/edg
 | AG-17 | Warning when an excluded address or CIDR lies outside every included address. | Done |
 | Response shapes | Unexpected nested discovery or policy shapes raise `ResponseFormatError` instead of a raw Python error; a malformed zone container is never treated as empty. `-vv` prints the traceback. | Done |
 | Reports | A blocked firewall or template-ACL deploy still writes `--report` with status `BLOCKED`. | Done |
+
+## 19. Rule IDs added after 1.2.0
+
+These IDs appear in messages but were not in the tables above.
+
+| ID | Rule | Status |
+|---|---|---|
+| FW-31 | A segment pair whose source or destination segment name does not exist blocks that pair. | Done |
+| FW-32 | A missing source or destination zone in the row's segment blocks the pair; `firewall deploy` offers to create the zone (§8). | Done |
+| FW-33 | Warning: a single address is sent as `/32` (`/128`) and a dotted mask as a prefix length, because appliances reject the original forms (D14). | Done |
+| FW-34 | The existing rule at this priority is this same rule written without `/32` or with a dotted mask; remove it with `firewall delete` and the original CSV, then deploy. | Done |
+| FW-35 | Two CSV rows use the same priority in one zone pair. | Done |
+| ACL-20 | `TemplateGroup` is required; `ACLName` must be a real name, not `NewACL`, without `\|` or `,`. | Done |
+| ACL-21 | `ACLUpdateMode` and `TemplateApplyMode` must be `MERGE`. | Done |
+| ACL-22 | `Application` and `ApplicationGroup` hold one name each. | Done |
+| ACL-29 | Warning: the template ACL form of `FW-33`. | Done |
