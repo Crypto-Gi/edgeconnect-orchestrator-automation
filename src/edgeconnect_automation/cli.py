@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .client import ApiClient
 from .config import load_config
-from .errors import ApprovalError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
+from .errors import ApprovalError, ConfigurationError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
 from .firewall import FirewallExecutor, _ensure_candidate_shape, build_firewall_plan, canonical_rule, normalize_rule, options_error, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
 from .gateway import OrchestratorGateway
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
@@ -45,10 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate.set_defaults(handler=_firewall_validate)
     plan = firewall_sub.add_parser("plan", help="build a read-only firewall plan")
     plan.add_argument("--csv", required=True)
-    plan.add_argument("--inventory", help="offline inventory JSON")
+    plan.add_argument("--inventory", help="offline contract-test inventory JSON (not a discovery --output file) used instead of live discovery; plan then never contacts Orchestrator")
     plan.add_argument("--output", required=True)
     plan.add_argument("--resolved-csv")
-    plan.add_argument("--dry-run", action="store_true")
+    plan.add_argument("--dry-run", action="store_true", help=argparse.SUPPRESS)  # refused: plan is always read-only
     plan.set_defaults(handler=_firewall_plan)
     apply = firewall_sub.add_parser("apply", help="apply an approved firewall plan")
     apply.add_argument("--approved-plan", required=True)
@@ -57,7 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.set_defaults(handler=_firewall_apply)
     deploy = firewall_sub.add_parser("deploy", help="discover, preview, approve, apply, and verify in one command")
     deploy.add_argument("--csv", required=True)
-    deploy.add_argument("--inventory", help="offline inventory JSON for contract tests")
+    deploy.add_argument("--inventory", help="offline contract-test inventory JSON (not a discovery --output file) used instead of live discovery; deploy still contacts Orchestrator to check its release and to write and verify")
     deploy.add_argument("--resolved-csv")
     deploy.add_argument("--report")
     deploy.add_argument("--dry-run", action="store_true")
@@ -402,6 +402,8 @@ def _firewall_validate(args: argparse.Namespace) -> int:
 
 
 def _firewall_plan(args: argparse.Namespace) -> int:
+    if args.dry_run:
+        raise ConfigurationError("firewall plan is already read-only and never writes; remove --dry-run (use firewall deploy --dry-run to preview a deployment)")
     document = parse_firewall_document(Path(args.csv).read_text(encoding="utf-8-sig"))
     pairs = set(document.pair_errors) | {rule.pair for rule in document.rules}
     source: Mapping[str, Any] = {}
@@ -597,34 +599,47 @@ def _handle_firewall_missing_zones(
     return 2 if result["status"] in {"success", "no_op"} else 5
 
 
+_INVENTORY_FORMAT = (
+    "--inventory expects the offline inventory JSON used by the contract tests "
+    "(segments {name: id}, zones {\"segment|zone\": id}, policies {\"source|destination\": policy}, ...), "
+    "not a discovery --output file"
+)
+
+
 def _inventory_from_dict(value: Mapping[str, Any]) -> Inventory:
-    zones = {}
-    for key, zone_id in value.get("zones", {}).items():
-        segment, zone = key.split("|", 1)
-        zones[(segment, zone)] = int(zone_id)
-    policies = {}
-    for key, policy in value.get("policies", {}).items():
-        source, destination = key.split("|", 1)
-        policies[(source, destination)] = policy
-    local = {}
-    for key, priorities in value.get("local_priorities", {}).items():
-        local[tuple(key.split("|", 3))] = {int(item) for item in priorities}
-    return Inventory(
-        segments={str(key): int(item) for key, item in value.get("segments", {}).items()},
-        zones=zones,
-        policies=policies,
-        address_groups=set(value.get("address_groups", [])),
-        service_groups=set(value.get("service_groups", [])),
-        applications=set(value.get("applications", [])),
-        application_groups=set(value.get("application_groups", [])),
-        acls=value.get("acls", {}),
-        appliance_acls=value.get("appliance_acls", {}),
-        local_priorities=local,
-        statuses=value.get("statuses", {}),
-        segmentation_enabled=bool(value.get("segmentation_enabled", False)),
-        target_states=value.get("target_states", {}),
-        pair_errors={tuple(key.split("|", 1)): list(errors) for key, errors in value.get("pair_errors", {}).items()},
-    )
+    # A discovery --output file holds raw Orchestrator shapes (and segment_zones), not this format.
+    if not isinstance(value, Mapping) or "segment_zones" in value:
+        raise ConfigurationError(_INVENTORY_FORMAT)
+    try:
+        zones = {}
+        for key, zone_id in value.get("zones", {}).items():
+            segment, zone = key.split("|", 1)
+            zones[(segment, zone)] = int(zone_id)
+        policies = {}
+        for key, policy in value.get("policies", {}).items():
+            source, destination = key.split("|", 1)
+            policies[(source, destination)] = policy
+        local = {}
+        for key, priorities in value.get("local_priorities", {}).items():
+            local[tuple(key.split("|", 3))] = {int(item) for item in priorities}
+        return Inventory(
+            segments={str(key): int(item) for key, item in value.get("segments", {}).items()},
+            zones=zones,
+            policies=policies,
+            address_groups=set(value.get("address_groups", [])),
+            service_groups=set(value.get("service_groups", [])),
+            applications=set(value.get("applications", [])),
+            application_groups=set(value.get("application_groups", [])),
+            acls=value.get("acls", {}),
+            appliance_acls=value.get("appliance_acls", {}),
+            local_priorities=local,
+            statuses=value.get("statuses", {}),
+            segmentation_enabled=bool(value.get("segmentation_enabled", False)),
+            target_states=value.get("target_states", {}),
+            pair_errors={tuple(key.split("|", 1)): list(errors) for key, errors in value.get("pair_errors", {}).items()},
+        )
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        raise ConfigurationError("{}; {}".format(_INVENTORY_FORMAT, error)) from error
 
 
 def _version_below(value: str, minimum: Tuple[int, int]) -> bool:

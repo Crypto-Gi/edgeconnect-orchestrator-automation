@@ -12,7 +12,7 @@ RUN SUMMARY
 ==============================================================================
 Workflow     : firewall deploy
 Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
-Versions     : tool 1.2.10, Orchestrator 9.7.1.42046
+Versions     : tool 1.2.11, Orchestrator 9.7.1.42046
 Orchestrator : lab (https://<ORCHESTRATOR_FQDN>)
 CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
 RESULT       : BLOCKED
@@ -141,6 +141,10 @@ Exit 3, nothing written. A write or deletion needs a person at a terminal to typ
 ### `this plan is for Orchestrator ...`
 
 A plan or inventory file made on another Orchestrator. Rerun with the `--orchestrator` it names, or build a new plan against this one.
+
+### `--inventory expects the offline inventory JSON used by the contract tests`
+
+Exit 2, nothing written. `firewall plan --inventory` and `firewall deploy --inventory` take the contract-test inventory format (`segments {name: id}`, `zones {"segment|zone": id}`, `policies {"source|destination": policy}`, ...), not a `discovery --output` file. Drop `--inventory` to discover live.
 
 ### `approved plan fingerprint does not match`
 

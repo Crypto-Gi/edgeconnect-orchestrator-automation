@@ -129,7 +129,8 @@ def load_config(
     profiles = _profiles(merged)
     if profiles and configured_value("base_url"):
         # Keep the single-Orchestrator keys selectable instead of silently ignoring them.
-        profiles["orchestrator"] = {"slot": "orchestrator_base_url", "base_url": configured_value("base_url") or "", "api_key": configured_value("api_key") or ""}
+        # The pin belongs to this host only, so unlike ca_bundle it is never a default for nicknames.
+        profiles["orchestrator"] = {"slot": "orchestrator_base_url", "base_url": configured_value("base_url") or "", "api_key": configured_value("api_key") or "", "tls_sha256": configured_value("tls_sha256") or ""}
     name = ""
     if profiles:
         name = (orchestrator or merged.get("orch_default") or "").strip().lower()

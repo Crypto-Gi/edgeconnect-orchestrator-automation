@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.11 — 2026-10-23
+
+- `orchestrator_tls_sha256` now pins the `orchestrator` choice (the single-Orchestrator lines) when `orch_<N>` lines also exist. Previously the pin was dropped as soon as any nickname was configured. It is still never used for a nickname, because a pin belongs to one host.
+- `firewall plan --inventory` and `firewall deploy --inventory` stop with exit 2 and name the expected format when the file is not the contract-test inventory format, for example a `discovery --output` file. Previously this ended with a raw `TypeError` or `ValueError` and exit 1. The help now says what `--inventory` replaces: live discovery only. `deploy` still reads the Orchestrator release and, without `--dry-run`, writes and verifies live.
+- `firewall plan --dry-run` is refused with exit 2: plan is always read-only, so the option had no effect except to label an exit-5 plan `DRY_RUN` in the RUN SUMMARY.
+- `SECURITY.md` points vulnerability reports to GitHub private vulnerability reporting (the **Report a vulnerability** button under the Security tab).
+
 ## 1.2.10 — 2026-10-21
 
 - The agent skills show the exact command for every operation the agent runs or proposes, in its own code block, ready to paste into a terminal, even when the agent runs it itself. Only the command lines are shown, not the files the agent prepared. This skill: every read-only `edgeconnect-auto` command, not only the write hand-off. The `AGENTS.md` that `setup.sh` writes says the same for all three tools (for an MCP call, the tool and request), and CSV edits are named file and cell first, then the command that uses them.

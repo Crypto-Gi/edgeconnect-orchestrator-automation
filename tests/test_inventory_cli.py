@@ -395,6 +395,25 @@ class DeployCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(gateway.posts, 0)
 
+    def test_discovery_output_as_inventory_is_a_clear_usage_error(self):
+        discovery = Path(self.directory.name) / "discovery.json"
+        discovery.write_text(json.dumps({"version": {"release": "9.7.1"}, "segments": {"0": {"name": "Default", "id": 0}}, "zones": {"1": {"name": "INSIDE"}}, "segment_zones": []}), encoding="utf-8")
+        output = Path(self.directory.name) / "plan.json"
+        for command in (["deploy", "--dry-run"], ["plan", "--output", str(output)]):
+            with patch("edgeconnect_automation.cli._gateway", return_value=DeployGateway(baseline())), patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                code = main(["firewall", command[0], "--csv", str(self.csv), "--inventory", str(discovery)] + command[1:])
+            self.assertEqual(code, 2, stderr.getvalue())
+            self.assertIn("not a discovery --output file", stderr.getvalue())
+            self.assertNotIn("TypeError", stderr.getvalue())
+
+    def test_firewall_plan_refuses_dry_run_because_it_is_read_only(self):
+        output = Path(self.directory.name) / "plan.json"
+        with patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            code = main(["firewall", "plan", "--csv", str(self.csv), "--inventory", str(self.inventory), "--output", str(output), "--dry-run"])
+        self.assertEqual(code, 2, stderr.getvalue())
+        self.assertIn("already read-only", stderr.getvalue())
+        self.assertFalse(output.exists())
+
     def test_invalid_firewall_csv_never_offers_to_create_missing_zones(self):
         invalid = Path(self.directory.name) / "invalid-missing-zone.csv"
         invalid.write_text(HEADERS + "\n" + ROW.replace("INSIDE,OUTSIDE", "MISSING,OUTSIDE").replace(",tcp,", ",sctp,") + "\n", encoding="utf-8")

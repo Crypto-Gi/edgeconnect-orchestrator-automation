@@ -199,6 +199,12 @@ class ClientTests(IsolatedCwdTestCase):
         with self.assertRaises(ConfigurationError):
             load_config(environ=dict(env, lab_tls_sha256="abc"), orchestrator="lab")
 
+    def test_tls_pin_stays_with_its_own_orchestrator_when_nicknames_exist(self):
+        env = {"orch_1": "lab", "lab_base_url": "https://192.0.2.1", "lab_api_key": "K",
+               "orchestrator_base_url": "https://198.51.100.1", "orchestrator_api_key": "K2", "orchestrator_tls_sha256": "cd" * 32}
+        self.assertEqual(load_config(environ=env, orchestrator="orchestrator").tls_sha256, "cd" * 32)
+        self.assertIsNone(load_config(environ=env, orchestrator="lab").tls_sha256)  # a pin is per host
+
 
 class ConfigAndCliTests(IsolatedCwdTestCase):
     def test_config_aliases_and_https(self):

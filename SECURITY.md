@@ -5,7 +5,7 @@
 - Never commit `.env`, API keys, passwords, cookies, CSRF tokens, or authorization headers.
 - The CLI automatically reads only `./.env` from the current working directory; it never searches parents or the home directory. Verify your current directory before running a command. The `edgeconnect-auto` wrapper that `setup.sh` installs always passes `--dotenv <install folder>/.env` instead.
 - Use an expiring least-privilege Orchestrator API key restricted by source IP where practical.
-- Keep TLS certificate and hostname verification enabled. Use a private CA bundle when required, or pin one self-signed certificate with `<nickname>_tls_sha256` (`orchestrator_tls_sha256` for a single Orchestrator).
+- Keep TLS certificate and hostname verification enabled. Use a private CA bundle when required, or pin one self-signed certificate with `<nickname>_tls_sha256` (`orchestrator_tls_sha256` for the Orchestrator set by the single-Orchestrator `orchestrator_*` lines).
 - The client refuses HTTP redirects so the API key is only ever sent to the configured base URL. If Orchestrator sits behind a redirecting front end, configure the address that answers directly.
 - Treat CSV inputs, plans, reports, and readbacks as sensitive network configuration.
 
@@ -21,7 +21,7 @@
 
 ## Reporting a vulnerability
 
-Report security issues privately to the internal project owner. Do not open a public issue containing customer configuration, logs, credentials, topology, or API responses.
+Report security issues privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**, or go directly to <https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation/security/advisories/new>. Do not open a public issue, and do not include customer configuration, logs, credentials, topology, or API responses in any report.
 
 ## License
 
