@@ -11,6 +11,7 @@ PYTHONPATH=src python3 -m compileall -q src tests
 PYTHONPATH=src python3 -m edgeconnect_automation --help
 ```
 
+   CI (`.github/workflows/test.yml`) runs the same checks on Python 3.9 and 3.13, on Linux and macOS, for every pull request.
 5. Update `CHANGELOG.md` and operator documentation for user-visible changes.
 6. Require review for API payload, safety-gate, retry, rollback, dependency, or verification changes.
 7. Never add automatic confirmation bypasses or silent field dropping.

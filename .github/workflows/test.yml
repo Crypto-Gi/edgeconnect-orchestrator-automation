@@ -1,0 +1,28 @@
+# Runs the offline unit tests on every pull request and push to main: oldest and newest supported Python, Linux and macOS.
+name: test
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest (26.04) has no Python 3.9 build for setup-python; 24.04 still does.
+        os: [ubuntu-24.04, macos-latest]
+        python: ["3.9", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m compileall -q src tests
+      - run: python -m unittest discover -s tests
+        env:
+          PYTHONPATH: src
+      # the installed command must start, as setup.sh installs it
+      - run: python -m pip install -q . && edgeconnect-auto --help > /dev/null

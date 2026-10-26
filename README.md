@@ -1,6 +1,6 @@
 # EdgeConnect Automation
 
-![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue) ![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue) ![Tested on Orchestrator 9.7.1 and ECOS 9.5.4](https://img.shields.io/badge/tested-Orchestrator%209.7.1%20%7C%20ECOS%209.5.4-informational) ![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)
+[![test](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation/actions/workflows/test.yml/badge.svg)](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation/actions/workflows/test.yml) ![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue) ![License Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue) ![Tested on Orchestrator 9.7.1 and ECOS 9.5.4](https://img.shields.io/badge/tested-Orchestrator%209.7.1%20%7C%20ECOS%209.5.4-informational) ![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)
 
 **Deploy HPE Aruba EdgeConnect firewall policy and application definitions from a CSV, with a dry run first, a typed `APPLY`, and a readback of every change.**
 
