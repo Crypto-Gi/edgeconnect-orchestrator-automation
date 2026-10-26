@@ -48,8 +48,8 @@ class Offline(unittest.TestCase):
         stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
         stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
 
-    def manager(self, environ=None, **options):
-        return TaskManager(folder=tempfile.mkdtemp(dir=str(self.root)), report_dir="", environ=environ or environment(), **options)
+    def manager(self, environ=None, report_dir="", **options):
+        return TaskManager(folder=tempfile.mkdtemp(dir=str(self.root)), report_dir=report_dir, environ=environ or environment(), **options)
 
     def wait(self, task, *states):
         deadline = time.monotonic() + 10
@@ -137,7 +137,7 @@ class ServerTests(Offline):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(patch("edgeconnect_automation.gui_server.check_all", check))
-        self.server = gui_server.GuiServer(0, self.manager(), environ=environment())
+        self.server = gui_server.GuiServer(0, self.manager(report_dir=str(self.root / "reports")), environ=environment())
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -174,7 +174,7 @@ class ServerTests(Offline):
         self.assertIn("<title>EdgeConnect Automation</title>", text)
 
     def test_missing_or_wrong_cookie_is_refused_everywhere(self):
-        for path in ("/", "/app.js", "/api/tasks", "/api/orchestrators", "/api/tasks/task-1/events"):
+        for path in ("/", "/app.js", "/api/tasks", "/api/orchestrators", "/api/tasks/task-1/events", "/api/tasks/task-1/inventory", "/api/runs", "/api/runs.csv", "/api/runs/run-1", "/api/runs/run-1/rows.csv"):
             for cookie in (False, "edgeconnect_gui_{}=guess".format(self.port), "edgeconnect_gui_1=" + self.server.token):
                 self.assertEqual(self.request("GET", path, cookie=cookie)[0].status, 401, path)
         self.assertEqual(self.request("POST", "/api/tasks", {"action": "discover"}, cookie=False)[0].status, 401)
@@ -210,7 +210,37 @@ class ServerTests(Offline):
         self.request("GET", "/api/tasks")
         self.request("GET", "/api/tasks/" + task_id)
         self.assertEqual(self.request("POST", "/api/tasks/{}/cancel".format(task_id), {})[0].status, 409)
+        runs = json.loads(self.request("GET", "/api/runs")[1])["rows"]
+        for run in runs:
+            self.request("GET", "/api/runs/" + run["run_id"])
+            self.request("GET", "/api/runs/{}/rows.csv".format(run["run_id"]))
+        self.request("GET", "/api/runs.csv")
         self.assertEqual([body for body in self.bodies if KEY in body], [])
+
+    def test_run_log_and_inventory_tables(self):
+        discovery = {"version": {"release": "9.7.1"}, "segments": {"0": {"name": "Default"}}, "zones": {"10": {"name": "OUTSIDE"}, "2": {"name": "INSIDE"}}, "segment_zones": [], "address_groups": [], "service_groups": []}
+        with patch.object(WritableGateway, "discover", return_value=discovery, create=True):
+            _, text = self.request("POST", "/api/tasks", {"action": "discover", "orchestrator": "lab"})
+            task = self.wait(self.server.tasks.get(json.loads(text)["id"]), "done", "failed")
+        response, text = self.request("GET", "/api/tasks/{}/inventory?tab=zones&sort=id&order=desc".format(task.id))
+        self.assertEqual((response.status, json.loads(text)["table"]["rows"]), (200, [{"id": "10", "name": "OUTSIDE"}, {"id": "2", "name": "INSIDE"}]))
+        _, text = self.request("POST", "/api/tasks", {"action": "plan", "orchestrator": "lab", "kind": "address-groups", "csv_text": "Name\n"})
+        plan = self.wait(self.server.tasks.get(json.loads(text)["id"]), "planned", "failed")
+        self.assertEqual(self.request("GET", "/api/tasks/{}/inventory".format(plan.id))[0].status, 409)
+
+        runs = json.loads(self.request("GET", "/api/runs")[1])
+        self.assertEqual((runs["folder"], runs["unreadable"], [(run["workflow"], run["source"], run["tone"]) for run in runs["rows"]]), (str(self.root / "reports"), 0, [("address-groups plan", "gui", "bad"), ("discovery", "gui", "ok")]))
+        problems = json.loads(self.request("GET", "/api/runs?problems=1&workflow=discovery")[1])
+        self.assertEqual((problems["matching"], problems["facets"]["workflow"]), (0, ["address-groups plan", "discovery"]))
+        run_id = runs["rows"][0]["run_id"]
+        detail = json.loads(self.request("GET", "/api/runs/" + run_id)[1])
+        self.assertEqual((detail["run"]["run_id"], detail["run"]["status"]), (run_id, runs["rows"][0]["status"]))
+        response, text = self.request("GET", "/api/runs/{}/rows.csv".format(run_id))
+        self.assertEqual((response.headers["Content-Disposition"], text.splitlines()[0]), ('attachment; filename="{}-rows.csv"'.format(run_id), "row,item,scope,outcome,reason"))
+        response, text = self.request("GET", "/api/runs.csv?source=gui")
+        self.assertEqual((response.headers["Content-Type"], len(text.splitlines())), ("text/csv; charset=utf-8", 3))
+        for path in ("/api/runs/run-nope", "/api/runs/{}/other".format(run_id), "/api/runsx/{}".format(run_id), "/api/runs/"):
+            self.assertEqual(self.request("GET", path)[0].status, 404, path)
 
 
 if __name__ == "__main__":

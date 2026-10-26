@@ -55,7 +55,7 @@ def _refuse(gates: Sequence[Gate], subject: Any, no_terminal: str) -> None:
 
 def run(argv: Sequence[str], approval: Optional[Approval] = None, context: Optional[RunContext] = None) -> Result:
     """Run one CLI command line in-process and return its structured result."""
-    context = context or RunContext()
+    context = context or RunContext(source="gui")
     context.approver = approval or _refuse
     # shortcut: the command still prints its usual text to this process's stdout and stderr; capture it per run if the GUI needs it.
     code, summary, context = execute(list(argv), context)

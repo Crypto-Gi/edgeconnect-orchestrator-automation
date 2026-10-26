@@ -50,6 +50,36 @@
       </div>
     </section>
 
+    <section id="view-runs" class="view" aria-labelledby="runs-title" hidden>
+      <a class="back" href="#/">← All tasks</a>
+      <div class="eyebrow">Run log</div>
+      <h1 id="runs-title">What changed</h1>
+      <p class="lede" id="runs-text"></p>
+      <div class="panel" id="runs-table"></div>
+    </section>
+
+    <section id="view-run" class="view" aria-labelledby="run-title" hidden>
+      <a class="back" href="#/runs">← All runs</a>
+      <div class="eyebrow" id="run-id"></div>
+      <h1 id="run-title"></h1>
+      <p class="lede" id="run-next"></p>
+      <div class="split">
+        <section class="panel" aria-labelledby="run-facts-title"><h2 id="run-facts-title">Run</h2><dl class="facts" id="run-facts"></dl></section>
+        <section class="panel" aria-labelledby="run-notes-title"><h2 id="run-notes-title">Summary</h2><div id="run-notes"></div></section>
+      </div>
+      <section class="panel" aria-labelledby="run-rows-title"><h2 id="run-rows-title">Rows</h2><div id="run-rows"></div></section>
+    </section>
+
+    <section id="view-inventory" class="view" aria-labelledby="inventory-title" hidden>
+      <a class="back" href="#/">← All tasks</a>
+      <div class="eyebrow" id="inventory-orch"></div>
+      <h1 id="inventory-title">Inventory</h1>
+      <p class="lede">Segments, zones and groups as this Orchestrator has them now. Reading them changes nothing.</p>
+      <div class="panel-head"><span class="muted" id="inventory-status" role="status"></span><button class="btn primary" id="inventory-load" type="button">Read inventory</button></div>
+      <div class="tabs" role="tablist" aria-label="Inventory tables" id="inventory-tabs"></div>
+      <div class="panel" id="inventory-table" role="tabpanel" hidden></div>
+    </section>
+
     <section id="view-task" aria-labelledby="task-title" hidden>
       <a class="back" href="#/">← All tasks</a>
       <div class="eyebrow" id="task-orch"></div>

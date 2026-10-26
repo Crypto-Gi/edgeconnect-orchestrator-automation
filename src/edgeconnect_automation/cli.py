@@ -238,6 +238,7 @@ class RunContext:
     gateway: Optional[OrchestratorGateway] = None
     approver: Callable[[Sequence[Gate], Any, str], None] = _terminal_approver
     approval_request: Optional[Dict[str, Any]] = None
+    source: str = "cli"
 
 
 # Each main() call sets its own RunContext, so runs in different threads (or contexts) never see each other's state.
@@ -1573,6 +1574,7 @@ def execute(argv: Sequence[str], context: Optional[RunContext] = None) -> Tuple[
     args = build_parser().parse_args(argv)
     context = context or RunContext()
     recorder = context.recorder = RunRecorder(argv)
+    recorder.source = context.source
     token = _CONTEXT.set(context)
     recorder.verbose = args.verbose
     code = 1

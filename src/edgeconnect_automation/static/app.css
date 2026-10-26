@@ -61,6 +61,7 @@ select, input[type="text"] { font: 500 .9rem/1.2 var(--f-body); color: var(--tex
 
 main { padding-block: 2.2rem 3rem; outline: none; }
 #view-home, #view-task { display: grid; gap: 1.2rem; }
+.panel-head .btn.primary { flex: none; }
 .eyebrow { font: 500 .75rem/1 var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
 .lede { color: var(--muted); font-size: 1.05rem; max-width: 68ch; }
 .back { font-size: .9rem; }
@@ -92,6 +93,30 @@ main { padding-block: 2.2rem 3rem; outline: none; }
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font: 500 .72rem/1.2 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* paged tables: Python searches, filters, sorts and pages; the browser shows one page */
+.view { display: grid; gap: 1.2rem; }
+.toolbar { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; }
+.toolbar input[type="search"] { font: 500 .9rem/1.2 var(--f-body); color: var(--text); background: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: .5rem .9rem; min-width: 0; flex: 1 1 14rem; }
+.toolbar select { background: var(--ink); }
+.check { display: inline-flex; gap: .4rem; align-items: center; font-size: .9rem; white-space: nowrap; }
+.check input { accent-color: var(--signal); width: 1rem; height: 1rem; }
+th button { font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; display: inline-flex; gap: .3rem; }
+th[aria-sort] button { color: var(--signal); }
+td.mono, td .mono { font: 400 .82rem/1.4 var(--f-mono); }
+td { overflow-wrap: break-word; }  /* not "anywhere": narrow screens scroll the table instead of breaking words into letters */
+.tone-ok { color: var(--ok); } .tone-bad { color: var(--bad); }
+.pager { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; justify-content: space-between; }
+.pager .count { color: var(--muted); font-size: .88rem; }
+.pager .btns { display: flex; gap: .4rem; align-items: center; }
+.btn:disabled { opacity: .45; cursor: default; border-color: var(--line); }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .35rem 1rem; margin: 0; font-size: .9rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.notes { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; font-size: .9rem; }
+.notes-title { font: 500 .72rem/1.2 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: .6rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: .4rem; }
+.tabs [role="tab"][aria-selected="true"] { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
 
 /* dialogs: command palette and the switch confirmation */
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem; width: min(36rem, calc(100vw - 32px)); }
