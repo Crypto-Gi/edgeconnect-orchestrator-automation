@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EdgeConnect automation</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header><h1>EdgeConnect automation <span class="tag">experimental</span></h1></header>
+<main>
+  <section aria-labelledby="fleet-title">
+    <h2 id="fleet-title">Orchestrators</h2>
+    <table><thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Release</th><th scope="col">Writes</th><th scope="col">Reason</th></tr></thead><tbody id="fleet"><tr><td colspan="5">Checking…</td></tr></tbody></table>
+  </section>
+  <section aria-labelledby="tasks-title">
+    <h2 id="tasks-title">Tasks</h2>
+    <table><thead><tr><th scope="col">Task</th><th scope="col">Action</th><th scope="col">Orchestrator</th><th scope="col">State</th><th scope="col">Message</th></tr></thead><tbody id="tasks"></tbody></table>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

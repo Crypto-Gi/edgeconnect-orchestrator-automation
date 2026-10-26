@@ -162,6 +162,16 @@ Global options (`--dotenv`, `--orchestrator`, `--allow-http`, `-v`, `--report-di
 
 Plan files carry a `report_fingerprint` and the Orchestrator they were made for. An edited plan fails with `approved plan fingerprint does not match` (firewall: `approved firewall plan is invalid or changed`); rebuild it with `plan` instead of editing it.
 
+## Experimental GUI
+
+`edgeconnect-auto gui` starts a local web GUI. It is experimental and still being built, so for now the page only shows Orchestrator status and tasks. Run it from the folder that holds your `.env`. It prints a sign-in link and opens your browser; on WSL it opens the Windows browser with `wslview`, or with `explorer.exe` if that is missing. Use `--no-browser` to print the link only, and `--port N` to pick the port (by default, any free port). Ctrl+C stops it.
+
+- It listens on 127.0.0.1 only and answers only to `127.0.0.1`, `localhost` or `[::1]` on its own port, so a web page cannot reach it through another host name (DNS rebinding).
+- The printed link is your sign-in. Its token becomes an HttpOnly, SameSite=Strict cookie that every page and API call needs. A request that changes something must also come from the GUI's own page (Origin check), and the server never sends CORS headers.
+- API keys stay in the server process and never appear in a response.
+- Writes (apply and delete) are off for every Orchestrator unless that nickname has `<nickname>_gui_writes=on` in `.env` (see `.env.example`). The GUI runs the same commands as the CLI. A write first builds the preview, then waits up to 10 minutes for the same typed confirmations the terminal asks for, and stops as `rejected` on a wrong answer or `expired` when no answer comes. On each Orchestrator only one write runs at a time; any others wait as `queued`.
+- Every GUI run is logged to `reports/` like a CLI run.
+
 ## Remaining release validation
 
 Before production use, validate the exact target release for global policy options, non-default multi-segment appliance representation, multi-appliance convergence timing, new-zone propagation, paused/unreachable behavior, native ICMPV6 importer behavior, classifier writes and AppExpress collection writes. Never claim HTTP acceptance alone as convergence, and never treat this local test suite as integration testing.
