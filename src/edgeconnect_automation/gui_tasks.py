@@ -7,6 +7,9 @@ start to finish, so a second change on that Orchestrator waits as queued:
                     \\-> failed      \\-> rejected (wrong answer) | expired (no answer in time) | cancelled
 
 A plan ends planned (or failed); discover and validate end done (or failed). Only tasks not yet applying can be cancelled.
+
+An apply that wrote keeps, next to its run in the run log, the delete CSV of exactly what it created (gui_revert);
+a delete task given `revert: <run_id>` deletes that, through the same preview and gates as any delete.
 """
 import dataclasses
 import itertools
@@ -15,13 +18,15 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from . import engine, gui_tables
+from . import engine, gui_revert, gui_tables
 from .approval import APPROVAL_SECONDS, GuiApprovals
 from .config import orchestrator_profiles
 from .errors import ApprovalError, ConfigurationError
 from .fleet import _gui_settings
+from .reporting import report_dir as _report_dir
 
 READS = {"discover", "validate", "plan"}
 CHANGES = {"apply", "delete"}
@@ -48,6 +53,7 @@ class Task:
         self.answers: Optional[List[str]] = None
         self.typed_orchestrator = ""
         self.understood = False
+        self.source_csv: Optional[Path] = None
         self.deadline: Optional[float] = None
         self.cancelled = False
         self._tables: Dict[str, List[Dict[str, Any]]] = {}
@@ -98,6 +104,7 @@ class TaskManager:
     def __init__(self, folder: Optional[str] = None, report_dir: Optional[str] = None, environ: Optional[Mapping[str, str]] = None, approval_seconds: float = APPROVAL_SECONDS) -> None:
         self.folder = Path(folder or tempfile.mkdtemp(prefix="edgeconnect-gui-"))
         self.report_dir = report_dir
+        self.run_folder = _report_dir(SimpleNamespace(report_dir=report_dir))  # the run log, where Revert's CSVs are kept
         self.environ = environ
         self.approval_seconds = approval_seconds
         self.approvals = GuiApprovals(seconds=approval_seconds)
@@ -224,9 +231,36 @@ class TaskManager:
             if (source.action, source.state, source.kind, source.orchestrator) != ("plan", "planned", task.kind, task.orchestrator):
                 raise TaskError("plan_task must be a finished {} plan on the same Orchestrator".format(task.kind))
             plan = str(source.folder / "plan.json")
+            task.source_csv = source.folder / "input.csv"
             return self._change(task, lambda approval, dry_run: engine.apply(task.kind, plan, approval, dry_run, **common))
-        csv = self._csv(task, request)
+        csv = self._revert_csv(task, request["revert"]) if "revert" in request else self._csv(task, request)
         return self._change(task, lambda approval, dry_run: engine.delete(task.kind, csv, approval, dry_run, **common))
+
+    def revert(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """What undoing a GUI upload would delete, or why it cannot be undone; None for a run with nothing kept."""
+        return gui_revert.load(self.run_folder, run_id)
+
+    def _revert_csv(self, task: Task, run_id: Any) -> str:
+        value = self.revert(run_id) if isinstance(run_id, str) else None
+        if value is None:
+            raise TaskError("there is nothing kept to undo run {}".format(run_id), 404)
+        if (value.get("kind"), value.get("orchestrator")) != (task.kind, task.orchestrator):
+            raise TaskError("run {} was an upload of {} to {!r}; undo it as {} on that Orchestrator".format(run_id, value.get("kind"), value.get("orchestrator"), value.get("kind")))
+        if not value.get("csv_text"):
+            raise TaskError(str(value.get("reason") or "run {} cannot be undone".format(run_id)))
+        return self._csv(task, {"csv_text": value["csv_text"]})
+
+    def _keep_revert(self, task: Task, result: engine.Result) -> str:
+        """Save what undoing this upload would delete, before the task reports done; a failure is said, never hidden."""
+        run_id = str(result.summary.get("run_id") or "")
+        if self.run_folder is None or result.changes_written == "no" or not run_id:
+            return ""
+        try:
+            text = task.source_csv.read_text(encoding="utf-8") if task.source_csv and task.source_csv.is_file() else ""
+            gui_revert.save(self.run_folder, run_id, gui_revert.build(task.kind, task.orchestrator, text, result.rows))
+        except OSError as error:
+            return "; could not keep what Undo needs: {}".format(error)
+        return ""
 
     def _read(self, task: Task, call: Callable[[], engine.Result], success: str) -> Callable[[], None]:
         def work() -> None:
@@ -283,7 +317,10 @@ class TaskManager:
             return task.set("rejected", "{}; nothing was written".format(error))
         task.deadline = None
         task.set("applying")
-        self._finish(task, lambda: call(approval, False), "done")
+        result = self._call(task, lambda: call(approval, False))
+        if result is not None:
+            note = self._keep_revert(task, result) if task.action == "apply" else ""
+            task.set("done" if result.exit_code == 0 else "failed", (_first_issue(result) or result.status) + note, result)
 
     def _finish(self, task: Task, call: Callable[[], engine.Result], success: str) -> None:
         result = self._call(task, call)
