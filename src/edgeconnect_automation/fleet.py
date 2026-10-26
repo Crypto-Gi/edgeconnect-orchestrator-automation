@@ -1,7 +1,7 @@
 """Fleet status: check every configured Orchestrator at once and say green, amber or red, with a plain reason.
 
-Green: connected, the key works, release 9.3 or later, and the serial number is readable.
-Amber: usable, with one thing to know (slow, busy, or no readable serial number).
+Green: connected, the key works, and the release is 9.3 or later.
+Amber: usable, with one thing to know (slow or busy).
 Red: not usable as configured (missing or bad settings, no answer, key refused, too old, server error).
 """
 import dataclasses
@@ -83,11 +83,10 @@ def _check(name: str, profile: Mapping[str, str], dotenv_path: Optional[str], en
         return Status(name, url, RED, str(error), **gui)
     seconds = round(clock() - start, 2)
     found = dict(release=release, id=server_id, seconds=seconds, **gui)
-    if not server_id:
-        return Status(name, url, AMBER, "connected (release {}), but the serial number is not readable, so a different Orchestrator at this address would not be noticed".format(release), **found)
     if seconds > SLOW_SECONDS:
         return Status(name, url, AMBER, "connected (release {}), but slow: {} s to answer".format(release, seconds), **found)
-    return Status(name, url, GREEN, "connected (release {})".format(release), **found)
+    # Cloud-hosted Orchestrators have no unique serial number; their fixed address is their identity, so that is no warning.
+    return Status(name, url, GREEN, "connected (release {}){}".format(release, "" if server_id else "; no unique serial number, so it is known by its address"), **found)
 
 
 def _gui_settings(name: str, profile: Mapping[str, str]) -> dict:

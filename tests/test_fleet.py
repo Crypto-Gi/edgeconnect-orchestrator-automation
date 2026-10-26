@@ -35,7 +35,7 @@ class Client:
             if self.answer.get("delay"):
                 self.answer["clock"].now += self.answer["delay"]
             return {"release": self.answer.get("release", "9.7.1")}
-        return {"serialNumber": self.answer.get("serial", "SERIAL-" + self.config.name)}
+        return {"serialNumber": self.answer.get("serial", "SERIAL-" + self.config.name)} if "serial" not in self.answer or self.answer["serial"] is not None else {}
 
 
 class Clock:
@@ -63,13 +63,14 @@ class FleetStatusTests(unittest.TestCase):
         return {status.name: status for status in fleet.check_all(dotenv_path="", environ=env, client_factory=Client, clock=self.clock)}
 
     def test_each_status_with_its_plain_reason(self):
-        env = environment("good", "slow", "noserial", "busy", "badkey", "old", "broken", "down", "badcert", "nodns", "refused", "nokey")
+        env = environment("good", "slow", "noserial", "placeholder", "busy", "badkey", "old", "broken", "down", "badcert", "nodns", "refused", "nokey")
         del env["nokey_api_key"]
         result = self.check(
             env,
             good={},
             slow={"delay": 3.0, "clock": self.clock},
-            noserial={"serial": ""},
+            noserial={"serial": None},
+            placeholder={"serial": "00-00-00-00-00-00"},
             busy=RateLimitError("HTTP 429", 429),
             badkey=AuthenticationError("HTTP 401", 401),
             old={"release": "9.2.4"},
@@ -82,7 +83,8 @@ class FleetStatusTests(unittest.TestCase):
         self.assertEqual({name: (status.status, status.reason) for name, status in result.items()}, {
             "good": ("green", "connected (release 9.7.1)"),
             "slow": ("amber", "connected (release 9.7.1), but slow: 3.0 s to answer"),
-            "noserial": ("amber", "connected (release 9.7.1), but the serial number is not readable, so a different Orchestrator at this address would not be noticed"),
+            "noserial": ("green", "connected (release 9.7.1); no unique serial number, so it is known by its address"),
+            "placeholder": ("green", "connected (release 9.7.1); no unique serial number, so it is known by its address"),
             "busy": ("amber", "Orchestrator is busy (HTTP 429); check again shortly"),
             "badkey": ("red", "the API key was refused (HTTP 401)"),
             "old": ("red", "Orchestrator 9.3 or later is required; found 9.2.4"),
@@ -91,10 +93,11 @@ class FleetStatusTests(unittest.TestCase):
             "badcert": ("red", "the certificate was not accepted; check the CA bundle or the certificate pin"),
             "nodns": ("red", "the address could not be found (DNS)"),
             "refused": ("red", "the connection was refused"),
-            "nokey": ("red", "fix the settings: Orchestrator 'nokey' (orch_12) needs both nokey_base_url and nokey_api_key"),
+            "nokey": ("red", "fix the settings: Orchestrator 'nokey' (orch_13) needs both nokey_base_url and nokey_api_key"),
         })
         self.assertEqual((result["good"].url, result["good"].release, result["good"].id), ("https://good.invalid", "9.7.1", "SERIAL-good"))
-        self.assertEqual(list(result), ["good", "slow", "noserial", "busy", "badkey", "old", "broken", "down", "badcert", "nodns", "refused", "nokey"])
+        self.assertEqual(result["placeholder"].id, "")
+        self.assertEqual(list(result), ["good", "slow", "noserial", "placeholder", "busy", "badkey", "old", "broken", "down", "badcert", "nodns", "refused", "nokey"])
 
     def test_each_read_gets_one_short_try(self):
         self.check(environment("lab"), lab={})

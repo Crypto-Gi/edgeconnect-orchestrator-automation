@@ -90,7 +90,7 @@ this plan is for Orchestrator lab (https://<FQDN>); rerun with --orchestrator la
 this plan was made on the Orchestrator with serial number <SERIAL_A>, but https://<FQDN> now answers with serial number <SERIAL_B>; make a new plan against it
 ```
 
-The serial number comes from `GET /gmsserver/info`. If the API key cannot read it, the file records none and only the address is compared.
+The serial number comes from `GET /gmsserver/info`. If the API key cannot read it, or it is the placeholder `00-00-00-00-00-00` that cloud-hosted Orchestrators report, the file records none and only the address is compared.
 
 A firewall plan built offline from `--inventory` inherits that inventory's Orchestrator. Files written by older versions have no record and are not checked. Deletion has no saved plan; its target is shown in the deletion table and before every confirmation.
 
