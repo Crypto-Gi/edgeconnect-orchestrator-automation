@@ -15,6 +15,8 @@ PYTHONPATH=src python3 -m edgeconnect_automation --help
 6. Require review for API payload, safety-gate, retry, rollback, dependency, or verification changes.
 7. Never add automatic confirmation bypasses or silent field dropping.
 
+`tests/test_golden.py` compares what representative commands print and write with the files in `tests/golden/`. When you change CLI output on purpose, regenerate them with `EDGECONNECT_UPDATE_GOLDEN=1 PYTHONPATH=src python3 -m unittest tests.test_golden` and review the diff.
+
 GitHub Actions runs the first three commands on Python 3.9 and 3.13, on Linux and macOS, for every pull request (`.github/workflows/test.yml`).
 
 Live integration tests require an isolated lab, exact payload preview, rollback plan, and explicit approval. They must not run as part of the default unit-test suite.

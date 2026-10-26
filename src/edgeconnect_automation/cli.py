@@ -9,7 +9,8 @@ import sys
 import time
 import traceback
 from urllib.parse import urlsplit
-from dataclasses import asdict
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -202,21 +203,45 @@ def _add_delete_args(parser: Any) -> None:
     parser.add_argument("--dry-run", action="store_true")
 
 
+@dataclass
+class RunContext:
+    """One command run: its recorder, the Orchestrator it targets, and that Orchestrator's gateway once connected."""
+
+    recorder: Optional[RunRecorder] = None
+    target: str = ""
+    target_name: str = ""
+    target_url: str = ""
+    gateway: Optional[OrchestratorGateway] = None
+
+
+# Each main() call sets its own RunContext, so runs in different threads (or contexts) never see each other's state.
+_CONTEXT: ContextVar[Optional[RunContext]] = ContextVar("edgeconnect_run_context", default=None)
+
+
+def _context() -> RunContext:
+    """The current run's context; code called outside main() gets one for this thread, as the old module globals behaved."""
+    context = _CONTEXT.get()
+    if context is None:
+        context = RunContext()
+        _CONTEXT.set(context)
+    return context
+
+
 def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
-    global _TARGET, _TARGET_NAME, _TARGET_URL
-    cached = getattr(args, "_gateway_cache", None)
-    if cached is not None:
-        return cached
+    context = _context()
+    if context.gateway is not None:
+        return context.gateway
     config = load_config(args.dotenv, allow_http=args.allow_http, orchestrator=args.orchestrator)
     parts = urlsplit(config.base_url)
     url = "{}://{}".format(parts.scheme, parts.netloc)
-    _TARGET = "{} ({})".format(config.name, url) if config.name else url
-    _TARGET_NAME, _TARGET_URL = config.name, url
-    if _RUN is not None:
-        _RUN.orchestrator_target, _RUN.orchestrator_name, _RUN.orchestrator_url = _TARGET, config.name, url
+    context.target = "{} ({})".format(config.name, url) if config.name else url
+    context.target_name, context.target_url = config.name, url
+    recorder = context.recorder
+    if recorder is not None:
+        recorder.orchestrator_target, recorder.orchestrator_name, recorder.orchestrator_url = context.target, config.name, url
     gateway = OrchestratorGateway(ApiClient(config, verbosity=args.verbose))
-    if _RUN is not None:
-        _RUN.client = gateway.client
+    if recorder is not None:
+        recorder.client = gateway.client
     release = str(gateway.get_version().get("release", ""))
     try:
         parts = tuple(int(part) for part in release.split(".")[:2])
@@ -224,7 +249,6 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
         raise ValidationError("unable to parse Orchestrator release {}".format(release)) from error
     if len(parts) < 2 or parts < (9, 3):
         raise ValidationError("Orchestrator 9.3 or later is required; found {}".format(release or "unknown"))
-    recorder = _RUN
     if recorder is not None:
         recorder.orchestrator_release = release
         list_appliances = gateway.get_appliances
@@ -235,19 +259,14 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
             return items
 
         gateway.get_appliances = get_appliances  # type: ignore[method-assign]
-    args._gateway_cache = gateway
+    context.gateway = gateway
     return gateway
-
-
-_RUN: Optional[RunRecorder] = None
-_TARGET = ""
-_TARGET_NAME = ""
-_TARGET_URL = ""
 
 
 def _stamp(value: Dict[str, Any], source: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Record which Orchestrator an inventory or plan file belongs to (inherited from its inventory when offline)."""
-    stamp = {"name": _TARGET_NAME, "url": _TARGET_URL} if _TARGET_URL else (source or {}).get("orchestrator")
+    context = _context()
+    stamp = {"name": context.target_name, "url": context.target_url} if context.target_url else (source or {}).get("orchestrator")
     if stamp:
         value["orchestrator"] = stamp
     return value
@@ -259,7 +278,8 @@ def _require_plan_orchestrator(args: argparse.Namespace, value: Mapping[str, Any
     if not isinstance(stamp, Mapping) or not stamp.get("url"):
         return
     _gateway(args)
-    if _TARGET_URL and _TARGET_URL != stamp["url"]:
+    target_url = _context().target_url
+    if target_url and target_url != stamp["url"]:
         name = stamp.get("name") or ""
         label = "{} ({})".format(name, stamp["url"]) if name else stamp["url"]
         hint = " with --orchestrator {}".format(name) if name else ""
@@ -267,22 +287,25 @@ def _require_plan_orchestrator(args: argparse.Namespace, value: Mapping[str, Any
 
 
 def _print_target() -> None:
-    if _TARGET:
-        print("Target Orchestrator: {}".format(_TARGET))
+    target = _context().target
+    if target:
+        print("Target Orchestrator: {}".format(target))
 _BULKY_KEYS = ("preview", "plan", "baseline", "candidate")
 
 
 def _print(value: Any) -> None:
-    if _RUN is not None:
-        _RUN.capture(value)
-        if not _RUN.verbose and isinstance(value, Mapping) and any(key in value for key in _BULKY_KEYS):
+    recorder = _context().recorder
+    if recorder is not None:
+        recorder.capture(value)
+        if not recorder.verbose and isinstance(value, Mapping) and any(key in value for key in _BULKY_KEYS):
             return
     print(json.dumps(redact(value), indent=2, sort_keys=True, ensure_ascii=False))
 
 
 def _save(path: str, value: Any) -> None:
-    if _RUN is not None:
-        _RUN.saved_report(path, value)
+    recorder = _context().recorder
+    if recorder is not None:
+        recorder.saved_report(path, value)
     safe_report(path, value)
 
 
@@ -1554,11 +1577,10 @@ def _validate_report(value: Mapping[str, Any], kind: str) -> None:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    global _RUN, _TARGET, _TARGET_NAME, _TARGET_URL
     parser = build_parser()
     args = parser.parse_args(argv)
-    _TARGET = _TARGET_NAME = _TARGET_URL = ""
-    recorder = _RUN = RunRecorder(sys.argv[1:] if argv is None else argv)
+    recorder = RunRecorder(sys.argv[1:] if argv is None else argv)
+    token = _CONTEXT.set(RunContext(recorder=recorder))
     recorder.verbose = args.verbose
     code = 1
     try:
@@ -1590,7 +1612,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         recorder.error = error
         raise
     finally:
-        _RUN = None
+        _CONTEXT.reset(token)
         if not getattr(args, "no_run_log", False):
             finish(recorder, args, code)
 

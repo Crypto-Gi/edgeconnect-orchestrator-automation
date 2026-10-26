@@ -1,0 +1,94 @@
+$ edgeconnect-auto template-acls delete --csv template_acls_valid.csv --dry-run
+exit code: 0
+--- stdout
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (0 resources)
+
++---+---------------+------+------------------+
+| # | RESOURCE TYPE | NAME | IDENTITY / SCOPE |
++---+---------------+------+------------------+
++---+---------------+------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : template-acls delete
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : template_acls_valid.csv (15 data rows, sha256 17034223c8f1...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - template group EXISTING_OR_NEW_GROUP (eligible): 0 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances
+
+Rows (15): 15 ALREADY ABSENT
+  ROW  OUTCOME         ITEM                        SCOPE / REASON
+  2    ALREADY ABSENT  test-51-acl priority 1000   EXISTING_OR_NEW_GROUP
+  3    ALREADY ABSENT  test-51-acl priority 2000   EXISTING_OR_NEW_GROUP
+  4    ALREADY ABSENT  test-51-acl priority 3000   EXISTING_OR_NEW_GROUP
+  5    ALREADY ABSENT  test-51-acl priority 4000   EXISTING_OR_NEW_GROUP
+  6    ALREADY ABSENT  test-51-acl priority 5000   EXISTING_OR_NEW_GROUP
+  7    ALREADY ABSENT  test-51-acl priority 6000   EXISTING_OR_NEW_GROUP
+  8    ALREADY ABSENT  test-51-acl priority 65535  EXISTING_OR_NEW_GROUP
+  9    ALREADY ABSENT  test-51-acl priority 7000   EXISTING_OR_NEW_GROUP
+  10   ALREADY ABSENT  test-51-acl priority 7010   EXISTING_OR_NEW_GROUP
+  11   ALREADY ABSENT  test-51-acl priority 7020   EXISTING_OR_NEW_GROUP
+  12   ALREADY ABSENT  test-51-acl priority 7030   EXISTING_OR_NEW_GROUP
+  13   ALREADY ABSENT  test-51-acl priority 7040   EXISTING_OR_NEW_GROUP
+  14   ALREADY ABSENT  test-51-acl priority 7050   EXISTING_OR_NEW_GROUP
+  15   ALREADY ABSENT  test-51-acl priority 7060   EXISTING_OR_NEW_GROUP
+  16   ALREADY ABSENT  test-51-acl priority 7070   EXISTING_OR_NEW_GROUP
+Report       : reports/template-acls.jsonl
+Report       : reports/template-acls.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================
+
+--- file reports/template-acls.jsonl
+{"status": "DRY_RUN", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "template-acls delete", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "template-acls delete", "command": "edgeconnect-auto --report-dir reports template-acls delete --csv template_acls_valid.csv --dry-run", "dry_run": true, "csv": {"path": "template_acls_valid.csv", "sha256": "17034223c8f1d705287ae33fb79491fb0d58a1f64e9e98df419f3da0bbf9176d", "data_rows": 15}, "status": "DRY_RUN", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": ["template group EXISTING_OR_NEW_GROUP (eligible): 0 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances"], "row_outcomes": {"ALREADY ABSENT": 15}, "rows": [{"row": 2, "item": "test-51-acl priority 1000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 3, "item": "test-51-acl priority 2000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 4, "item": "test-51-acl priority 3000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 5, "item": "test-51-acl priority 4000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 6, "item": "test-51-acl priority 5000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 7, "item": "test-51-acl priority 6000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 8, "item": "test-51-acl priority 65535", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 9, "item": "test-51-acl priority 7000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 10, "item": "test-51-acl priority 7010", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 11, "item": "test-51-acl priority 7020", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 12, "item": "test-51-acl priority 7030", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 13, "item": "test-51-acl priority 7040", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 14, "item": "test-51-acl priority 7050", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 15, "item": "test-51-acl priority 7060", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}, {"row": 16, "item": "test-51-acl priority 7070", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "ALREADY ABSENT", "reason": ""}], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Review the planned changes, then run the same command without --dry-run to apply.", "reports": ["reports/template-acls.jsonl", "reports/template-acls.log"]}, "outputs": [{"preview": {"kind": "template-acls-delete", "plan": {"groups": [{"template_group": "EXISTING_OR_NEW_GROUP", "eligible": true, "errors": [], "warnings": [], "create": false, "baseline_group": null, "baseline_acl_value": {"data": {}, "options": {}}, "candidate_acl_value": {"data": {}, "options": {}}, "baseline_selection": [], "candidate_selection": [], "associations": [], "baseline_fingerprint": "sha256:0c85c1a8ffb1a7359d0c9cbcbb9fc02c3b39e21c68b45a39a6956370a6a43101", "unrelated_templates": [], "payload": {"name": "EXISTING_OR_NEW_GROUP", "templates": [{"name": "acls", "valObject": {"data": {}, "options": {}}}]}, "selection_change": false, "template_mode_change": false, "additions": [], "overwrites": [], "no_ops": [], "deletions": [], "absent": [{"row": 2, "acl": "test-51-acl", "priority": "1000"}, {"row": 3, "acl": "test-51-acl", "priority": "2000"}, {"row": 4, "acl": "test-51-acl", "priority": "3000"}, {"row": 5, "acl": "test-51-acl", "priority": "4000"}, {"row": 6, "acl": "test-51-acl", "priority": "5000"}, {"row": 7, "acl": "test-51-acl", "priority": "6000"}, {"row": 8, "acl": "test-51-acl", "priority": "65535"}, {"row": 9, "acl": "test-51-acl", "priority": "7000"}, {"row": 10, "acl": "test-51-acl", "priority": "7010"}, {"row": 11, "acl": "test-51-acl", "priority": "7020"}, {"row": 12, "acl": "test-51-acl", "priority": "7030"}, {"row": 13, "acl": "test-51-acl", "priority": "7040"}, {"row": 14, "acl": "test-51-acl", "priority": "7050"}, {"row": 15, "acl": "test-51-acl", "priority": "7060"}, {"row": 16, "acl": "test-51-acl", "priority": "7070"}], "preserved": [], "selection_activates_acls": [], "touched_acls": [], "deleted_acls": [], "requested_acl_entries": {"test-51-acl": {"1000": {"permit": true, "comment": "Application dependency", "application": "test-51-domain"}, "2000": {"permit": true, "comment": "Application-group dependency", "app_group": "test-51-All_Apps"}, "3000": {"permit": true, "comment": "Directional IPv4 and ports", "protocol": "tcp", "src_ip": "192.0.2.0/24", "dst_ip": "198.51.100.10/32", "src_port": "1000-2000", "dst_port": "443", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}, "4000": {"permit": true, "comment": "Either IPv6, port, and domain", "protocol": "tcp/udp", "either_ip": "2001:db8::/32", "either_port": "443", "either_dns": "example.net", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}, "5000": {"permit": true, "comment": "Directional domains", "src_dns": "*.source.example.com", "dst_dns": "*destination.example.com"}, "6000": {"permit": false, "comment": "Prefix mask and deny", "protocol": "icmp", "src_ip": "10.0.0.0/16", "additionalSwitch_ip": "ips"}, "65535": {"permit": false, "comment": "Intentional catch-all deny"}, "7000": {"permit": true, "comment": "Source group and segment to destination IP", "dst_ip": "198.51.100.10/32", "src_addrgrp_groups": "test-51-ag-Formats", "src_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0}, "7010": {"permit": true, "comment": "Source IP to destination group list", "src_ip": "192.0.2.10/32", "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_vrf": 0}, "7020": {"permit": false, "comment": "Group to group with all segments", "src_addrgrp_groups": "test-51-ag-Formats", "dst_addrgrp_groups": "test-51-ag-DepthTwo", "src_additionalSwitch_ip": "groups", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0, "dst_vrf": 0, "either_vrf": 0}, "7030": {"permit": true, "comment": "Either-direction address group", "either_addrgrp_groups": "test-51-ag-MultiRule", "additionalSwitch_ip": "groups"}, "7040": {"permit": true, "comment": "Source port range to destination service group", "protocol": "tcp", "src_port": "1024-65535", "dst_srvcgrp_groups": "test-51-sg-TCP", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}, "7050": {"permit": false, "comment": "Source service group to destination port list", "dst_port": "53|123", "src_srvcgrp_groups": "test-51-sg-UDP", "src_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}, "7060": {"permit": true, "comment": "Either-direction service group", "either_srvcgrp_groups": "test-51-sg-MultiRule", "additionalSwitch_port": "groups"}, "7070": {"permit": true, "comment": "Literal source to groups on destination", "src_ip": "192.0.2.0/24", "src_port": "1000-2000", "dst_addrgrp_groups": "test-51-ag-Child", "dst_srvcgrp_groups": "test-51-sg-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}}}, "appliance_only_deletions": []}], "errors": [], "eligible_groups": ["EXISTING_OR_NEW_GROUP"]}, "fingerprint": "sha256:81c8c188788f5e29f6aede53e6e832c4ac2809b00ed0a41ac07f94a329875e3b"}, "status": "DRY_RUN", "report_fingerprint": "<FINGERPRINT>"}], "files_written": [], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/template-acls.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : template-acls delete
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : template_acls_valid.csv (15 data rows, sha256 17034223c8f1...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - template group EXISTING_OR_NEW_GROUP (eligible): 0 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances
+
+Rows (15): 15 ALREADY ABSENT
+  ROW  OUTCOME         ITEM                        SCOPE / REASON
+  2    ALREADY ABSENT  test-51-acl priority 1000   EXISTING_OR_NEW_GROUP
+  3    ALREADY ABSENT  test-51-acl priority 2000   EXISTING_OR_NEW_GROUP
+  4    ALREADY ABSENT  test-51-acl priority 3000   EXISTING_OR_NEW_GROUP
+  5    ALREADY ABSENT  test-51-acl priority 4000   EXISTING_OR_NEW_GROUP
+  6    ALREADY ABSENT  test-51-acl priority 5000   EXISTING_OR_NEW_GROUP
+  7    ALREADY ABSENT  test-51-acl priority 6000   EXISTING_OR_NEW_GROUP
+  8    ALREADY ABSENT  test-51-acl priority 65535  EXISTING_OR_NEW_GROUP
+  9    ALREADY ABSENT  test-51-acl priority 7000   EXISTING_OR_NEW_GROUP
+  10   ALREADY ABSENT  test-51-acl priority 7010   EXISTING_OR_NEW_GROUP
+  11   ALREADY ABSENT  test-51-acl priority 7020   EXISTING_OR_NEW_GROUP
+  12   ALREADY ABSENT  test-51-acl priority 7030   EXISTING_OR_NEW_GROUP
+  13   ALREADY ABSENT  test-51-acl priority 7040   EXISTING_OR_NEW_GROUP
+  14   ALREADY ABSENT  test-51-acl priority 7050   EXISTING_OR_NEW_GROUP
+  15   ALREADY ABSENT  test-51-acl priority 7060   EXISTING_OR_NEW_GROUP
+  16   ALREADY ABSENT  test-51-acl priority 7070   EXISTING_OR_NEW_GROUP
+Report       : reports/template-acls.jsonl
+Report       : reports/template-acls.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================

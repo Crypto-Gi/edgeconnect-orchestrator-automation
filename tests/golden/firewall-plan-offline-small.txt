@@ -1,0 +1,316 @@
+$ edgeconnect-auto firewall plan --csv firewall_rules_small.csv --inventory firewall_inventory.json --output firewall-small-plan.json
+exit code: 0
+--- stdout
+{
+  "eligible_pairs": 1,
+  "ineligible_pairs": 0,
+  "output": "firewall-small-plan.json",
+  "warnings": []
+}
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall plan
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator not contacted
+CSV          : firewall_rules_small.csv (2 data rows, sha256 266e27d38d69...)
+RESULT       : PLANNED
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - segment pair Default -> Default: 2 rows, 2 to create, 0 already present
+
+Rows (2): 2 WOULD CREATE
+  ROW  OUTCOME       ITEM                          SCOPE / REASON
+  2    WOULD CREATE  new-rule (priority 20010)     Default -> Default | INSIDE -> OUTSIDE
+  3    WOULD CREATE  second-rule (priority 20020)  Default -> Default | INSIDE -> OUTSIDE
+
+Appliances
+  - 0.NE: reachable
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Review the plan file, then apply it or run deploy.
+==============================================================================
+
+--- file firewall-small-plan.json
+{
+  "kind": "firewall",
+  "plan": {
+    "pairs": [
+      {
+        "pair": [
+          "Default",
+          "Default"
+        ],
+        "segment_map": "0_0",
+        "eligible": true,
+        "baseline": {
+          "data": {
+            "map1": {}
+          },
+          "options": {
+            "merge": false,
+            "templateApply": false
+          },
+          "settings": {}
+        },
+        "candidate": {
+          "data": {
+            "map1": {
+              "3_4": {
+                "prio": {
+                  "20010": {
+                    "match": {
+                      "src_ip": "10.0.0.0/24",
+                      "application": "BuiltinApp",
+                      "app_group": "BuiltinGroup",
+                      "protocol": "tcp",
+                      "dst_port": "443"
+                    },
+                    "set": {
+                      "action": "allow"
+                    },
+                    "comment": "new rule",
+                    "gms_marked": true,
+                    "misc": {
+                      "rule": "enable",
+                      "logging": "enable",
+                      "logging_priority": 2
+                    }
+                  },
+                  "20020": {
+                    "match": {
+                      "src_ip": "10.0.1.0/24",
+                      "application": "BuiltinApp",
+                      "app_group": "BuiltinGroup",
+                      "protocol": "tcp",
+                      "dst_port": "443"
+                    },
+                    "set": {
+                      "action": "allow"
+                    },
+                    "comment": "second rule",
+                    "gms_marked": true,
+                    "misc": {
+                      "rule": "disable",
+                      "logging": "enable",
+                      "logging_priority": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "options": {
+            "merge": false,
+            "templateApply": false
+          },
+          "settings": {}
+        },
+        "baseline_fingerprint": "sha256:329533523c330407f2937ed43ee00510394104a9c0e9cac39f08cac0c4ec8eba",
+        "rules": [
+          {
+            "row": 2,
+            "rule_key": "new-rule",
+            "rule_name": "new name",
+            "description": "new rule",
+            "enabled": true,
+            "priority": 20010,
+            "source_segment": "Default",
+            "destination_segment": "Default",
+            "source_zone": "INSIDE",
+            "destination_zone": "OUTSIDE",
+            "acl": "",
+            "source_address": "10.0.0.0/24",
+            "source_address_group": "",
+            "destination_address": "",
+            "destination_address_group": "",
+            "either_address": "",
+            "either_address_group": "",
+            "application": "BuiltinApp",
+            "application_group": "BuiltinGroup",
+            "protocol": "tcp",
+            "source_port": "",
+            "destination_port": "443",
+            "either_port": "",
+            "source_service_group": "",
+            "destination_service_group": "",
+            "either_service_group": "",
+            "source_domain": "",
+            "destination_domain": "",
+            "either_domain": "",
+            "action": "allow",
+            "logging": true,
+            "logging_level": 2,
+            "broad_match_ack": false
+          },
+          {
+            "row": 3,
+            "rule_key": "second-rule",
+            "rule_name": "second",
+            "description": "second rule",
+            "enabled": false,
+            "priority": 20020,
+            "source_segment": "Default",
+            "destination_segment": "Default",
+            "source_zone": "INSIDE",
+            "destination_zone": "OUTSIDE",
+            "acl": "",
+            "source_address": "10.0.1.0/24",
+            "source_address_group": "",
+            "destination_address": "",
+            "destination_address_group": "",
+            "either_address": "",
+            "either_address_group": "",
+            "application": "BuiltinApp",
+            "application_group": "BuiltinGroup",
+            "protocol": "tcp",
+            "source_port": "",
+            "destination_port": "443",
+            "either_port": "",
+            "source_service_group": "",
+            "destination_service_group": "",
+            "either_service_group": "",
+            "source_domain": "",
+            "destination_domain": "",
+            "either_domain": "",
+            "action": "allow",
+            "logging": true,
+            "logging_level": 2,
+            "broad_match_ack": false
+          }
+        ],
+        "created_priorities": [
+          [
+            "3_4",
+            20010
+          ],
+          [
+            "3_4",
+            20020
+          ]
+        ],
+        "no_op_rows": [],
+        "errors": [],
+        "warnings": [],
+        "target_states": {
+          "0.NE": "reachable"
+        },
+        "acl_dependencies": {},
+        "acl_inventory_fingerprint": ""
+      }
+    ],
+    "errors": [],
+    "warnings": [],
+    "resolved_rows": [
+      {
+        "row": 2,
+        "rule_key": "new-rule",
+        "rule_name": "new name",
+        "description": "new rule",
+        "enabled": true,
+        "priority": 20010,
+        "source_segment": "Default",
+        "destination_segment": "Default",
+        "source_zone": "INSIDE",
+        "destination_zone": "OUTSIDE",
+        "acl": "",
+        "source_address": "10.0.0.0/24",
+        "source_address_group": "",
+        "destination_address": "",
+        "destination_address_group": "",
+        "either_address": "",
+        "either_address_group": "",
+        "application": "BuiltinApp",
+        "application_group": "BuiltinGroup",
+        "protocol": "tcp",
+        "source_port": "",
+        "destination_port": "443",
+        "either_port": "",
+        "source_service_group": "",
+        "destination_service_group": "",
+        "either_service_group": "",
+        "source_domain": "",
+        "destination_domain": "",
+        "either_domain": "",
+        "action": "allow",
+        "logging": true,
+        "logging_level": 2,
+        "broad_match_ack": false
+      },
+      {
+        "row": 3,
+        "rule_key": "second-rule",
+        "rule_name": "second",
+        "description": "second rule",
+        "enabled": false,
+        "priority": 20020,
+        "source_segment": "Default",
+        "destination_segment": "Default",
+        "source_zone": "INSIDE",
+        "destination_zone": "OUTSIDE",
+        "acl": "",
+        "source_address": "10.0.1.0/24",
+        "source_address_group": "",
+        "destination_address": "",
+        "destination_address_group": "",
+        "either_address": "",
+        "either_address_group": "",
+        "application": "BuiltinApp",
+        "application_group": "BuiltinGroup",
+        "protocol": "tcp",
+        "source_port": "",
+        "destination_port": "443",
+        "either_port": "",
+        "source_service_group": "",
+        "destination_service_group": "",
+        "either_service_group": "",
+        "source_domain": "",
+        "destination_domain": "",
+        "either_domain": "",
+        "action": "allow",
+        "logging": true,
+        "logging_level": 2,
+        "broad_match_ack": false
+      }
+    ]
+  },
+  "fingerprint": "sha256:5fd7342adcd9e386be6219fd74ecd320a5b52b051b9f54a006577c84adbdb200"
+}
+
+--- file reports/firewall.jsonl
+{"status": "PLANNED", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "firewall plan", "orchestrator": "not contacted", "orchestrator_url": "not contacted", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "not contacted", "orchestrator_target": "", "orchestrator": "not contacted", "orchestrator_url": "not contacted", "workflow": "firewall plan", "command": "edgeconnect-auto --report-dir reports firewall plan --csv firewall_rules_small.csv --inventory firewall_inventory.json --output firewall-small-plan.json", "dry_run": false, "csv": {"path": "firewall_rules_small.csv", "sha256": "266e27d38d6978ea93fe2e2cf9359057102a99881a7b7fd0d79b039265144520", "data_rows": 2}, "status": "PLANNED", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": ["segment pair Default -> Default: 2 rows, 2 to create, 0 already present"], "row_outcomes": {"WOULD CREATE": 2}, "rows": [{"row": 2, "item": "new-rule (priority 20010)", "scope": "Default -> Default | INSIDE -> OUTSIDE", "outcome": "WOULD CREATE", "reason": ""}, {"row": 3, "item": "second-rule (priority 20020)", "scope": "Default -> Default | INSIDE -> OUTSIDE", "outcome": "WOULD CREATE", "reason": ""}], "blocking_issues": [], "warnings": [], "targets": ["0.NE: reachable"], "run_reference": "", "next_step": "Review the plan file, then apply it or run deploy.", "reports": ["reports/firewall.jsonl", "reports/firewall.log"]}, "outputs": [{"kind": "firewall", "plan": {"pairs": [{"pair": ["Default", "Default"], "segment_map": "0_0", "eligible": true, "baseline": {"data": {"map1": {}}, "options": {"merge": false, "templateApply": false}, "settings": {}}, "candidate": {"data": {"map1": {"3_4": {"prio": {"20010": {"match": {"src_ip": "10.0.0.0/24", "application": "BuiltinApp", "app_group": "BuiltinGroup", "protocol": "tcp", "dst_port": "443"}, "set": {"action": "allow"}, "comment": "new rule", "gms_marked": true, "misc": {"rule": "enable", "logging": "enable", "logging_priority": 2}}, "20020": {"match": {"src_ip": "10.0.1.0/24", "application": "BuiltinApp", "app_group": "BuiltinGroup", "protocol": "tcp", "dst_port": "443"}, "set": {"action": "allow"}, "comment": "second rule", "gms_marked": true, "misc": {"rule": "disable", "logging": "enable", "logging_priority": 2}}}}}}, "options": {"merge": false, "templateApply": false}, "settings": {}}, "baseline_fingerprint": "sha256:329533523c330407f2937ed43ee00510394104a9c0e9cac39f08cac0c4ec8eba", "rules": [{"row": 2, "rule_key": "new-rule", "rule_name": "new name", "description": "new rule", "enabled": true, "priority": 20010, "source_segment": "Default", "destination_segment": "Default", "source_zone": "INSIDE", "destination_zone": "OUTSIDE", "acl": "", "source_address": "10.0.0.0/24", "source_address_group": "", "destination_address": "", "destination_address_group": "", "either_address": "", "either_address_group": "", "application": "BuiltinApp", "application_group": "BuiltinGroup", "protocol": "tcp", "source_port": "", "destination_port": "443", "either_port": "", "source_service_group": "", "destination_service_group": "", "either_service_group": "", "source_domain": "", "destination_domain": "", "either_domain": "", "action": "allow", "logging": true, "logging_level": 2, "broad_match_ack": false}, {"row": 3, "rule_key": "second-rule", "rule_name": "second", "description": "second rule", "enabled": false, "priority": 20020, "source_segment": "Default", "destination_segment": "Default", "source_zone": "INSIDE", "destination_zone": "OUTSIDE", "acl": "", "source_address": "10.0.1.0/24", "source_address_group": "", "destination_address": "", "destination_address_group": "", "either_address": "", "either_address_group": "", "application": "BuiltinApp", "application_group": "BuiltinGroup", "protocol": "tcp", "source_port": "", "destination_port": "443", "either_port": "", "source_service_group": "", "destination_service_group": "", "either_service_group": "", "source_domain": "", "destination_domain": "", "either_domain": "", "action": "allow", "logging": true, "logging_level": 2, "broad_match_ack": false}], "created_priorities": [["3_4", 20010], ["3_4", 20020]], "no_op_rows": [], "errors": [], "warnings": [], "target_states": {"0.NE": "reachable"}, "acl_dependencies": {}, "acl_inventory_fingerprint": ""}], "errors": [], "warnings": [], "resolved_rows": [{"row": 2, "rule_key": "new-rule", "rule_name": "new name", "description": "new rule", "enabled": true, "priority": 20010, "source_segment": "Default", "destination_segment": "Default", "source_zone": "INSIDE", "destination_zone": "OUTSIDE", "acl": "", "source_address": "10.0.0.0/24", "source_address_group": "", "destination_address": "", "destination_address_group": "", "either_address": "", "either_address_group": "", "application": "BuiltinApp", "application_group": "BuiltinGroup", "protocol": "tcp", "source_port": "", "destination_port": "443", "either_port": "", "source_service_group": "", "destination_service_group": "", "either_service_group": "", "source_domain": "", "destination_domain": "", "either_domain": "", "action": "allow", "logging": true, "logging_level": 2, "broad_match_ack": false}, {"row": 3, "rule_key": "second-rule", "rule_name": "second", "description": "second rule", "enabled": false, "priority": 20020, "source_segment": "Default", "destination_segment": "Default", "source_zone": "INSIDE", "destination_zone": "OUTSIDE", "acl": "", "source_address": "10.0.1.0/24", "source_address_group": "", "destination_address": "", "destination_address_group": "", "either_address": "", "either_address_group": "", "application": "BuiltinApp", "application_group": "BuiltinGroup", "protocol": "tcp", "source_port": "", "destination_port": "443", "either_port": "", "source_service_group": "", "destination_service_group": "", "either_service_group": "", "source_domain": "", "destination_domain": "", "either_domain": "", "action": "allow", "logging": true, "logging_level": 2, "broad_match_ack": false}]}, "fingerprint": "sha256:5fd7342adcd9e386be6219fd74ecd320a5b52b051b9f54a006577c84adbdb200"}, {"output": "firewall-small-plan.json", "eligible_pairs": 1, "ineligible_pairs": 0, "warnings": []}], "files_written": ["firewall-small-plan.json"], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/firewall.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall plan
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator not contacted
+CSV          : firewall_rules_small.csv (2 data rows, sha256 266e27d38d69...)
+RESULT       : PLANNED
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - segment pair Default -> Default: 2 rows, 2 to create, 0 already present
+
+Rows (2): 2 WOULD CREATE
+  ROW  OUTCOME       ITEM                          SCOPE / REASON
+  2    WOULD CREATE  new-rule (priority 20010)     Default -> Default | INSIDE -> OUTSIDE
+  3    WOULD CREATE  second-rule (priority 20020)  Default -> Default | INSIDE -> OUTSIDE
+
+Appliances
+  - 0.NE: reachable
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Review the plan file, then apply it or run deploy.
+==============================================================================

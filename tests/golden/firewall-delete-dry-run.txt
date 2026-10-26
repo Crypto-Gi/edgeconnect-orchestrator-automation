@@ -1,0 +1,186 @@
+$ edgeconnect-auto firewall delete --csv firewall_delete.csv --dry-run --report firewall-delete-report.json
+exit code: 0
+--- stdout
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (1 resources)
+
++---+---------------+------+-----------------------------------------------+
+| # | RESOURCE TYPE | NAME | IDENTITY / SCOPE                              |
++---+---------------+------+-----------------------------------------------+
+| 1 | Firewall rule | rule | Default -> Default; zones 1_2; priority 20000 |
++---+---------------+------+-----------------------------------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall delete
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : firewall_delete.csv (1 data rows, sha256 7b446f88aed2...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+Rows (1): 1 WOULD DELETE
+  ROW  OUTCOME       ITEM  SCOPE / REASON
+  2    WOULD DELETE  rule  Default -> Default | zones 1_2 | priority 20000
+Report       : firewall-delete-report.json
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================
+
+--- file firewall-delete-report.json
+{
+  "preview": {
+    "kind": "firewall-delete",
+    "plans": [
+      {
+        "pair": [
+          "Default",
+          "Default"
+        ],
+        "segment_map": "0_0",
+        "baseline": {
+          "data": {
+            "map1": {
+              "1_2": {
+                "prio": {
+                  "20000": {
+                    "match": {
+                      "src_ip": "10.0.0.0/24",
+                      "application": "BuiltinApp",
+                      "app_group": "BuiltinGroup",
+                      "protocol": "tcp",
+                      "dst_port": "443"
+                    },
+                    "set": {
+                      "action": "allow"
+                    },
+                    "comment": "description",
+                    "gms_marked": true,
+                    "misc": {
+                      "rule": "enable",
+                      "logging": "enable",
+                      "logging_priority": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "options": {
+            "merge": false,
+            "templateApply": false
+          },
+          "settings": {}
+        },
+        "candidate": {
+          "data": {
+            "map1": {}
+          },
+          "options": {
+            "merge": false,
+            "templateApply": false
+          },
+          "settings": {}
+        },
+        "fingerprint": "sha256:e06c1c5d309ecbbf092cebc77cab8cf0ff3482064fcd9000adee68597ba05530",
+        "removed": [
+          {
+            "rule_key": "rule",
+            "zone_key": "1_2",
+            "priority": 20000
+          }
+        ]
+      }
+    ],
+    "absent": []
+  },
+  "status": "DRY_RUN",
+  "report_fingerprint": "<FINGERPRINT>",
+  "exit_code": 0,
+  "changes_written": "no",
+  "timestamp": "<TIME>",
+  "run_id": "run-<ID>",
+  "workflow": "firewall delete",
+  "orchestrator": "lab",
+  "orchestrator_url": "https://orchestrator.invalid",
+  "summary": {
+    "run_id": "run-<ID>",
+    "timestamp": "<TIME>",
+    "duration_seconds": "<SECONDS>",
+    "tool_version": "<VERSION>",
+    "orchestrator_release": "9.7.1",
+    "orchestrator_target": "lab (https://orchestrator.invalid)",
+    "orchestrator": "lab",
+    "orchestrator_url": "https://orchestrator.invalid",
+    "workflow": "firewall delete",
+    "command": "edgeconnect-auto --report-dir reports firewall delete --csv firewall_delete.csv --dry-run --report firewall-delete-report.json",
+    "dry_run": true,
+    "csv": {
+      "path": "firewall_delete.csv",
+      "sha256": "7b446f88aed22da2336d98b918ee6bd69b87b7ef7e9da6a0087c8d68e0b92b00",
+      "data_rows": 1
+    },
+    "status": "DRY_RUN",
+    "changes_written": "no",
+    "exit_code": 0,
+    "exit_meaning": "completed (success, verified no-op, or dry run)",
+    "counts": [],
+    "row_outcomes": {
+      "WOULD DELETE": 1
+    },
+    "rows": [
+      {
+        "row": 2,
+        "item": "rule",
+        "scope": "Default -> Default | zones 1_2 | priority 20000",
+        "outcome": "WOULD DELETE",
+        "reason": ""
+      }
+    ],
+    "blocking_issues": [],
+    "warnings": [],
+    "targets": [],
+    "run_reference": "",
+    "next_step": "Review the planned changes, then run the same command without --dry-run to apply.",
+    "reports": [
+      "firewall-delete-report.json",
+      "reports/firewall.jsonl",
+      "reports/firewall.log"
+    ]
+  }
+}
+
+--- file reports/firewall.jsonl
+{"status": "DRY_RUN", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "firewall delete", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "firewall delete", "command": "edgeconnect-auto --report-dir reports firewall delete --csv firewall_delete.csv --dry-run --report firewall-delete-report.json", "dry_run": true, "csv": {"path": "firewall_delete.csv", "sha256": "7b446f88aed22da2336d98b918ee6bd69b87b7ef7e9da6a0087c8d68e0b92b00", "data_rows": 1}, "status": "DRY_RUN", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": [], "row_outcomes": {"WOULD DELETE": 1}, "rows": [{"row": 2, "item": "rule", "scope": "Default -> Default | zones 1_2 | priority 20000", "outcome": "WOULD DELETE", "reason": ""}], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Review the planned changes, then run the same command without --dry-run to apply.", "reports": ["firewall-delete-report.json", "reports/firewall.jsonl", "reports/firewall.log"]}, "outputs": [{"preview": {"kind": "firewall-delete", "plans": [{"pair": ["Default", "Default"], "segment_map": "0_0", "baseline": {"data": {"map1": {"1_2": {"prio": {"20000": {"match": {"src_ip": "10.0.0.0/24", "application": "BuiltinApp", "app_group": "BuiltinGroup", "protocol": "tcp", "dst_port": "443"}, "set": {"action": "allow"}, "comment": "description", "gms_marked": true, "misc": {"rule": "enable", "logging": "enable", "logging_priority": 2}}}}}}, "options": {"merge": false, "templateApply": false}, "settings": {}}, "candidate": {"data": {"map1": {}}, "options": {"merge": false, "templateApply": false}, "settings": {}}, "fingerprint": "sha256:e06c1c5d309ecbbf092cebc77cab8cf0ff3482064fcd9000adee68597ba05530", "removed": [{"rule_key": "rule", "zone_key": "1_2", "priority": 20000}]}], "absent": []}, "status": "DRY_RUN", "report_fingerprint": "<FINGERPRINT>"}, {"preview": {"kind": "firewall-delete", "plans": [{"pair": ["Default", "Default"], "segment_map": "0_0", "baseline": {"data": {"map1": {"1_2": {"prio": {"20000": {"match": {"src_ip": "10.0.0.0/24", "application": "BuiltinApp", "app_group": "BuiltinGroup", "protocol": "tcp", "dst_port": "443"}, "set": {"action": "allow"}, "comment": "description", "gms_marked": true, "misc": {"rule": "enable", "logging": "enable", "logging_priority": 2}}}}}}, "options": {"merge": false, "templateApply": false}, "settings": {}}, "candidate": {"data": {"map1": {}}, "options": {"merge": false, "templateApply": false}, "settings": {}}, "fingerprint": "sha256:e06c1c5d309ecbbf092cebc77cab8cf0ff3482064fcd9000adee68597ba05530", "removed": [{"rule_key": "rule", "zone_key": "1_2", "priority": 20000}]}], "absent": []}, "status": "DRY_RUN", "report_fingerprint": "<FINGERPRINT>"}], "files_written": ["firewall-delete-report.json"], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/firewall.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall delete
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : firewall_delete.csv (1 data rows, sha256 7b446f88aed2...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+Rows (1): 1 WOULD DELETE
+  ROW  OUTCOME       ITEM  SCOPE / REASON
+  2    WOULD DELETE  rule  Default -> Default | zones 1_2 | priority 20000
+Report       : firewall-delete-report.json
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================

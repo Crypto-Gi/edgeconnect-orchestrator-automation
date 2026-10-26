@@ -1,0 +1,67 @@
+$ edgeconnect-auto app-groups delete --csv application_groups_delete.csv --dry-run
+exit code: 0
+--- stdout
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (1 resources)
+
++---+-------------------+----------------+--------------------------+
+| # | RESOURCE TYPE     | NAME           | IDENTITY / SCOPE         |
++---+-------------------+----------------+--------------------------+
+| 1 | Application group | existing-group | exact CSV semantic match |
++---+-------------------+----------------+--------------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : app-groups delete
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : application_groups_delete.csv (1 data rows, sha256 48d625357345...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - to delete: 1
+
+Rows (1): 1 WOULD DELETE
+  ROW  OUTCOME       ITEM            SCOPE / REASON
+  2    WOULD DELETE  existing-group  app-groups-delete
+Report       : reports/app-groups.jsonl
+Report       : reports/app-groups.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================
+
+--- file reports/app-groups.jsonl
+{"status": "DRY_RUN", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "app-groups delete", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "app-groups delete", "command": "edgeconnect-auto --report-dir reports app-groups delete --csv application_groups_delete.csv --dry-run", "dry_run": true, "csv": {"path": "application_groups_delete.csv", "sha256": "48d625357345e632cf40b3609f43875da72f9b8b1dc6c6dc610f4c2b1fff104b", "data_rows": 1}, "status": "DRY_RUN", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": ["to delete: 1"], "row_outcomes": {"WOULD DELETE": 1}, "rows": [{"row": 2, "item": "existing-group", "scope": "app-groups-delete", "outcome": "WOULD DELETE", "reason": ""}], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Review the planned changes, then run the same command without --dry-run to apply.", "reports": ["reports/app-groups.jsonl", "reports/app-groups.log"]}, "outputs": [{"preview": {"kind": "app-groups-delete", "delete": ["existing-group"], "absent": [], "baseline_fingerprint": "sha256:b086d1db7a2a138b108db0321ca6d778a30cbfb9ed78193b231ba3fb94597f40", "candidate": {}}, "status": "DRY_RUN", "report_fingerprint": "<FINGERPRINT>"}], "files_written": [], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/app-groups.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : app-groups delete
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : application_groups_delete.csv (1 data rows, sha256 48d625357345...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - to delete: 1
+
+Rows (1): 1 WOULD DELETE
+  ROW  OUTCOME       ITEM            SCOPE / REASON
+  2    WOULD DELETE  existing-group  app-groups-delete
+Report       : reports/app-groups.jsonl
+Report       : reports/app-groups.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================

@@ -1,0 +1,509 @@
+$ edgeconnect-auto service-groups plan --csv service_groups_valid.csv --output service-plan.json
+exit code: 0
+--- stdout
+{
+  "conflicts": [],
+  "create": 31,
+  "no_ops": [],
+  "output": "service-plan.json",
+  "warnings": []
+}
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : service-groups plan
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : service_groups_valid.csv (31 data rows, sha256 905a832d3b74...)
+RESULT       : PLANNED
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - to create: 31
+
+Rows (31): 31 WOULD CREATE
+  ROW  OUTCOME       ITEM                     SCOPE / REASON
+  2    WOULD CREATE  test-51-sg-TCP           service-groups
+  3    WOULD CREATE  test-51-sg-UDP           service-groups
+  4    WOULD CREATE  test-51-sg-AnyTCP        service-groups
+  5    WOULD CREATE  test-51-sg-ICMP          service-groups
+  6    WOULD CREATE  test-51-sg-ICMP_Code     service-groups
+  7    WOULD CREATE  test-51-sg-MultiRule     service-groups
+  8    WOULD CREATE  test-51-sg-MultiRule     service-groups
+  9    WOULD CREATE  test-51-sg-Child         service-groups
+  10   WOULD CREATE  test-51-sg-DepthTwo      service-groups
+  11   WOULD CREATE  test-51-sg-GroupOnly     service-groups
+  12   WOULD CREATE  test-51-sg-tcp-web       service-groups
+  13   WOULD CREATE  test-51-sg-tcp-range     service-groups
+  14   WOULD CREATE  test-51-sg-tcp-exclude   service-groups
+  15   WOULD CREATE  test-51-sg-udp-dns       service-groups
+  16   WOULD CREATE  test-51-sg-udp-range     service-groups
+  17   WOULD CREATE  test-51-sg-wildcard      service-groups
+  18   WOULD CREATE  test-51-sg-tcp-child     service-groups
+  19   WOULD CREATE  test-51-sg-udp-child     service-groups
+  20   WOULD CREATE  test-51-sg-multi-rule    service-groups
+  21   WOULD CREATE  test-51-sg-multi-rule    service-groups
+  22   WOULD CREATE  test-51-sg-icmp-echo     service-groups
+  23   WOULD CREATE  test-51-sg-icmp-multi    service-groups
+  24   WOULD CREATE  test-51-sg-icmp-unreach  service-groups
+  25   WOULD CREATE  test-51-sg-port-zero     service-groups
+  26   WOULD CREATE  test-51-sg-port-max      service-groups
+  ... 6 more rows in the report log (or: edgeconnect-auto report summarize <file> --rows-csv rows.csv)
+Report       : reports/service-groups.jsonl
+Report       : reports/service-groups.log
+
+Next step    : Review the plan file, then apply it or run deploy.
+==============================================================================
+
+--- file reports/service-groups.jsonl
+{"status": "PLANNED", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "service-groups plan", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "service-groups plan", "command": "edgeconnect-auto --report-dir reports service-groups plan --csv service_groups_valid.csv --output service-plan.json", "dry_run": false, "csv": {"path": "service_groups_valid.csv", "sha256": "905a832d3b74b5d94fcb6cbc81262758cc3d0b923e2a8aa75fb02312f1a6dd29", "data_rows": 31}, "status": "PLANNED", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": ["to create: 31"], "row_outcomes": {"WOULD CREATE": 31}, "rows": [{"row": 2, "item": "test-51-sg-TCP", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 3, "item": "test-51-sg-UDP", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 4, "item": "test-51-sg-AnyTCP", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 5, "item": "test-51-sg-ICMP", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 6, "item": "test-51-sg-ICMP_Code", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 7, "item": "test-51-sg-MultiRule", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 9, "item": "test-51-sg-Child", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 10, "item": "test-51-sg-DepthTwo", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 11, "item": "test-51-sg-GroupOnly", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 12, "item": "test-51-sg-tcp-web", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 13, "item": "test-51-sg-tcp-range", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 14, "item": "test-51-sg-tcp-exclude", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 15, "item": "test-51-sg-udp-dns", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 16, "item": "test-51-sg-udp-range", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 17, "item": "test-51-sg-wildcard", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 18, "item": "test-51-sg-tcp-child", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 19, "item": "test-51-sg-udp-child", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 20, "item": "test-51-sg-multi-rule", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 22, "item": "test-51-sg-icmp-echo", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 23, "item": "test-51-sg-icmp-multi", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 24, "item": "test-51-sg-icmp-unreach", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 25, "item": "test-51-sg-port-zero", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 26, "item": "test-51-sg-port-max", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 27, "item": "test-51-sg-udp-max", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 28, "item": "test-51-sg-excluded-group", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 29, "item": "test-51-sg-depth-two", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 30, "item": "test-51-sg-many-ranges", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 31, "item": "test-51-sg-comment", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 32, "item": "test-51-sg-udp-group-only", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 8, "item": "test-51-sg-MultiRule", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}, {"row": 21, "item": "test-51-sg-multi-rule", "scope": "service-groups", "outcome": "WOULD CREATE", "reason": ""}], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Review the plan file, then apply it or run deploy.", "reports": ["reports/service-groups.jsonl", "reports/service-groups.log"]}, "outputs": [{"kind": "service-groups", "new_rows": [{"Name": "test-51-sg-TCP", "Protocol": "TCP", "IncludedPorts": "0,80,443,8000-9000,65535", "ExcludedPorts": "8080", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "TCP boundaries, list, range, and exclusion", "_row": "2"}, {"Name": "test-51-sg-UDP", "Protocol": "UDP", "IncludedPorts": "53,500-501,65535", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "UDP list and range", "_row": "3"}, {"Name": "test-51-sg-AnyTCP", "Protocol": "TCP", "IncludedPorts": "*", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "Wildcard TCP port", "_row": "4"}, {"Name": "test-51-sg-ICMP", "Protocol": "ICMP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "0,3-4,8", "IcmpCodes": "", "Comment": "ICMP type list and range", "_row": "5"}, {"Name": "test-51-sg-ICMP_Code", "Protocol": "ICMP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "3", "IcmpCodes": "1", "Comment": "Single type with code", "_row": "6"}, {"Name": "test-51-sg-MultiRule", "Protocol": "TCP", "IncludedPorts": "22", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "First protocol rule under one group", "_row": "7"}, {"Name": "test-51-sg-MultiRule", "Protocol": "UDP", "IncludedPorts": "161", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "Second protocol rule under one group", "_row": "8"}, {"Name": "test-51-sg-Child", "Protocol": "TCP", "IncludedPorts": "8443", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-TCP", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "Nested TCP service", "_row": "9"}, {"Name": "test-51-sg-DepthTwo", "Protocol": "TCP", "IncludedPorts": "10443", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-Child", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "Maximum supported nesting depth", "_row": "10"}, {"Name": "test-51-sg-GroupOnly", "Protocol": "UDP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-UDP", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "Group-only UDP rule", "_row": "11"}, {"Name": "test-51-sg-tcp-web", "Protocol": "TCP", "IncludedPorts": "80,443", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "web ports", "_row": "12"}, {"Name": "test-51-sg-tcp-range", "Protocol": "TCP", "IncludedPorts": "8000-8010", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "TCP range", "_row": "13"}, {"Name": "test-51-sg-tcp-exclude", "Protocol": "TCP", "IncludedPorts": "9000-9010", "ExcludedPorts": "9005", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "TCP exclusion", "_row": "14"}, {"Name": "test-51-sg-udp-dns", "Protocol": "UDP", "IncludedPorts": "53", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "DNS", "_row": "15"}, {"Name": "test-51-sg-udp-range", "Protocol": "UDP", "IncludedPorts": "5000-5010", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "UDP range", "_row": "16"}, {"Name": "test-51-sg-wildcard", "Protocol": "TCP", "IncludedPorts": "*", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "wildcard port", "_row": "17"}, {"Name": "test-51-sg-tcp-child", "Protocol": "TCP", "IncludedPorts": "8443", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-tcp-web", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "nested TCP group", "_row": "18"}, {"Name": "test-51-sg-udp-child", "Protocol": "UDP", "IncludedPorts": "5353", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-udp-dns", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "nested UDP group", "_row": "19"}, {"Name": "test-51-sg-multi-rule", "Protocol": "TCP", "IncludedPorts": "22", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "multi-rule TCP", "_row": "20"}, {"Name": "test-51-sg-multi-rule", "Protocol": "UDP", "IncludedPorts": "161", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "multi-rule UDP", "_row": "21"}, {"Name": "test-51-sg-icmp-echo", "Protocol": "ICMP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "8", "IcmpCodes": "0", "Comment": "ICMP echo request", "_row": "22"}, {"Name": "test-51-sg-icmp-multi", "Protocol": "ICMP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "8,0", "IcmpCodes": "", "Comment": "ICMP echo request/reply", "_row": "23"}, {"Name": "test-51-sg-icmp-unreach", "Protocol": "ICMP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "3", "IcmpCodes": "1", "Comment": "ICMP destination unreachable", "_row": "24"}, {"Name": "test-51-sg-port-zero", "Protocol": "TCP", "IncludedPorts": "0", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "port zero boundary", "_row": "25"}, {"Name": "test-51-sg-port-max", "Protocol": "TCP", "IncludedPorts": "65535", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "max TCP port", "_row": "26"}, {"Name": "test-51-sg-udp-max", "Protocol": "UDP", "IncludedPorts": "65535", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "max UDP port", "_row": "27"}, {"Name": "test-51-sg-excluded-group", "Protocol": "TCP", "IncludedPorts": "10000", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-tcp-web", "ExcludedGroups": "test-51-sg-tcp-range", "IcmpTypes": "", "IcmpCodes": "", "Comment": "include and exclude groups", "_row": "28"}, {"Name": "test-51-sg-depth-two", "Protocol": "TCP", "IncludedPorts": "10443", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-tcp-child", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "maximum nesting depth two", "_row": "29"}, {"Name": "test-51-sg-many-ranges", "Protocol": "TCP", "IncludedPorts": "11000-11010,12000-12010,13000", "ExcludedPorts": "11005,12005", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "multiple ranges", "_row": "30"}, {"Name": "test-51-sg-comment", "Protocol": "UDP", "IncludedPorts": "1900", "ExcludedPorts": "", "IncludedGroups": "", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "comment with comma, quoted by CSV", "_row": "31"}, {"Name": "test-51-sg-udp-group-only", "Protocol": "UDP", "IncludedPorts": "", "ExcludedPorts": "", "IncludedGroups": "test-51-sg-udp-dns", "ExcludedGroups": "", "IcmpTypes": "", "IcmpCodes": "", "Comment": "group-only UDP rule", "_row": "32"}], "no_ops": [], "conflicts": [], "content": "TmFtZSxQcm90b2NvbCxJbmNsdWRlZFBvcnRzLEV4Y2x1ZGVkUG9ydHMsSW5jbHVkZWRHcm91cHMsRXhjbHVkZWRHcm91cHMsSWNtcFR5cGVzLEljbXBDb2RlcyxDb21tZW50CnRlc3QtNTEtc2ctVENQLFRDUCwiMCw4MCw0NDMsODAwMC05MDAwLDY1NTM1Iiw4MDgwLCwsLCwiVENQIGJvdW5kYXJpZXMsIGxpc3QsIHJhbmdlLCBhbmQgZXhjbHVzaW9uIgp0ZXN0LTUxLXNnLVVEUCxVRFAsIjUzLDUwMC01MDEsNjU1MzUiLCwsLCwsVURQIGxpc3QgYW5kIHJhbmdlCnRlc3QtNTEtc2ctQW55VENQLFRDUCwqLCwsLCwsV2lsZGNhcmQgVENQIHBvcnQKdGVzdC01MS1zZy1JQ01QLElDTVAsLCwsLCIwLDMtNCw4IiwsSUNNUCB0eXBlIGxpc3QgYW5kIHJhbmdlCnRlc3QtNTEtc2ctSUNNUF9Db2RlLElDTVAsLCwsLDMsMSxTaW5nbGUgdHlwZSB3aXRoIGNvZGUKdGVzdC01MS1zZy1NdWx0aVJ1bGUsVENQLDIyLCwsLCwsRmlyc3QgcHJvdG9jb2wgcnVsZSB1bmRlciBvbmUgZ3JvdXAKdGVzdC01MS1zZy1NdWx0aVJ1bGUsVURQLDE2MSwsLCwsLFNlY29uZCBwcm90b2NvbCBydWxlIHVuZGVyIG9uZSBncm91cAp0ZXN0LTUxLXNnLUNoaWxkLFRDUCw4NDQzLCx0ZXN0LTUxLXNnLVRDUCwsLCxOZXN0ZWQgVENQIHNlcnZpY2UKdGVzdC01MS1zZy1EZXB0aFR3byxUQ1AsMTA0NDMsLHRlc3QtNTEtc2ctQ2hpbGQsLCwsTWF4aW11bSBzdXBwb3J0ZWQgbmVzdGluZyBkZXB0aAp0ZXN0LTUxLXNnLUdyb3VwT25seSxVRFAsLCx0ZXN0LTUxLXNnLVVEUCwsLCxHcm91cC1vbmx5IFVEUCBydWxlCnRlc3QtNTEtc2ctdGNwLXdlYixUQ1AsIjgwLDQ0MyIsLCwsLCx3ZWIgcG9ydHMKdGVzdC01MS1zZy10Y3AtcmFuZ2UsVENQLDgwMDAtODAxMCwsLCwsLFRDUCByYW5nZQp0ZXN0LTUxLXNnLXRjcC1leGNsdWRlLFRDUCw5MDAwLTkwMTAsOTAwNSwsLCwsVENQIGV4Y2x1c2lvbgp0ZXN0LTUxLXNnLXVkcC1kbnMsVURQLDUzLCwsLCwsRE5TCnRlc3QtNTEtc2ctdWRwLXJhbmdlLFVEUCw1MDAwLTUwMTAsLCwsLCxVRFAgcmFuZ2UKdGVzdC01MS1zZy13aWxkY2FyZCxUQ1AsKiwsLCwsLHdpbGRjYXJkIHBvcnQKdGVzdC01MS1zZy10Y3AtY2hpbGQsVENQLDg0NDMsLHRlc3QtNTEtc2ctdGNwLXdlYiwsLCxuZXN0ZWQgVENQIGdyb3VwCnRlc3QtNTEtc2ctdWRwLWNoaWxkLFVEUCw1MzUzLCx0ZXN0LTUxLXNnLXVkcC1kbnMsLCwsbmVzdGVkIFVEUCBncm91cAp0ZXN0LTUxLXNnLW11bHRpLXJ1bGUsVENQLDIyLCwsLCwsbXVsdGktcnVsZSBUQ1AKdGVzdC01MS1zZy1tdWx0aS1ydWxlLFVEUCwxNjEsLCwsLCxtdWx0aS1ydWxlIFVEUAp0ZXN0LTUxLXNnLWljbXAtZWNobyxJQ01QLCwsLCw4LDAsSUNNUCBlY2hvIHJlcXVlc3QKdGVzdC01MS1zZy1pY21wLW11bHRpLElDTVAsLCwsLCI4LDAiLCxJQ01QIGVjaG8gcmVxdWVzdC9yZXBseQp0ZXN0LTUxLXNnLWljbXAtdW5yZWFjaCxJQ01QLCwsLCwzLDEsSUNNUCBkZXN0aW5hdGlvbiB1bnJlYWNoYWJsZQp0ZXN0LTUxLXNnLXBvcnQtemVybyxUQ1AsMCwsLCwsLHBvcnQgemVybyBib3VuZGFyeQp0ZXN0LTUxLXNnLXBvcnQtbWF4LFRDUCw2NTUzNSwsLCwsLG1heCBUQ1AgcG9ydAp0ZXN0LTUxLXNnLXVkcC1tYXgsVURQLDY1NTM1LCwsLCwsbWF4IFVEUCBwb3J0CnRlc3QtNTEtc2ctZXhjbHVkZWQtZ3JvdXAsVENQLDEwMDAwLCx0ZXN0LTUxLXNnLXRjcC13ZWIsdGVzdC01MS1zZy10Y3AtcmFuZ2UsLCxpbmNsdWRlIGFuZCBleGNsdWRlIGdyb3Vwcwp0ZXN0LTUxLXNnLWRlcHRoLXR3byxUQ1AsMTA0NDMsLHRlc3QtNTEtc2ctdGNwLWNoaWxkLCwsLG1heGltdW0gbmVzdGluZyBkZXB0aCB0d28KdGVzdC01MS1zZy1tYW55LXJhbmdlcyxUQ1AsIjExMDAwLTExMDEwLDEyMDAwLTEyMDEwLDEzMDAwIiwiMTEwMDUsMTIwMDUiLCwsLCxtdWx0aXBsZSByYW5nZXMKdGVzdC01MS1zZy1jb21tZW50LFVEUCwxOTAwLCwsLCwsImNvbW1lbnQgd2l0aCBjb21tYSwgcXVvdGVkIGJ5IENTViIKdGVzdC01MS1zZy11ZHAtZ3JvdXAtb25seSxVRFAsLCx0ZXN0LTUxLXNnLXVkcC1kbnMsLCwsZ3JvdXAtb25seSBVRFAgcnVsZQo=", "baseline_fingerprint": "sha256:2350d4f54ef54628209e88745953997cfeb7a8589d2e7881f4c447fdecdf97e2", "warnings": [], "orchestrator": {"name": "lab", "url": "https://orchestrator.invalid"}, "report_fingerprint": "<FINGERPRINT>"}, {"output": "service-plan.json", "create": 31, "no_ops": [], "conflicts": [], "warnings": []}], "files_written": ["service-plan.json"], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/service-groups.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : service-groups plan
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : service_groups_valid.csv (31 data rows, sha256 905a832d3b74...)
+RESULT       : PLANNED
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - to create: 31
+
+Rows (31): 31 WOULD CREATE
+  ROW  OUTCOME       ITEM                       SCOPE / REASON
+  2    WOULD CREATE  test-51-sg-TCP             service-groups
+  3    WOULD CREATE  test-51-sg-UDP             service-groups
+  4    WOULD CREATE  test-51-sg-AnyTCP          service-groups
+  5    WOULD CREATE  test-51-sg-ICMP            service-groups
+  6    WOULD CREATE  test-51-sg-ICMP_Code       service-groups
+  7    WOULD CREATE  test-51-sg-MultiRule       service-groups
+  8    WOULD CREATE  test-51-sg-MultiRule       service-groups
+  9    WOULD CREATE  test-51-sg-Child           service-groups
+  10   WOULD CREATE  test-51-sg-DepthTwo        service-groups
+  11   WOULD CREATE  test-51-sg-GroupOnly       service-groups
+  12   WOULD CREATE  test-51-sg-tcp-web         service-groups
+  13   WOULD CREATE  test-51-sg-tcp-range       service-groups
+  14   WOULD CREATE  test-51-sg-tcp-exclude     service-groups
+  15   WOULD CREATE  test-51-sg-udp-dns         service-groups
+  16   WOULD CREATE  test-51-sg-udp-range       service-groups
+  17   WOULD CREATE  test-51-sg-wildcard        service-groups
+  18   WOULD CREATE  test-51-sg-tcp-child       service-groups
+  19   WOULD CREATE  test-51-sg-udp-child       service-groups
+  20   WOULD CREATE  test-51-sg-multi-rule      service-groups
+  21   WOULD CREATE  test-51-sg-multi-rule      service-groups
+  22   WOULD CREATE  test-51-sg-icmp-echo       service-groups
+  23   WOULD CREATE  test-51-sg-icmp-multi      service-groups
+  24   WOULD CREATE  test-51-sg-icmp-unreach    service-groups
+  25   WOULD CREATE  test-51-sg-port-zero       service-groups
+  26   WOULD CREATE  test-51-sg-port-max        service-groups
+  27   WOULD CREATE  test-51-sg-udp-max         service-groups
+  28   WOULD CREATE  test-51-sg-excluded-group  service-groups
+  29   WOULD CREATE  test-51-sg-depth-two       service-groups
+  30   WOULD CREATE  test-51-sg-many-ranges     service-groups
+  31   WOULD CREATE  test-51-sg-comment         service-groups
+  32   WOULD CREATE  test-51-sg-udp-group-only  service-groups
+Report       : reports/service-groups.jsonl
+Report       : reports/service-groups.log
+
+Next step    : Review the plan file, then apply it or run deploy.
+==============================================================================
+
+--- file service-plan.json
+{
+  "kind": "service-groups",
+  "new_rows": [
+    {
+      "Name": "test-51-sg-TCP",
+      "Protocol": "TCP",
+      "IncludedPorts": "0,80,443,8000-9000,65535",
+      "ExcludedPorts": "8080",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "TCP boundaries, list, range, and exclusion",
+      "_row": "2"
+    },
+    {
+      "Name": "test-51-sg-UDP",
+      "Protocol": "UDP",
+      "IncludedPorts": "53,500-501,65535",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "UDP list and range",
+      "_row": "3"
+    },
+    {
+      "Name": "test-51-sg-AnyTCP",
+      "Protocol": "TCP",
+      "IncludedPorts": "*",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "Wildcard TCP port",
+      "_row": "4"
+    },
+    {
+      "Name": "test-51-sg-ICMP",
+      "Protocol": "ICMP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "0,3-4,8",
+      "IcmpCodes": "",
+      "Comment": "ICMP type list and range",
+      "_row": "5"
+    },
+    {
+      "Name": "test-51-sg-ICMP_Code",
+      "Protocol": "ICMP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "3",
+      "IcmpCodes": "1",
+      "Comment": "Single type with code",
+      "_row": "6"
+    },
+    {
+      "Name": "test-51-sg-MultiRule",
+      "Protocol": "TCP",
+      "IncludedPorts": "22",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "First protocol rule under one group",
+      "_row": "7"
+    },
+    {
+      "Name": "test-51-sg-MultiRule",
+      "Protocol": "UDP",
+      "IncludedPorts": "161",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "Second protocol rule under one group",
+      "_row": "8"
+    },
+    {
+      "Name": "test-51-sg-Child",
+      "Protocol": "TCP",
+      "IncludedPorts": "8443",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-TCP",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "Nested TCP service",
+      "_row": "9"
+    },
+    {
+      "Name": "test-51-sg-DepthTwo",
+      "Protocol": "TCP",
+      "IncludedPorts": "10443",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-Child",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "Maximum supported nesting depth",
+      "_row": "10"
+    },
+    {
+      "Name": "test-51-sg-GroupOnly",
+      "Protocol": "UDP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-UDP",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "Group-only UDP rule",
+      "_row": "11"
+    },
+    {
+      "Name": "test-51-sg-tcp-web",
+      "Protocol": "TCP",
+      "IncludedPorts": "80,443",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "web ports",
+      "_row": "12"
+    },
+    {
+      "Name": "test-51-sg-tcp-range",
+      "Protocol": "TCP",
+      "IncludedPorts": "8000-8010",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "TCP range",
+      "_row": "13"
+    },
+    {
+      "Name": "test-51-sg-tcp-exclude",
+      "Protocol": "TCP",
+      "IncludedPorts": "9000-9010",
+      "ExcludedPorts": "9005",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "TCP exclusion",
+      "_row": "14"
+    },
+    {
+      "Name": "test-51-sg-udp-dns",
+      "Protocol": "UDP",
+      "IncludedPorts": "53",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "DNS",
+      "_row": "15"
+    },
+    {
+      "Name": "test-51-sg-udp-range",
+      "Protocol": "UDP",
+      "IncludedPorts": "5000-5010",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "UDP range",
+      "_row": "16"
+    },
+    {
+      "Name": "test-51-sg-wildcard",
+      "Protocol": "TCP",
+      "IncludedPorts": "*",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "wildcard port",
+      "_row": "17"
+    },
+    {
+      "Name": "test-51-sg-tcp-child",
+      "Protocol": "TCP",
+      "IncludedPorts": "8443",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-tcp-web",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "nested TCP group",
+      "_row": "18"
+    },
+    {
+      "Name": "test-51-sg-udp-child",
+      "Protocol": "UDP",
+      "IncludedPorts": "5353",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-udp-dns",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "nested UDP group",
+      "_row": "19"
+    },
+    {
+      "Name": "test-51-sg-multi-rule",
+      "Protocol": "TCP",
+      "IncludedPorts": "22",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "multi-rule TCP",
+      "_row": "20"
+    },
+    {
+      "Name": "test-51-sg-multi-rule",
+      "Protocol": "UDP",
+      "IncludedPorts": "161",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "multi-rule UDP",
+      "_row": "21"
+    },
+    {
+      "Name": "test-51-sg-icmp-echo",
+      "Protocol": "ICMP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "8",
+      "IcmpCodes": "0",
+      "Comment": "ICMP echo request",
+      "_row": "22"
+    },
+    {
+      "Name": "test-51-sg-icmp-multi",
+      "Protocol": "ICMP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "8,0",
+      "IcmpCodes": "",
+      "Comment": "ICMP echo request/reply",
+      "_row": "23"
+    },
+    {
+      "Name": "test-51-sg-icmp-unreach",
+      "Protocol": "ICMP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "3",
+      "IcmpCodes": "1",
+      "Comment": "ICMP destination unreachable",
+      "_row": "24"
+    },
+    {
+      "Name": "test-51-sg-port-zero",
+      "Protocol": "TCP",
+      "IncludedPorts": "0",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "port zero boundary",
+      "_row": "25"
+    },
+    {
+      "Name": "test-51-sg-port-max",
+      "Protocol": "TCP",
+      "IncludedPorts": "65535",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "max TCP port",
+      "_row": "26"
+    },
+    {
+      "Name": "test-51-sg-udp-max",
+      "Protocol": "UDP",
+      "IncludedPorts": "65535",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "max UDP port",
+      "_row": "27"
+    },
+    {
+      "Name": "test-51-sg-excluded-group",
+      "Protocol": "TCP",
+      "IncludedPorts": "10000",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-tcp-web",
+      "ExcludedGroups": "test-51-sg-tcp-range",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "include and exclude groups",
+      "_row": "28"
+    },
+    {
+      "Name": "test-51-sg-depth-two",
+      "Protocol": "TCP",
+      "IncludedPorts": "10443",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-tcp-child",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "maximum nesting depth two",
+      "_row": "29"
+    },
+    {
+      "Name": "test-51-sg-many-ranges",
+      "Protocol": "TCP",
+      "IncludedPorts": "11000-11010,12000-12010,13000",
+      "ExcludedPorts": "11005,12005",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "multiple ranges",
+      "_row": "30"
+    },
+    {
+      "Name": "test-51-sg-comment",
+      "Protocol": "UDP",
+      "IncludedPorts": "1900",
+      "ExcludedPorts": "",
+      "IncludedGroups": "",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "comment with comma, quoted by CSV",
+      "_row": "31"
+    },
+    {
+      "Name": "test-51-sg-udp-group-only",
+      "Protocol": "UDP",
+      "IncludedPorts": "",
+      "ExcludedPorts": "",
+      "IncludedGroups": "test-51-sg-udp-dns",
+      "ExcludedGroups": "",
+      "IcmpTypes": "",
+      "IcmpCodes": "",
+      "Comment": "group-only UDP rule",
+      "_row": "32"
+    }
+  ],
+  "no_ops": [],
+  "conflicts": [],
+  "content": "TmFtZSxQcm90b2NvbCxJbmNsdWRlZFBvcnRzLEV4Y2x1ZGVkUG9ydHMsSW5jbHVkZWRHcm91cHMsRXhjbHVkZWRHcm91cHMsSWNtcFR5cGVzLEljbXBDb2RlcyxDb21tZW50CnRlc3QtNTEtc2ctVENQLFRDUCwiMCw4MCw0NDMsODAwMC05MDAwLDY1NTM1Iiw4MDgwLCwsLCwiVENQIGJvdW5kYXJpZXMsIGxpc3QsIHJhbmdlLCBhbmQgZXhjbHVzaW9uIgp0ZXN0LTUxLXNnLVVEUCxVRFAsIjUzLDUwMC01MDEsNjU1MzUiLCwsLCwsVURQIGxpc3QgYW5kIHJhbmdlCnRlc3QtNTEtc2ctQW55VENQLFRDUCwqLCwsLCwsV2lsZGNhcmQgVENQIHBvcnQKdGVzdC01MS1zZy1JQ01QLElDTVAsLCwsLCIwLDMtNCw4IiwsSUNNUCB0eXBlIGxpc3QgYW5kIHJhbmdlCnRlc3QtNTEtc2ctSUNNUF9Db2RlLElDTVAsLCwsLDMsMSxTaW5nbGUgdHlwZSB3aXRoIGNvZGUKdGVzdC01MS1zZy1NdWx0aVJ1bGUsVENQLDIyLCwsLCwsRmlyc3QgcHJvdG9jb2wgcnVsZSB1bmRlciBvbmUgZ3JvdXAKdGVzdC01MS1zZy1NdWx0aVJ1bGUsVURQLDE2MSwsLCwsLFNlY29uZCBwcm90b2NvbCBydWxlIHVuZGVyIG9uZSBncm91cAp0ZXN0LTUxLXNnLUNoaWxkLFRDUCw4NDQzLCx0ZXN0LTUxLXNnLVRDUCwsLCxOZXN0ZWQgVENQIHNlcnZpY2UKdGVzdC01MS1zZy1EZXB0aFR3byxUQ1AsMTA0NDMsLHRlc3QtNTEtc2ctQ2hpbGQsLCwsTWF4aW11bSBzdXBwb3J0ZWQgbmVzdGluZyBkZXB0aAp0ZXN0LTUxLXNnLUdyb3VwT25seSxVRFAsLCx0ZXN0LTUxLXNnLVVEUCwsLCxHcm91cC1vbmx5IFVEUCBydWxlCnRlc3QtNTEtc2ctdGNwLXdlYixUQ1AsIjgwLDQ0MyIsLCwsLCx3ZWIgcG9ydHMKdGVzdC01MS1zZy10Y3AtcmFuZ2UsVENQLDgwMDAtODAxMCwsLCwsLFRDUCByYW5nZQp0ZXN0LTUxLXNnLXRjcC1leGNsdWRlLFRDUCw5MDAwLTkwMTAsOTAwNSwsLCwsVENQIGV4Y2x1c2lvbgp0ZXN0LTUxLXNnLXVkcC1kbnMsVURQLDUzLCwsLCwsRE5TCnRlc3QtNTEtc2ctdWRwLXJhbmdlLFVEUCw1MDAwLTUwMTAsLCwsLCxVRFAgcmFuZ2UKdGVzdC01MS1zZy13aWxkY2FyZCxUQ1AsKiwsLCwsLHdpbGRjYXJkIHBvcnQKdGVzdC01MS1zZy10Y3AtY2hpbGQsVENQLDg0NDMsLHRlc3QtNTEtc2ctdGNwLXdlYiwsLCxuZXN0ZWQgVENQIGdyb3VwCnRlc3QtNTEtc2ctdWRwLWNoaWxkLFVEUCw1MzUzLCx0ZXN0LTUxLXNnLXVkcC1kbnMsLCwsbmVzdGVkIFVEUCBncm91cAp0ZXN0LTUxLXNnLW11bHRpLXJ1bGUsVENQLDIyLCwsLCwsbXVsdGktcnVsZSBUQ1AKdGVzdC01MS1zZy1tdWx0aS1ydWxlLFVEUCwxNjEsLCwsLCxtdWx0aS1ydWxlIFVEUAp0ZXN0LTUxLXNnLWljbXAtZWNobyxJQ01QLCwsLCw4LDAsSUNNUCBlY2hvIHJlcXVlc3QKdGVzdC01MS1zZy1pY21wLW11bHRpLElDTVAsLCwsLCI4LDAiLCxJQ01QIGVjaG8gcmVxdWVzdC9yZXBseQp0ZXN0LTUxLXNnLWljbXAtdW5yZWFjaCxJQ01QLCwsLCwzLDEsSUNNUCBkZXN0aW5hdGlvbiB1bnJlYWNoYWJsZQp0ZXN0LTUxLXNnLXBvcnQtemVybyxUQ1AsMCwsLCwsLHBvcnQgemVybyBib3VuZGFyeQp0ZXN0LTUxLXNnLXBvcnQtbWF4LFRDUCw2NTUzNSwsLCwsLG1heCBUQ1AgcG9ydAp0ZXN0LTUxLXNnLXVkcC1tYXgsVURQLDY1NTM1LCwsLCwsbWF4IFVEUCBwb3J0CnRlc3QtNTEtc2ctZXhjbHVkZWQtZ3JvdXAsVENQLDEwMDAwLCx0ZXN0LTUxLXNnLXRjcC13ZWIsdGVzdC01MS1zZy10Y3AtcmFuZ2UsLCxpbmNsdWRlIGFuZCBleGNsdWRlIGdyb3Vwcwp0ZXN0LTUxLXNnLWRlcHRoLXR3byxUQ1AsMTA0NDMsLHRlc3QtNTEtc2ctdGNwLWNoaWxkLCwsLG1heGltdW0gbmVzdGluZyBkZXB0aCB0d28KdGVzdC01MS1zZy1tYW55LXJhbmdlcyxUQ1AsIjExMDAwLTExMDEwLDEyMDAwLTEyMDEwLDEzMDAwIiwiMTEwMDUsMTIwMDUiLCwsLCxtdWx0aXBsZSByYW5nZXMKdGVzdC01MS1zZy1jb21tZW50LFVEUCwxOTAwLCwsLCwsImNvbW1lbnQgd2l0aCBjb21tYSwgcXVvdGVkIGJ5IENTViIKdGVzdC01MS1zZy11ZHAtZ3JvdXAtb25seSxVRFAsLCx0ZXN0LTUxLXNnLXVkcC1kbnMsLCwsZ3JvdXAtb25seSBVRFAgcnVsZQo=",
+  "baseline_fingerprint": "sha256:2350d4f54ef54628209e88745953997cfeb7a8589d2e7881f4c447fdecdf97e2",
+  "warnings": [],
+  "orchestrator": {
+    "name": "lab",
+    "url": "https://orchestrator.invalid"
+  },
+  "report_fingerprint": "<FINGERPRINT>"
+}
