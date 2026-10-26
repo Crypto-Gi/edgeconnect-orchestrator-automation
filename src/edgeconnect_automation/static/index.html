@@ -70,7 +70,7 @@
             <option value="app-definitions">Applications</option>
           </select>
         </div>
-        <div class="toolbar" id="flow-csv"><label class="btn" for="flow-file">Choose CSV…</label><input type="file" id="flow-file" accept=".csv,text/csv" class="sr-only"><span id="flow-file-name" class="muted"></span></div>
+        <div class="toolbar" id="flow-csv"><label class="btn" for="flow-file">Choose CSV…</label><input type="file" id="flow-file" accept=".csv,text/csv" class="sr-only"><span id="flow-file-name" class="muted"></span><a id="flow-build" href="#/edit/firewall" hidden>or build one in the editor</a></div>
         <form id="flow-names" class="gate" hidden>
           <label for="flow-zone-names">Zone names, one per line</label>
           <textarea id="flow-zone-names" rows="5" required spellcheck="false" autocomplete="off"></textarea>
@@ -83,7 +83,7 @@
         <p id="flow-fix-text" class="muted" role="status"></p>
         <ul class="notes" id="flow-fix-warnings"></ul>
         <div id="flow-issues"></div>
-        <div class="actions"><button class="btn" type="button" id="flow-reload">Load a corrected CSV</button><button class="btn primary" type="button" id="flow-plan">Plan on this Orchestrator</button></div>
+        <div class="actions"><button class="btn" type="button" id="flow-reload">Load a corrected CSV</button><button class="btn" type="button" id="flow-edit" hidden>Fix in the editor</button><button class="btn primary" type="button" id="flow-plan">Plan on this Orchestrator</button></div>
       </section>
 
       <section class="panel" id="flow-review" aria-labelledby="flow-review-title" hidden>
@@ -112,6 +112,37 @@
         <ul class="notes" id="flow-done-counts"></ul>
         <div id="flow-rows"></div>
         <div class="actions"><a class="btn" id="flow-run-link" href="#/runs">Open this run</a><button class="btn primary" type="button" id="flow-again">Start again</button></div>
+      </section>
+    </section>
+
+    <section id="view-editor" class="view" aria-labelledby="editor-title" hidden>
+      <a class="back" href="#/">← All tasks</a>
+      <div class="eyebrow" id="editor-orch"></div>
+      <h1 id="editor-title">Build a firewall CSV</h1>
+      <p class="lede">Pick segments, zones, groups and applications from this Orchestrator instead of typing them. Nothing is sent to Orchestrator until you use the CSV in Firewall rules and approve it there.</p>
+      <p class="muted" id="editor-inventory" role="status"></p>
+
+      <section class="panel" id="editor-start" aria-labelledby="editor-start-title">
+        <h2 id="editor-start-title">Start from</h2>
+        <p class="muted" id="editor-start-text" role="status"></p>
+        <div class="toolbar"><button class="btn primary" type="button" id="editor-blank">A blank CSV</button><label class="btn" for="editor-file">Load a CSV…</label><input type="file" id="editor-file" accept=".csv,text/csv" class="sr-only"></div>
+        <div class="toolbar" id="editor-source-row"><label for="editor-source">Template or example</label><select id="editor-source"></select><button class="btn" type="button" id="editor-from-source">Start from this</button></div>
+      </section>
+
+      <section class="panel" id="editor-grid-panel" aria-labelledby="editor-name" hidden>
+        <h2 id="editor-name"></h2>
+        <div class="toolbar"><label for="editor-q" class="sr-only">Search rules</label><input type="search" id="editor-q" placeholder="Search" autocomplete="off" aria-controls="editor-grid"><button class="btn primary" type="button" id="editor-add">Add rule</button></div>
+        <div class="table-wrap"><table id="editor-grid"><caption class="sr-only">Rules in the CSV</caption>
+          <thead><tr><th scope="col">Row</th><th scope="col">Rule key</th><th scope="col">Priority</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Matches</th><th scope="col">Action</th><th scope="col"><span class="sr-only">Row actions</span></th></tr></thead>
+          <tbody id="editor-rows"></tbody></table></div>
+        <div class="pager"><span class="count" id="editor-count" role="status"></span><div class="btns"><button class="btn" type="button" id="editor-prev">← Previous</button><span class="count" id="editor-where"></span><button class="btn" type="button" id="editor-next">Next →</button></div></div>
+      </section>
+
+      <section class="panel" id="editor-actions" aria-labelledby="editor-check-title" hidden>
+        <h2 id="editor-check-title">Check and use</h2>
+        <p id="editor-check-text" class="muted" role="status"></p>
+        <div id="editor-issues" hidden></div>
+        <div class="actions"><button class="btn" type="button" id="editor-check">Check rows</button><button class="btn" type="button" id="editor-check-orch"></button><button class="btn" type="button" id="editor-save">Save CSV</button><button class="btn primary" type="button" id="editor-use">Use in Firewall rules</button><button class="btn" type="button" id="editor-restart">Start over</button></div>
       </section>
     </section>
 
@@ -163,6 +194,11 @@
     <button class="btn danger" id="switch-confirm" type="button">Switch and start fresh</button>
     <button class="btn" id="switch-cancel" type="button" autofocus>Stay here</button>
   </div>
+</dialog>
+
+<dialog id="row-dialog" aria-labelledby="row-title">
+  <h2 id="row-title"></h2>
+  <form id="row-form"></form>
 </dialog>
 
 <dialog id="approve-dialog" aria-labelledby="approve-title" aria-describedby="approve-text">

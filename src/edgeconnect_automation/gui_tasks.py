@@ -110,7 +110,7 @@ class TaskManager:
         action = request.get("action")
         if action not in READS | CHANGES:
             raise TaskError("unknown action {!r}; use one of {}".format(action, ", ".join(sorted(READS | CHANGES))))
-        orchestrator = self._orchestrator(request.get("orchestrator"), writes=action in CHANGES)
+        orchestrator = self.known_orchestrator(request.get("orchestrator"), writes=action in CHANGES)
         kind = request.get("kind") or ""
         if action in {"plan", "apply", "delete"} and kind not in engine.KINDS:
             raise TaskError("unknown kind {!r}; use one of {}".format(kind, ", ".join(engine.KINDS)))
@@ -177,7 +177,7 @@ class TaskManager:
             task.changed.notify_all()
         return task
 
-    def _orchestrator(self, name: Any, writes: bool) -> str:
+    def known_orchestrator(self, name: Any, writes: bool) -> str:
         try:
             profiles = orchestrator_profiles(None, self.environ)
         except ConfigurationError as error:

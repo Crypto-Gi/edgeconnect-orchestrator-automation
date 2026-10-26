@@ -11,6 +11,7 @@ const TASKS = [
   { id: "template-acls", title: "Template ACLs", text: "Merge access lists into the Access Lists template of template groups.", writes: true, href: "#/do/template-acls" },
   { id: "zones", title: "Missing zones", text: "Create the firewall zones your rules need that this Orchestrator does not have yet.", writes: true, href: "#/do/zones" },
   { id: "remove", title: "Remove by CSV", text: "Delete exactly the objects listed in a CSV, after three warnings and typed confirmations.", writes: true, href: "#/remove" },
+  { id: "editor", title: "Build a firewall CSV", text: "Pick segments, zones, groups and applications from this Orchestrator instead of typing them.", writes: false, href: "#/edit/firewall" },
   { id: "changes", title: "See what changed", text: "Look through earlier runs, their outcomes and every row they touched.", writes: false, href: "#/runs" },
   { id: "inventory", title: "Inventory", text: "Look through the segments, zones and groups this Orchestrator has now.", writes: false, href: "#/inventory" },
 ];
@@ -132,7 +133,8 @@ function openTasks(name) { return state.tasks.filter((task) => task.orchestrator
 
 function requestSwitch(name) {
   if (name === state.current) return;
-  const csvs = Object.keys(state.work.csvs).length;
+  const editing = Boolean(state.work.editor && state.work.editor.dirty);
+  const csvs = Object.keys(state.work.csvs).length + (editing ? 1 : 0);
   const open = openTasks(state.current).length;
   if (!csvs && !open) return switchTo(name);
   const parts = [];
@@ -165,6 +167,7 @@ async function switchTo(name) {
 }
 
 function downloadCsvs() {
+  if (state.work.editor && state.work.editor.dirty) saveEditorCsv();
   for (const [file, text] of Object.entries(state.work.csvs)) {
     const link = el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv" })), download: file });
     link.click();
@@ -184,7 +187,7 @@ function renderIntents() {
 }
 
 function show(view) {
-  for (const id of ["view-home", "view-flow", "view-runs", "view-run", "view-inventory"]) $(id).hidden = id !== view;
+  for (const id of ["view-home", "view-flow", "view-editor", "view-runs", "view-run", "view-inventory"]) $(id).hidden = id !== view;
 }
 
 function render() {
@@ -193,6 +196,7 @@ function render() {
   const run = hash.match(/^#\/runs\/([\w-]+)$/);
   if (run) { show("view-run"); return loadRun(run[1]); }
   if (hash === "#/inventory") { show("view-inventory"); return renderInventory(); }
+  if (hash === "#/edit/firewall") { show("view-editor"); return renderEditor(); }
   if (hash === "#/remove") { show("view-flow"); return openFlow("", true); }
   const kind = hash.match(/^#\/do\/([\w-]+)$/);
   if (kind && FLOWS[kind[1]]) { show("view-flow"); return openFlow(kind[1], false); }
@@ -509,6 +513,7 @@ async function readInventory() {
     }
     state.work.inventory = view;
     if (location.hash === "#/inventory") renderInventory();
+    if (location.hash === "#/edit/firewall" && !OPEN_STATES.has(view.state)) renderEditor();
     loadTasks();
   };
   events.onerror = () => events.close();
@@ -654,6 +659,7 @@ function renderFlow() {
       : info.names ? "One zone name per line. Planning reads which zones " + where + " already has and changes nothing."
       : info.help + " Nothing is sent to Orchestrator until you approve the exact changes.";
     $("flow-file-name").textContent = flow.file ? "Loaded " + flow.file : "";
+    $("flow-build").hidden = flow.kind !== "firewall" || flow.remove;
     return;
   }
 
@@ -682,6 +688,7 @@ function renderFlow() {
       : "Every row is valid. Next, plan it against " + where + ": that reads the Orchestrator and changes nothing.";
     notes($("flow-fix-warnings"), result ? result.warnings : []);
     $("flow-issues").hidden = !(result && result.issues);
+    $("flow-edit").hidden = !(flow.kind === "firewall" && !flow.remove && result && result.issues);
     if (result && result.issues) {
       if (flowIssueTask !== task.id) { flowIssueTask = task.id; flowIssues.reset(); }
       flowIssues.load();
@@ -830,6 +837,377 @@ async function submitApproval(event) {
   }
 }
 
+/* firewall CSV editor. Rows are edited here; the server parses and writes the CSV, offers the choices, and checks rows. */
+const EDITOR_PAGE = 50;
+let editorSpec = null;
+let editorRowIndex = -1;
+
+function editor() {
+  if (!state.work.editor) state.work.editor = { rows: [], extra: [], name: "firewall-rules.csv", started: false, dirty: false, page: 1, q: "", check: null, options: null, optionsFor: "" };
+  return state.work.editor;
+}
+
+async function loadEditorSpec() {
+  if (!editorSpec) editorSpec = await api("/api/editor/firewall");
+  return editorSpec;
+}
+
+// Choices for the name columns come from the inventory read of the current Orchestrator; read it if it is not read yet.
+async function editorOptions() {
+  const ed = editor();
+  const inventory = state.work.inventory;
+  if (!inventory) readInventory();  // after a failed read, Inventory has the button to read again
+  if (inventory && inventory.state === "done" && ed.optionsFor !== inventory.id) {
+    try {
+      ed.options = await api("/api/editor/options?task=" + encodeURIComponent(inventory.id));
+      ed.optionsFor = inventory.id;
+    } catch (error) {
+      ed.options = null;
+    }
+  }
+}
+
+async function renderEditor() {
+  const ed = editor();
+  const orch = current();
+  const where = orch ? nameOf(orch) : "this Orchestrator";
+  $("editor-orch").textContent = orch ? nameOf(orch) : "No Orchestrator configured";
+  let spec;
+  try {
+    spec = await loadEditorSpec();
+  } catch (error) {
+    $("editor-start-text").textContent = "Could not load the editor: " + error.message;
+    return;
+  }
+  await editorOptions();
+  const inventory = state.work.inventory;
+  $("editor-inventory").textContent = ed.options ? "Choices come from " + where + "'s inventory, read " + new Date(inventory.finished * 1000).toLocaleTimeString() + "."
+    : inventory && inventory.state === "failed" ? "Could not read " + where + "'s inventory, so segment, zone and group choices are empty: " + inventory.message + " Read it again from Inventory."
+    : "Reading " + where + "'s inventory for the segment, zone and group choices…";
+  $("editor-start").hidden = ed.started;
+  $("editor-grid-panel").hidden = !ed.started;
+  $("editor-actions").hidden = !ed.started;
+  const select = $("editor-source");
+  if (!select.options.length) select.replaceChildren(...spec.sources.map((item) => el("option", { value: item.id, text: item.label })));
+  $("editor-source-row").hidden = !spec.sources.length;
+  if (!ed.started) return;
+  $("editor-name").textContent = ed.name + (ed.dirty ? " (not saved)" : "");
+  $("editor-check-orch").textContent = "Check against " + where;
+  renderEditorGrid();
+  renderEditorCheck();
+}
+
+function matchText(row) {
+  const parts = [];
+  for (const [label, keys] of [["from", ["source_address", "source_address_group"]], ["to", ["destination_address", "destination_address_group"]], ["either", ["either_address", "either_address_group"]],
+    ["app", ["application", "application_group"]], ["", ["protocol"]], ["port", ["source_port", "destination_port", "either_port"]], ["service", ["source_service_group", "destination_service_group", "either_service_group"]], ["acl", ["acl"]]]) {
+    const values = keys.map((key) => row[key]).filter(Boolean);
+    if (values.length) parts.push((label ? label + " " : "") + values.join(", "));
+  }
+  return parts.join("; ") || "all traffic";
+}
+
+function editorMatches() {
+  const ed = editor();
+  const q = ed.q.trim().toLowerCase();
+  const all = ed.rows.map((row, index) => index);
+  if (!q) return all;
+  return all.filter((index) => Object.values(ed.rows[index]).some((value) => String(value).toLowerCase().includes(q)));
+}
+
+function renderEditorGrid() {
+  const ed = editor();
+  const matches = editorMatches();
+  const pages = Math.max(1, Math.ceil(matches.length / EDITOR_PAGE));
+  ed.page = Math.min(Math.max(1, ed.page), pages);
+  const shown = matches.slice((ed.page - 1) * EDITOR_PAGE, ed.page * EDITOR_PAGE);
+  const button = (text, run, label) => {
+    const node = el("button", { class: "btn small", type: "button", text, "aria-label": label });
+    node.addEventListener("click", run);
+    return node;
+  };
+  $("editor-rows").replaceChildren(...(shown.length ? shown.map((index) => {
+    const row = ed.rows[index];
+    const label = row.rule_key || "row " + (index + 2);
+    return el("tr", null,
+      el("td", { text: String(index + 2) }),
+      el("td", { class: "mono", text: row.rule_key }),
+      el("td", { text: row.priority }),
+      el("td", { text: [row.source_segment, row.source_zone].filter(Boolean).join(" / ") }),
+      el("td", { text: [row.destination_segment, row.destination_zone].filter(Boolean).join(" / ") }),
+      el("td", { text: matchText(row) }),
+      el("td", { text: row.action + (String(row.enabled).toUpperCase() === "FALSE" ? " (disabled)" : "") }),
+      el("td", { class: "row-actions" },
+        button("Edit", () => openRow(index), "Edit " + label),
+        button("Copy", () => copyRow(index), "Copy " + label),
+        button("Remove", () => removeRow(index), "Remove " + label)));
+  }) : [el("tr", null, el("td", { colspan: "8", class: "muted", text: ed.rows.length ? "No rule matches the search." : "No rules yet. Add one." }))]));
+  $("editor-count").textContent = matches.length === ed.rows.length ? plural(ed.rows.length, "rule") : matches.length + " of " + ed.rows.length + " rules match";
+  $("editor-where").textContent = "Page " + ed.page + " of " + pages;
+  $("editor-prev").disabled = ed.page <= 1;
+  $("editor-next").disabled = ed.page >= pages;
+}
+
+function changed() {
+  const ed = editor();
+  ed.dirty = true;
+  ed.check = null;
+  $("editor-name").textContent = ed.name + " (not saved)";
+}
+
+function startEditor(rows, extra, name) {
+  const ed = editor();
+  Object.assign(ed, { rows, extra: extra || [], name: name || ed.name, started: true, dirty: false, page: 1, q: "", check: null });
+  $("editor-q").value = "";
+  renderEditor();
+}
+
+async function startFromSource() {
+  try {
+    const parsed = await api("/api/editor/firewall/source?id=" + encodeURIComponent($("editor-source").value));
+    startEditor(parsed.rows, parsed.extra, "firewall-rules.csv");
+  } catch (error) {
+    $("editor-start-text").textContent = "Could not start from it: " + error.message;
+  }
+}
+
+async function startFromText(text, name) {
+  try {
+    const parsed = await post("/api/editor/firewall/parse", { csv_text: text });
+    startEditor(parsed.rows, parsed.extra, name);
+  } catch (error) {
+    $("editor-start-text").textContent = "Could not read " + name + ": " + error.message;
+  }
+}
+
+function addRow() {
+  const ed = editor();
+  ed.rows.push(Object.assign({}, editorSpec.blank, { rule_key: "rule-" + (ed.rows.length + 1) }));
+  changed();
+  ed.q = "";
+  $("editor-q").value = "";
+  ed.page = Math.ceil(ed.rows.length / EDITOR_PAGE);
+  renderEditorGrid();
+  openRow(ed.rows.length - 1);
+}
+
+function copyRow(index) {
+  const ed = editor();
+  const copy = Object.assign({}, ed.rows[index], { rule_key: ed.rows[index].rule_key + "-copy", priority: "" });
+  ed.rows.splice(index + 1, 0, copy);
+  changed();
+  renderEditorGrid();
+  openRow(index + 1);
+}
+
+function removeRow(index) {
+  editor().rows.splice(index, 1);
+  changed();
+  renderEditorGrid();
+}
+
+/* the per-row form: choices from the inventory; values not on this Orchestrator stay, marked */
+function names(value) { return String(value || "").split("|").map((item) => item.trim()).filter(Boolean); }
+
+function choiceOptions(values, current, multiple) {
+  const chosen = multiple ? names(current) : [current || ""];
+  const list = values.slice();
+  for (const value of chosen) if (value && !list.includes(value)) list.push(value);
+  return list.map((value) => {
+    const option = el("option", { value, text: value === "" ? "(blank)" : value + (values.includes(value) ? "" : " (not on this Orchestrator)") });
+    option.selected = chosen.includes(value);
+    return option;
+  });
+}
+
+function sourceValues(source, form) {
+  const options = editor().options || { segments: [], zones: {}, all_zones: [], address_groups: [], service_groups: [] };
+  if (source.startsWith("zones:")) {
+    const segment = form.elements[source.slice(6)].value;
+    return options.zones[segment] || options.all_zones;
+  }
+  return options[source] || [];
+}
+
+function fieldControl(field, value, form) {
+  const id = "row-" + field.name;
+  if (field.kind === "choice") return el("select", { id, name: field.name }, ...choiceOptions(field.choices, value, false));
+  if (field.kind === "name") return el("select", { id, name: field.name, "data-source": field.source }, ...choiceOptions([""].concat(sourceValues(field.source, form)), value, false));
+  if (field.kind === "names") return el("select", { id, name: field.name, multiple: "", size: "4" }, ...choiceOptions(sourceValues(field.source, form), value, true));
+  if (field.kind === "search") return searchControl(field, value);
+  return el("input", { type: "text", id, name: field.name, value: value || "", autocomplete: "off", spellcheck: "false" });
+}
+
+// Applications and application groups: Orchestrator has thousands, so they are found by search and picked, never typed.
+function searchControl(field, value) {
+  const hidden = el("input", { type: "hidden", name: field.name, value: value || "" });
+  const chips = el("ul", { class: "chips", "aria-label": field.label + " chosen" });
+  const drawChips = () => chips.replaceChildren(...names(hidden.value).map((name) => {
+    const remove = el("button", { type: "button", class: "chip", "aria-label": "Remove " + name, text: name + " ×" });
+    remove.addEventListener("click", () => { hidden.value = names(hidden.value).filter((item) => item !== name).join("|"); drawChips(); });
+    return el("li", null, remove);
+  }));
+  drawChips();
+  const box = el("input", { type: "search", id: "row-" + field.name, placeholder: "Search " + field.label.toLowerCase(), autocomplete: "off" });
+  const results = el("ul", { class: "chips results", "aria-live": "polite" });
+  const find = el("button", { type: "button", class: "btn small", text: "Find" });
+  const run = async () => {
+    results.replaceChildren(el("li", { class: "muted", text: "Searching…" }));
+    try {
+      const found = (await api("/api/editor/search?" + query({ orchestrator: state.current, kind: field.source, q: box.value }))).names;
+      results.replaceChildren(...(found.length ? found.map((name) => {
+        const add = el("button", { type: "button", class: "chip add", text: "+ " + name });
+        add.addEventListener("click", () => { if (!names(hidden.value).includes(name)) hidden.value = names(hidden.value).concat(name).join("|"); drawChips(); });
+        return el("li", null, add);
+      }) : [el("li", { class: "muted", text: "Nothing found." })]));
+    } catch (error) {
+      results.replaceChildren(el("li", { class: "tone-bad", text: "Search failed: " + error.message }));
+    }
+  };
+  find.addEventListener("click", run);
+  box.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); run(); } });
+  return el("div", { class: "search-field" }, hidden, chips, el("div", { class: "toolbar" }, box, find), results);
+}
+
+function openRow(index) {
+  const ed = editor();
+  const row = ed.rows[index];
+  editorRowIndex = index;
+  const form = $("row-form");
+  form.replaceChildren();
+  $("row-title").textContent = "Row " + (index + 2) + (row.rule_key ? ": " + row.rule_key : "");
+  const groups = {};
+  for (const field of editorSpec.fields) {
+    if (!groups[field.group]) {
+      groups[field.group] = el("fieldset", null, el("legend", { text: field.group }));
+      form.append(groups[field.group]);
+    }
+    const control = fieldControl(field, row[field.name], form);
+    groups[field.group].append(el("div", { class: "field" }, el("label", { for: "row-" + field.name, text: field.label }), control));
+  }
+  // zones follow the chosen segment
+  for (const side of ["source", "destination"]) {
+    form.elements[side + "_segment"].addEventListener("change", () => {
+      const zone = form.elements[side + "_zone"];
+      zone.replaceChildren(...choiceOptions([""].concat(sourceValues("zones:" + side + "_segment", form)), zone.value, false));
+    });
+  }
+  form.append(el("div", { class: "actions" }, el("button", { class: "btn primary", type: "submit", text: "Keep these values" }), el("button", { class: "btn", type: "button", id: "row-cancel", text: "Cancel" })));
+  $("row-cancel").addEventListener("click", () => $("row-dialog").close());
+  $("row-dialog").showModal();
+  form.elements[0].focus();
+}
+
+function saveRow(event) {
+  event.preventDefault();
+  const ed = editor();
+  const form = $("row-form");
+  const row = Object.assign({}, ed.rows[editorRowIndex]);
+  for (const field of editorSpec.fields) {
+    const control = form.elements[field.name];
+    row[field.name] = control.multiple ? [...control.selectedOptions].map((option) => option.value).join("|") : control.value;
+  }
+  ed.rows[editorRowIndex] = row;
+  $("row-dialog").close();
+  changed();
+  renderEditorGrid();
+}
+
+async function editorCsv() {
+  const ed = editor();
+  return (await post("/api/editor/firewall/csv", { rows: ed.rows, extra: ed.extra })).csv_text;
+}
+
+async function saveEditorCsv() {
+  const ed = editor();
+  try {
+    const text = await editorCsv();
+    const link = el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv" })), download: ed.name });
+    link.click();
+    URL.revokeObjectURL(link.href);
+    ed.dirty = false;
+    $("editor-name").textContent = ed.name;
+  } catch (error) {
+    $("editor-check-text").textContent = "Could not save: " + error.message;
+  }
+}
+
+/* checks: the offline row check, or a read-only plan against the Orchestrator for missing names and conflicts */
+let editorIssueTask = "";
+const editorIssues = new PagedTable({
+  id: "editor-issues", label: "problems in the rules", container: $("editor-issues"), path: () => editorIssueTask && "/api/tasks/" + editorIssueTask + "/issues",
+  filters: [{ key: "rule", label: "All rules" }, { key: "column", label: "All columns" }], empty: "No problems.",
+  columns: [{ key: "row", label: "Row", cell: (row) => {
+    const index = Number(row.row) - 2;
+    if (!(index >= 0 && index < editor().rows.length)) return String(row.row || "");
+    const open = el("button", { class: "btn small", type: "button", text: "Row " + row.row, "aria-label": "Edit row " + row.row });
+    open.addEventListener("click", () => openRow(index));
+    return open;
+  } }].concat(issueColumns.slice(1)),
+});
+
+async function checkEditor(kind) {
+  const ed = editor();
+  let text;
+  try {
+    text = await editorCsv();
+  } catch (error) {
+    ed.check = { state: "failed", message: error.message, result: null };
+    return renderEditorCheck();
+  }
+  const body = kind === "plan" ? { action: "plan", kind: "firewall", csv_text: text } : { action: "validate", csv_text: text };
+  ed.check = { state: "queued", action: body.action, result: null };
+  renderEditorCheck();
+  const holder = {};
+  await startTask(holder, "task", body, () => { ed.check = holder.task; if (location.hash === "#/edit/firewall") renderEditorCheck(); });
+}
+
+function renderEditorCheck() {
+  const task = editor().check;
+  const result = task && task.result;
+  const where = nameOf(current()) || "this Orchestrator";
+  $("editor-check-text").className = task && FINAL_STATES.has(task.state) && (task.state === "failed" || (result && result.issues)) ? "tone-bad" : "muted";
+  $("editor-check-text").textContent = !task ? "Check the rules before you use them. Checking writes nothing."
+    : !FINAL_STATES.has(task.state) ? (task.action === "plan" ? "Checking against " + where + "…" : "Checking every row…")
+    : result && result.issues ? plural(result.issues, "problem") + " to fix. Use the row buttons to open each one."
+    : task.state === "failed" ? task.message
+    : task.action === "plan" ? "Every rule can be planned on " + where + ": every name exists there." + (result && result.warnings.length ? " Warnings: " + result.warnings.join("; ") : "")
+    : "Every row is valid." + (result && result.warnings.length ? " Warnings: " + result.warnings.join("; ") : "") + " Check against " + where + " to find names it does not have.";
+  $("editor-issues").hidden = !(result && result.issues);
+  if (result && result.issues) {
+    if (editorIssueTask !== task.id) { editorIssueTask = task.id; editorIssues.reset(); }
+    editorIssues.load();
+  }
+}
+
+async function useInFirewall() {
+  const ed = editor();
+  let text;
+  try {
+    text = await editorCsv();
+  } catch (error) {
+    $("editor-check-text").textContent = "Could not build the CSV: " + error.message;
+    return;
+  }
+  state.work.flow = { kind: "firewall", remove: false, file: ed.name, csv: text };
+  state.work.csvs = { [ed.name]: text };
+  startTask(state.work.flow, "validate", { action: "validate", csv_text: text }, rerenderFlow);
+  location.hash = "#/do/firewall";
+}
+
+function editFlowCsv() {
+  const flow = state.work.flow;
+  location.hash = "#/edit/firewall";
+  startFromText(flow.csv, flow.file);
+}
+
+function restartEditor() {
+  const ed = editor();
+  if (ed.dirty && !confirm("Start over? Your edits to " + ed.name + " are not saved.")) return;
+  Object.assign(ed, { rows: [], extra: [], started: false, dirty: false, check: null });
+  renderEditor();
+}
+
 /* command palette: combobox and listbox, all by keyboard */
 let paletteItems = [];
 let paletteIndex = 0;
@@ -887,6 +1265,27 @@ $("flow-approve").addEventListener("click", () => startTask(state.work.flow, "ap
 $("flow-names").addEventListener("submit", planZones);
 $("flow-understood").addEventListener("change", () => { $("flow-delete").disabled = !$("flow-understood").checked; });
 $("flow-delete").addEventListener("click", openApproval);
+$("flow-edit").addEventListener("click", editFlowCsv);
+$("editor-blank").addEventListener("click", () => startEditor([], [], "firewall-rules.csv"));
+$("editor-from-source").addEventListener("click", startFromSource);
+$("editor-file").addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => startFromText(String(reader.result), file.name);
+  reader.readAsText(file);
+  event.target.value = "";
+});
+$("editor-q").addEventListener("input", () => { const ed = editor(); ed.q = $("editor-q").value; ed.page = 1; renderEditorGrid(); });
+$("editor-add").addEventListener("click", addRow);
+$("editor-prev").addEventListener("click", () => { editor().page -= 1; renderEditorGrid(); });
+$("editor-next").addEventListener("click", () => { editor().page += 1; renderEditorGrid(); });
+$("editor-check").addEventListener("click", () => checkEditor("validate"));
+$("editor-check-orch").addEventListener("click", () => checkEditor("plan"));
+$("editor-save").addEventListener("click", saveEditorCsv);
+$("editor-use").addEventListener("click", useInFirewall);
+$("editor-restart").addEventListener("click", restartEditor);
+$("row-form").addEventListener("submit", saveRow);
 $("flow-open-approval").addEventListener("click", openApproval);
 $("flow-cancel").addEventListener("click", async () => {
   try { await post("/api/tasks/" + state.work.flow.apply.id + "/cancel"); } catch (error) { $("flow-progress-text").textContent = error.message; }
