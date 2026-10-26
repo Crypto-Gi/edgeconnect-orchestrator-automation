@@ -18,7 +18,7 @@ from .client import ApiClient
 from .config import load_config
 from .errors import ApprovalError, ConfigurationError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
 from .firewall import FirewallExecutor, _ensure_candidate_shape, build_firewall_plan, canonical_rule, normalize_rule, options_error, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
-from .gateway import OrchestratorGateway
+from .gateway import OrchestratorGateway, require_supported_release
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
 from .reporting import RunRecorder, finish, preview_text, render, summaries_from_file, write_rows_csv
 from .util import fingerprint, normalize_acl_entries, redact, safe_report, semantic_equal, split_values
@@ -219,6 +219,8 @@ class RunContext:
     target: str = ""
     target_name: str = ""
     target_url: str = ""
+    target_release: str = ""
+    target_id: str = ""
     gateway: Optional[OrchestratorGateway] = None
     approver: Callable[[Sequence[Gate], Any, str], None] = _terminal_approver
     approval_request: Optional[Dict[str, Any]] = None
@@ -252,13 +254,8 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
     gateway = OrchestratorGateway(ApiClient(config, verbosity=args.verbose))
     if recorder is not None:
         recorder.client = gateway.client
-    release = str(gateway.get_version().get("release", ""))
-    try:
-        parts = tuple(int(part) for part in release.split(".")[:2])
-    except ValueError as error:
-        raise ValidationError("unable to parse Orchestrator release {}".format(release)) from error
-    if len(parts) < 2 or parts < (9, 3):
-        raise ValidationError("Orchestrator 9.3 or later is required; found {}".format(release or "unknown"))
+    release = require_supported_release(gateway.get_version())
+    context.target_release, context.target_id = release, gateway.get_server_id()
     if recorder is not None:
         recorder.orchestrator_release = release
         list_appliances = gateway.get_appliances
@@ -276,7 +273,7 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
 def _stamp(value: Dict[str, Any], source: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Record which Orchestrator an inventory or plan file belongs to (inherited from its inventory when offline)."""
     context = _context()
-    stamp = {"name": context.target_name, "url": context.target_url} if context.target_url else (source or {}).get("orchestrator")
+    stamp = {"name": context.target_name, "url": context.target_url, "release": context.target_release, "id": context.target_id} if context.target_url else (source or {}).get("orchestrator")
     if stamp:
         value["orchestrator"] = stamp
     return value
@@ -294,6 +291,10 @@ def _require_plan_orchestrator(args: argparse.Namespace, value: Mapping[str, Any
         label = "{} ({})".format(name, stamp["url"]) if name else stamp["url"]
         hint = " with --orchestrator {}".format(name) if name else ""
         raise ValidationError("this {} is for Orchestrator {}; rerun{} to use it".format(what, label, hint))
+    target_id = _context().target_id
+    if stamp.get("id") and target_id and target_id != stamp["id"]:
+        # Same address, different Orchestrator (rebuilt, restored elsewhere, or a DNS change): the plan's baseline is not this one.
+        raise ValidationError("this {} was made on the Orchestrator with serial number {}, but {} now answers with serial number {}; make a new {} against it".format(what, stamp["id"], stamp["url"], target_id, what))
 
 
 def _print_target() -> None:

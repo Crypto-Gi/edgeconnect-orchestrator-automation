@@ -83,11 +83,14 @@ edgeconnect-auto --orchestrator test firewall deploy --csv rules.csv --dry-run  
 
 The chosen Orchestrator is printed above every `APPLY` and deletion prompt (`Target Orchestrator: test (<host>)`) and on the `Orchestrator :` line of the RUN SUMMARY and report log. Check it before you confirm. The single-Orchestrator `orchestrator_base_url` / `orchestrator_api_key` lines work as before. If you add `orch_<number>` lines next to them, the old lines become one more choice with the nickname `orchestrator` (`--orchestrator orchestrator`, or `orch_default=orchestrator`). They are never silently ignored.
 
-Plan files (`plan --output`) record the Orchestrator they were made from, and so do `discovery --output` files. `apply --approved-plan` refuses a plan made on a different Orchestrator, and `firewall deploy --inventory` refuses such an inventory file, before any approval prompt, naming only the Orchestrator the file belongs to. (`--inventory` takes the offline contract-test inventory format used by the tests, not a `discovery --output` file; a file in the wrong format stops with exit 2 and names the expected format. It replaces live discovery only: `firewall plan --inventory` never contacts Orchestrator, while `firewall deploy --inventory` still reads the Orchestrator release, and without `--dry-run` writes, re-reads and verifies live as usual. It never offers to create missing zones.)
+Plan files (`plan --output`) record the Orchestrator they were made from (nickname, address, release and serial number), and so do `discovery --output` files. `apply --approved-plan` refuses a plan made on a different Orchestrator, including one now at the same address with a different serial number (rebuilt, or the name moved), and `firewall deploy --inventory` refuses such an inventory file, before any approval prompt, naming only the Orchestrator the file belongs to. (`--inventory` takes the offline contract-test inventory format used by the tests, not a `discovery --output` file; a file in the wrong format stops with exit 2 and names the expected format. It replaces live discovery only: `firewall plan --inventory` never contacts Orchestrator, while `firewall deploy --inventory` still reads the Orchestrator release, and without `--dry-run` writes, re-reads and verifies live as usual. It never offers to create missing zones.)
 
 ```text
 this plan is for Orchestrator lab (https://<FQDN>); rerun with --orchestrator lab to use it
+this plan was made on the Orchestrator with serial number <SERIAL_A>, but https://<FQDN> now answers with serial number <SERIAL_B>; make a new plan against it
 ```
+
+The serial number comes from `GET /gmsserver/info`. If the API key cannot read it, the file records none and only the address is compared.
 
 A firewall plan built offline from `--inventory` inherits that inventory's Orchestrator. Files written by older versions have no record and are not checked. Deletion has no saved plan; its target is shown in the deletion table and before every confirmation.
 

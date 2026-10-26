@@ -42,7 +42,7 @@ class RunContextTests(unittest.TestCase):
             self.assertEqual(codes, {"orch-a": 0, "orch-b": 0})
             for name in ("orch-a", "orch-b"):
                 plan = json.loads((root / (name + ".json")).read_text(encoding="utf-8"))
-                self.assertEqual(plan["orchestrator"], {"name": name, "url": "https://{}.invalid".format(name)})
+                self.assertEqual(plan["orchestrator"], {"name": name, "url": "https://{}.invalid".format(name), "release": "9.7.1", "id": "ORCH-SERIAL-1"})
 
 
 if __name__ == "__main__":

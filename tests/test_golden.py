@@ -40,6 +40,9 @@ class GoldenGateway:
     def get_version(self):
         return {"release": "9.7.1"}
 
+    def get_server_id(self):
+        return "ORCH-SERIAL-1"
+
     def get_segmentation(self):
         return {"enable": True}
 
