@@ -1,6 +1,7 @@
 """End-of-run summaries and the automatic, append-only report log for every command."""
 import datetime
 import hashlib
+import io
 import json
 import csv
 import os
@@ -601,13 +602,28 @@ def rows_table(rows: Sequence[Mapping[str, Any]], limit: Optional[int] = None) -
     return lines
 
 
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def spreadsheet_safe(value: Any) -> Any:
+    """Text a spreadsheet would run as a formula (it starts with = + - @, a tab or a carriage return) gets a leading '."""
+    return "'" + value if isinstance(value, str) and value.startswith(_FORMULA_START) else value
+
+
+def csv_text(rows: Sequence[Mapping[str, Any]], fields: Sequence[str]) -> str:
+    """Rows as CSV for people to open; names and reasons come from CSVs and Orchestrator, so no cell can run as a formula."""
+    handle = io.StringIO(newline="")
+    writer = csv.DictWriter(handle, fields, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows({key: spreadsheet_safe(value) for key, value in row.items()} for row in rows)
+    return handle.getvalue()
+
+
 def write_rows_csv(path: str, rows: Sequence[Mapping[str, Any]]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, ROW_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+        handle.write(csv_text(rows, ROW_FIELDS))
 
 
 def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str, Any]:

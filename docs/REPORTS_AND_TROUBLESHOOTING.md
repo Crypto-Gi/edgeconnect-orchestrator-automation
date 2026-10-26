@@ -86,7 +86,7 @@ edgeconnect-auto report summarize reports/firewall.jsonl --last 3
 edgeconnect-auto report summarize old-report.json --rows-csv rows.csv
 ```
 
-This prints the RUN SUMMARY and the full row table from a saved `--report` file, a plan file, or the last runs of a `reports/<workflow>.jsonl` log. It also works on reports written by versions before this feature (the tool version then shows as unknown). `--rows-csv` exports the row table for Excel. It reads files only: it does not contact Orchestrator and does not add to the report log.
+This prints the RUN SUMMARY and the full row table from a saved `--report` file, a plan file, or the last runs of a `reports/<workflow>.jsonl` log. It also works on reports written by versions before this feature (the tool version then shows as unknown). `--rows-csv` exports the row table for Excel. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a name or reason copied from a CSV or from Orchestrator can never run as a spreadsheet formula; the GUI's CSV exports do the same. It reads files only: it does not contact Orchestrator and does not add to the report log.
 
 ### Automatic report log
 
