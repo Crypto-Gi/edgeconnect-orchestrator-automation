@@ -47,6 +47,7 @@ class Task:
         self.events: List[Dict[str, Any]] = []
         self.answers: Optional[List[str]] = None
         self.typed_orchestrator = ""
+        self.understood = False
         self.deadline: Optional[float] = None
         self.cancelled = False
         self._tables: Dict[str, List[Dict[str, Any]]] = {}
@@ -153,8 +154,8 @@ class TaskManager:
             return gui_tables.page(task.table(name), params, ("action", "type"), default_sort="action")
         return gui_tables.page(task.table(name), params, ("outcome",))
 
-    def approve(self, task_id: str, answers: Any, orchestrator: Any = "") -> Task:
-        """Hand the typed confirmations, and the Orchestrator nickname as typed, to a task awaiting approval."""
+    def approve(self, task_id: str, answers: Any, orchestrator: Any = "", understood: Any = False) -> Task:
+        """Hand the typed confirmations, the Orchestrator nickname as typed and, for a delete, the "I understand" tick to a task awaiting approval."""
         task = self.get(task_id)
         if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
             raise TaskError("answers must be a list of the typed confirmations")
@@ -163,7 +164,7 @@ class TaskManager:
         with task.changed:
             if task.state != "awaiting_approval" or task.answers is not None:
                 raise TaskError("task {} is {}, not awaiting approval".format(task_id, task.state), 409)
-            task.answers, task.typed_orchestrator = answers, orchestrator
+            task.answers, task.typed_orchestrator, task.understood = answers, orchestrator, understood is True
             task.changed.notify_all()
         return task
 
@@ -274,6 +275,8 @@ class TaskManager:
         if task.typed_orchestrator != task.orchestrator:
             # The GUI's own gate: the nickname proves the person looked at which Orchestrator this write goes to.
             return task.set("rejected", "Orchestrator nickname refused (typed {!r}, this write goes to {!r}); nothing was written".format(task.typed_orchestrator, task.orchestrator))
+        if task.action == "delete" and not task.understood:
+            return task.set("rejected", "you did not confirm you understand what this deletes; nothing was deleted")
         try:
             approval = engine.approve(self.approvals, preview.approval, answers, task.typed_orchestrator)
         except ApprovalError as error:
