@@ -27,3 +27,16 @@ jobs:
       - run: python -m edgeconnect_automation --help
         env:
           PYTHONPATH: src
+  browser:
+    # The GUI in Chromium: tests/test_gui_browser.py. Elsewhere it is skipped, since Playwright is not a dependency.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install playwright==1.56.0 && python -m playwright install --with-deps chromium
+      - run: python -m unittest -v tests.test_gui_browser
+        env:
+          PYTHONPATH: src
+          EDGECONNECT_BROWSER_TESTS: "1"

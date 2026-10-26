@@ -6,7 +6,7 @@
 
 Orchestrator's GUI has no bulk path for global firewall policies or application definitions. This CLI turns a reviewed spreadsheet into guarded Orchestrator API workflows, and refuses anything that would silently overwrite live configuration. Every write is approval-gated, checked for drift, and verified through fresh readback.
 
-Current release: `v1.2.11` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
+Current release: `v1.3.0rc1`, a pre-release on the `gui` branch that adds the web GUI; `main` is at `v1.2.11` (see [CHANGELOG.md](CHANGELOG.md)). Tested scope is stated under [Supported scope](#supported-scope).
 
 ## What a run looks like
 
@@ -108,6 +108,19 @@ edgeconnect-auto firewall deploy --csv rules.csv --dry-run                      
 ```
 
 Edit `rules.csv` for your segments, zones and addresses, and dry-run it before anything is applied. Windows, several Orchestrators in one `.env`, private CA bundles and self-signed certificates are in [Setup and configuration](docs/SETUP_AND_CONFIGURATION.md). The step-by-step first run is in [Workflows](docs/WORKFLOWS.md#first-use-procedure).
+
+## Web GUI
+
+![The GUI: a CSV with problems listed row by row, then a corrected CSV planned, approved by typing APPLY and the nickname, and the run page with Undo](docs/gui/demo.gif)
+
+`edgeconnect-auto gui` opens the same workflows in your browser, on this computer only. Load a CSV and the GUI lists every problem row by row with its fix; correct the file and load it again. A clean CSV is planned on the Orchestrator you pick, and you approve the exact preview by typing `APPLY` and the Orchestrator's nickname. The GUI uploads CSVs in bulk; it does not edit individual rules. It runs the same commands as the CLI, with the same checks, so a CSV gets the same result in both.
+
+```bash
+cd <the folder that holds your .env>
+edgeconnect-auto gui            # prints a sign-in link and opens your browser
+```
+
+Writes are off until you add `<nickname>_gui_writes=on` to `.env` for an Orchestrator. Every upload made in the GUI has "Undo this upload" on its run page, which deletes exactly what it created. It runs on macOS, Linux and Windows through WSL. Details are in the [Operator guide](docs/OPERATOR_GUIDE.md#web-gui).
 
 ## Use it with an AI agent
 

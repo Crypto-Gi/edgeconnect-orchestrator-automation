@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0rc1 — 2026-10-26 (pre-release, `gui` branch)
+
+- `edgeconnect-auto gui` starts a local web GUI for bulk CSV uploads, on 127.0.0.1 only. It runs the same commands as the CLI, so the checks and results are the same; nothing in the existing commands changed. A CSV with problems is listed row by row with the fix for each. A write needs the same typed confirmations as the terminal plus the Orchestrator nickname, and is off for an Orchestrator until `.env` has `<nickname>_gui_writes=on`. The GUI shows every Orchestrator's status, the run log, the inventory, a guided upload for each object type, Remove by CSV, and "Undo this upload" for uploads made in the GUI. It runs on macOS, Linux and Windows through WSL.
+- `edgeconnect-auto gui` accepts `--dotenv` when it names the `.env` of the folder it starts in, so the launcher `setup.sh` installs works from the install folder.
 ## 1.2.11 — 2026-10-23
 
 - `orchestrator_tls_sha256` now pins the `orchestrator` choice (the single-Orchestrator lines) when `orch_<N>` lines also exist. Previously the pin was dropped as soon as any nickname was configured. It is still never used for a nickname, because a pin belongs to one host.

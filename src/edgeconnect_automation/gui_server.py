@@ -266,7 +266,7 @@ def open_browser(url: str) -> None:
 
 def serve(port: int = 0, browser: bool = True) -> int:
     server = GuiServer(port)
-    print("EXPERIMENTAL edgeconnect-auto GUI. Open this link in your browser (it is your sign-in; do not share it):\n\n  {}\n\nPress Ctrl+C to stop.".format(server.url), flush=True)
+    print("edgeconnect-auto GUI. Open this link in your browser (it is your sign-in; do not share it):\n\n  {}\n\nPress Ctrl+C to stop.".format(server.url), flush=True)
     if browser:
         open_browser(server.url)
     try:

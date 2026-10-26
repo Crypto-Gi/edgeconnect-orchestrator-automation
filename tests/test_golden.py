@@ -178,7 +178,7 @@ _VOLATILE = [
     (re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?([+-]\d\d:\d\d|Z)?"), "<TIME>"),
     (re.compile(r"\(\d+\.\d+s\)"), "(<SECONDS>)"),
     (re.compile(r'"duration_seconds": [0-9.]+'), '"duration_seconds": "<SECONDS>"'),
-    (re.compile(r"tool \d+\.\d+\.\d+"), "tool <VERSION>"),
+    (re.compile(r"tool \d+\.\d+\.\d+[0-9a-z.]*"), "tool <VERSION>"),
     (re.compile(r'"tool_version": "[^"]*"'), '"tool_version": "<VERSION>"'),
     # Report fingerprints cover the run's own time and ID; the content they cover is compared directly.
     (re.compile(r'"report_fingerprint": "sha256:[0-9a-f]{64}"'), '"report_fingerprint": "<FINGERPRINT>"'),

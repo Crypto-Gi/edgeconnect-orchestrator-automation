@@ -32,7 +32,7 @@ html { background: var(--ink); }
 body { margin: 0; background: var(--ink); color: var(--text); font: 400 1rem/1.55 var(--f-body); }
 a { color: var(--signal); }
 :focus-visible { outline: 2px solid var(--gate); outline-offset: 3px; border-radius: 4px; }
-h1, h2, h3 { font-family: var(--f-display); line-height: 1.15; margin: 0; text-wrap: balance; }
+h1, h2 { font-family: var(--f-display); line-height: 1.15; margin: 0; text-wrap: balance; }
 h1 { font-size: clamp(1.9rem, 4.4vw, 3rem); font-weight: 800; letter-spacing: -.015em; }
 h2 { font-size: 1.15rem; font-weight: 700; }
 p { margin: 0; }
@@ -48,7 +48,6 @@ kbd, code, .mono { font-family: var(--f-mono); font-size: .85em; }
 .bar-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; padding-block: .75rem .6rem; }
 .brand { font: 700 1rem/1 var(--f-display); color: var(--text); text-decoration: none; white-space: nowrap; }
 .brand b { color: var(--signal); }
-.tag { font: 500 .7rem/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--gate); border: 1px solid var(--gate); border-radius: 999px; padding: .3rem .5rem; }
 .switcher { display: flex; align-items: center; gap: .5rem; margin-left: auto; min-width: 0; }
 .orch-swatch { width: .8rem; height: .8rem; border-radius: 50%; background: var(--orch-color); border: 1px solid var(--line); flex: none; }
 select, input[type="text"] { font: 500 .9rem/1.2 var(--f-body); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .5rem .9rem; max-width: 16rem; }
@@ -70,7 +69,7 @@ main { padding-block: 2.2rem 3rem; outline: none; }
 .intents { list-style: none; margin: .4rem 0 1rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .8rem; }
 .intent { display: grid; gap: .4rem; align-content: start; height: 100%; padding: 1.1rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); color: var(--text); text-decoration: none; transition: border-color .15s, background .15s; }
 .intent:hover { border-color: var(--signal); background: color-mix(in srgb, var(--panel) 85%, var(--glow)); }
-.intent h3 { font-size: 1.05rem; font-weight: 700; }
+.intent h2 { font-size: 1.05rem; font-weight: 700; }
 .intent p { color: var(--muted); font-size: .92rem; }
 .intent .kind { order: -1; font: 500 .7rem/1 var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .intent .kind.writes { color: var(--gate); }
@@ -126,7 +125,7 @@ td { overflow-wrap: break-word; }  /* not "anywhere": narrow screens scroll the 
 .stepper li.done { color: var(--ok); border-color: var(--ok); }
 .stepper li.done::after { content: " ✓"; }
 .stepper li[aria-current="step"] { color: var(--on-signal); background: var(--signal); border-color: var(--signal); }
-.stepper li.stopped { color: var(--bad); border-color: var(--bad); }
+.stepper li.stopped { color: var(--on-signal); background: var(--bad); border-color: var(--bad); }
 .callout { border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: .7rem .9rem; }
 .callout.bad { border-color: var(--bad); }
 .callout.gate { border-color: var(--gate); }
@@ -151,6 +150,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
 #palette li { padding: .55rem .7rem; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 1rem; }
 #palette li span { color: var(--muted); font-size: .85rem; }
 #palette li[aria-selected="true"] { background: var(--glow); outline: 1px solid var(--signal); }
+#palette li[aria-selected="true"] span { color: var(--text); }
 .hint { color: var(--muted); font-size: .8rem; margin: .5rem .3rem 0; }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
 #switch-dialog p { color: var(--muted); margin-top: .6rem; }

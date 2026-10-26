@@ -178,7 +178,7 @@ function renderIntents() {
   $("intents").replaceChildren(...TASKS.map((task) => el("li", null,
     el("a", { class: "intent", href: task.href },
       // Title first, so a screen reader names the link by its task; CSS shows the kind above it.
-      el("h3", { text: task.title }),
+      el("h2", { text: task.title }),
       el("p", { text: task.text }),
       el("span", { class: "kind" + (task.writes ? " writes" : ""), text: task.writes ? (orch && orch.writes ? "changes Orchestrator" : "preview only here") : "read only" })))));
 }
