@@ -171,7 +171,7 @@ class ServerTests(Offline):
         self.assertEqual(self.request("GET", "/?token=wrong", cookie=False)[0].status, 401)
         response, text = self.request("GET", "/")
         self.assertEqual((response.status, response.headers["Content-Security-Policy"].split(";")[0]), (200, "default-src 'self'"))
-        self.assertIn("EdgeConnect automation", text)
+        self.assertIn("<title>EdgeConnect Automation</title>", text)
 
     def test_missing_or_wrong_cookie_is_refused_everywhere(self):
         for path in ("/", "/app.js", "/api/tasks", "/api/orchestrators", "/api/tasks/task-1/events"):
