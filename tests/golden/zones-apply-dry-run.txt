@@ -1,0 +1,48 @@
+$ edgeconnect-auto zones apply --approved-plan zones-plan.json --dry-run
+exit code: 0
+--- stdout
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : zones apply
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - zones to create: NEW_ZONE
+Report       : reports/zones.jsonl
+Report       : reports/zones.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================
+
+--- file reports/zones.jsonl
+{"status": "DRY_RUN", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "zones apply", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "zones apply", "command": "edgeconnect-auto --report-dir reports zones apply --approved-plan zones-plan.json --dry-run", "dry_run": true, "csv": {}, "status": "DRY_RUN", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": ["zones to create: NEW_ZONE"], "row_outcomes": {}, "rows": [], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Review the planned changes, then run the same command without --dry-run to apply.", "reports": ["reports/zones.jsonl", "reports/zones.log"]}, "outputs": [{"preview": {"kind": "zones", "baseline": {"1": {"name": "INSIDE"}, "2": {"name": "OUTSIDE"}, "3": {"name": "SOURCE_ZONE"}, "4": {"name": "DESTINATION_ZONE"}}, "candidate": {"1": {"name": "INSIDE"}, "2": {"name": "OUTSIDE"}, "3": {"name": "SOURCE_ZONE"}, "4": {"name": "DESTINATION_ZONE"}, "5": {"name": "NEW_ZONE"}}, "baseline_fingerprint": "sha256:af911cd87d236016105889c1082459fe720a433e9a6da0dbe65ee98830385a78", "created": {"NEW_ZONE": 5}, "all_vrf_fingerprint": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "mappings_fingerprint": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", "orchestrator": {"name": "lab", "url": "https://orchestrator.invalid"}, "report_fingerprint": "<FINGERPRINT>"}, "impact": "configuration write", "validation": "fresh readback and normalized comparison", "recovery": "workflow-specific preservation or rollback"}], "files_written": [], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/zones.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : zones apply
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - zones to create: NEW_ZONE
+Report       : reports/zones.jsonl
+Report       : reports/zones.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================

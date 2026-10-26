@@ -1,0 +1,677 @@
+$ edgeconnect-auto template-acls plan --csv template_acls_valid.csv --output template-acls-plan.json
+exit code: 2
+--- stdout
+{
+  "eligible_groups": [],
+  "ineligible_groups": [
+    "EXISTING_OR_NEW_GROUP"
+  ],
+  "output": "template-acls-plan.json"
+}
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : template-acls plan
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : template_acls_valid.csv (15 data rows, sha256 17034223c8f1...)
+RESULT       : BLOCKED
+Changes made : no
+Exit code    : 2 = blocked by validation or planning; nothing was written
+
+What was planned or done
+  - template group EXISTING_OR_NEW_GROUP (BLOCKED, new): 15 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances
+
+Rows (15): 8 BLOCKED, 7 NOT ATTEMPTED
+  ROW  OUTCOME        ITEM                        SCOPE / REASON
+  9    BLOCKED        test-51-acl priority 7000   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Formats
+  10   BLOCKED        test-51-acl priority 7010   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Excluded; [DEP-03] missing address group test-51-ag-Child
+  11   BLOCKED        test-51-acl priority 7020   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Formats; [DEP-03] missing address group test-51-ag-DepthTwo
+  12   BLOCKED        test-51-acl priority 7030   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-MultiRule
+  13   BLOCKED        test-51-acl priority 7040   EXISTING_OR_NEW_GROUP | [DEP-03] missing service group test-51-sg-TCP
+  14   BLOCKED        test-51-acl priority 7050   EXISTING_OR_NEW_GROUP | [DEP-03] missing service group test-51-sg-UDP
+  15   BLOCKED        test-51-acl priority 7060   EXISTING_OR_NEW_GROUP | [DEP-03] missing service group test-51-sg-MultiRule
+  16   BLOCKED        test-51-acl priority 7070   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Child; [DEP-03] missing service group test-51-sg-Child
+  2    NOT ATTEMPTED  test-51-acl priority 1000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  3    NOT ATTEMPTED  test-51-acl priority 2000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  4    NOT ATTEMPTED  test-51-acl priority 3000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  5    NOT ATTEMPTED  test-51-acl priority 4000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  6    NOT ATTEMPTED  test-51-acl priority 5000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  7    NOT ATTEMPTED  test-51-acl priority 6000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  8    NOT ATTEMPTED  test-51-acl priority 65535  EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+
+Why it stopped or what failed
+  - row 9 [DEP-03] missing address group test-51-ag-Formats
+  - row 10 [DEP-03] missing address group test-51-ag-Excluded
+  - row 10 [DEP-03] missing address group test-51-ag-Child
+  - row 11 [DEP-03] missing address group test-51-ag-Formats
+  - row 11 [DEP-03] missing address group test-51-ag-DepthTwo
+  - row 12 [DEP-03] missing address group test-51-ag-MultiRule
+  - row 13 [DEP-03] missing service group test-51-sg-TCP
+  - row 14 [DEP-03] missing service group test-51-sg-UDP
+  - row 15 [DEP-03] missing service group test-51-sg-MultiRule
+  - row 16 [DEP-03] missing address group test-51-ag-Child
+  - row 16 [DEP-03] missing service group test-51-sg-Child
+Report       : reports/template-acls.jsonl
+Report       : reports/template-acls.log
+
+Next step    : Fix every blocking issue listed above, then rerun the same command with --dry-run.
+==============================================================================
+
+--- file reports/template-acls.jsonl
+{"status": "BLOCKED", "exit_code": 2, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "template-acls plan", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "template-acls plan", "command": "edgeconnect-auto --report-dir reports template-acls plan --csv template_acls_valid.csv --output template-acls-plan.json", "dry_run": false, "csv": {"path": "template_acls_valid.csv", "sha256": "17034223c8f1d705287ae33fb79491fb0d58a1f64e9e98df419f3da0bbf9176d", "data_rows": 15}, "status": "BLOCKED", "changes_written": "no", "exit_code": 2, "exit_meaning": "blocked by validation or planning; nothing was written", "counts": ["template group EXISTING_OR_NEW_GROUP (BLOCKED, new): 15 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances"], "row_outcomes": {"NOT ATTEMPTED": 7, "BLOCKED": 8}, "rows": [{"row": 2, "item": "test-51-acl priority 1000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 3, "item": "test-51-acl priority 2000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 4, "item": "test-51-acl priority 3000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 5, "item": "test-51-acl priority 4000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 6, "item": "test-51-acl priority 5000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 7, "item": "test-51-acl priority 6000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 8, "item": "test-51-acl priority 65535", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "NOT ATTEMPTED", "reason": "template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16"}, {"row": 9, "item": "test-51-acl priority 7000", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing address group test-51-ag-Formats"}, {"row": 10, "item": "test-51-acl priority 7010", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing address group test-51-ag-Excluded; [DEP-03] missing address group test-51-ag-Child"}, {"row": 11, "item": "test-51-acl priority 7020", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing address group test-51-ag-Formats; [DEP-03] missing address group test-51-ag-DepthTwo"}, {"row": 12, "item": "test-51-acl priority 7030", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing address group test-51-ag-MultiRule"}, {"row": 13, "item": "test-51-acl priority 7040", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing service group test-51-sg-TCP"}, {"row": 14, "item": "test-51-acl priority 7050", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing service group test-51-sg-UDP"}, {"row": 15, "item": "test-51-acl priority 7060", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing service group test-51-sg-MultiRule"}, {"row": 16, "item": "test-51-acl priority 7070", "scope": "EXISTING_OR_NEW_GROUP", "outcome": "BLOCKED", "reason": "[DEP-03] missing address group test-51-ag-Child; [DEP-03] missing service group test-51-sg-Child"}], "blocking_issues": ["row 9 [DEP-03] missing address group test-51-ag-Formats", "row 10 [DEP-03] missing address group test-51-ag-Excluded", "row 10 [DEP-03] missing address group test-51-ag-Child", "row 11 [DEP-03] missing address group test-51-ag-Formats", "row 11 [DEP-03] missing address group test-51-ag-DepthTwo", "row 12 [DEP-03] missing address group test-51-ag-MultiRule", "row 13 [DEP-03] missing service group test-51-sg-TCP", "row 14 [DEP-03] missing service group test-51-sg-UDP", "row 15 [DEP-03] missing service group test-51-sg-MultiRule", "row 16 [DEP-03] missing address group test-51-ag-Child", "row 16 [DEP-03] missing service group test-51-sg-Child"], "warnings": [], "targets": [], "run_reference": "", "next_step": "Fix every blocking issue listed above, then rerun the same command with --dry-run.", "reports": ["reports/template-acls.jsonl", "reports/template-acls.log"]}, "outputs": [{"kind": "template-acls", "plan": {"groups": [{"template_group": "EXISTING_OR_NEW_GROUP", "eligible": false, "errors": ["row 9 [DEP-03] missing address group test-51-ag-Formats", "row 10 [DEP-03] missing address group test-51-ag-Excluded", "row 10 [DEP-03] missing address group test-51-ag-Child", "row 11 [DEP-03] missing address group test-51-ag-Formats", "row 11 [DEP-03] missing address group test-51-ag-DepthTwo", "row 12 [DEP-03] missing address group test-51-ag-MultiRule", "row 13 [DEP-03] missing service group test-51-sg-TCP", "row 14 [DEP-03] missing service group test-51-sg-UDP", "row 15 [DEP-03] missing service group test-51-sg-MultiRule", "row 16 [DEP-03] missing address group test-51-ag-Child", "row 16 [DEP-03] missing service group test-51-sg-Child"], "warnings": [], "create": true, "baseline_group": null, "baseline_acl_value": {"data": {"EXISTING-ACL": {"entry": {}}}, "options": {"merge": true, "delDependent": true}}, "candidate_acl_value": {"data": {"EXISTING-ACL": {"entry": {}}, "test-51-acl": {"entry": {"1000": {"permit": true, "comment": "Application dependency", "application": "test-51-domain"}, "2000": {"permit": true, "comment": "Application-group dependency", "app_group": "test-51-All_Apps"}, "3000": {"permit": true, "comment": "Directional IPv4 and ports", "protocol": "tcp", "src_ip": "192.0.2.0/24", "dst_ip": "198.51.100.10/32", "src_port": "1000-2000", "dst_port": "443", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}, "4000": {"permit": true, "comment": "Either IPv6, port, and domain", "protocol": "tcp/udp", "either_ip": "2001:db8::/32", "either_port": "443", "either_dns": "example.net", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}, "5000": {"permit": true, "comment": "Directional domains", "src_dns": "*.source.example.com", "dst_dns": "*destination.example.com"}, "6000": {"permit": false, "comment": "Prefix mask and deny", "protocol": "icmp", "src_ip": "10.0.0.0/16", "additionalSwitch_ip": "ips"}, "65535": {"permit": false, "comment": "Intentional catch-all deny"}, "7000": {"permit": true, "comment": "Source group and segment to destination IP", "dst_ip": "198.51.100.10/32", "src_addrgrp_groups": "test-51-ag-Formats", "src_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0}, "7010": {"permit": true, "comment": "Source IP to destination group list", "src_ip": "192.0.2.10/32", "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_vrf": 0}, "7020": {"permit": false, "comment": "Group to group with all segments", "src_addrgrp_groups": "test-51-ag-Formats", "dst_addrgrp_groups": "test-51-ag-DepthTwo", "src_additionalSwitch_ip": "groups", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0, "dst_vrf": 0, "either_vrf": 0}, "7030": {"permit": true, "comment": "Either-direction address group", "either_addrgrp_groups": "test-51-ag-MultiRule", "additionalSwitch_ip": "groups"}, "7040": {"permit": true, "comment": "Source port range to destination service group", "protocol": "tcp", "src_port": "1024-65535", "dst_srvcgrp_groups": "test-51-sg-TCP", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}, "7050": {"permit": false, "comment": "Source service group to destination port list", "dst_port": "53|123", "src_srvcgrp_groups": "test-51-sg-UDP", "src_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}, "7060": {"permit": true, "comment": "Either-direction service group", "either_srvcgrp_groups": "test-51-sg-MultiRule", "additionalSwitch_port": "groups"}, "7070": {"permit": true, "comment": "Literal source to groups on destination", "src_ip": "192.0.2.0/24", "src_port": "1000-2000", "dst_addrgrp_groups": "test-51-ag-Child", "dst_srvcgrp_groups": "test-51-sg-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}}}}, "options": {"merge": true, "delDependent": true}}, "baseline_selection": [], "candidate_selection": ["acls"], "associations": [], "baseline_fingerprint": "sha256:0c85c1a8ffb1a7359d0c9cbcbb9fc02c3b39e21c68b45a39a6956370a6a43101", "unrelated_templates": [], "payload": {"name": "EXISTING_OR_NEW_GROUP", "templates": [{"name": "acls", "valObject": {"data": {"EXISTING-ACL": {"entry": {}}, "test-51-acl": {"entry": {"1000": {"permit": true, "comment": "Application dependency", "application": "test-51-domain"}, "2000": {"permit": true, "comment": "Application-group dependency", "app_group": "test-51-All_Apps"}, "3000": {"permit": true, "comment": "Directional IPv4 and ports", "protocol": "tcp", "src_ip": "192.0.2.0/24", "dst_ip": "198.51.100.10/32", "src_port": "1000-2000", "dst_port": "443", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}, "4000": {"permit": true, "comment": "Either IPv6, port, and domain", "protocol": "tcp/udp", "either_ip": "2001:db8::/32", "either_port": "443", "either_dns": "example.net", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}, "5000": {"permit": true, "comment": "Directional domains", "src_dns": "*.source.example.com", "dst_dns": "*destination.example.com"}, "6000": {"permit": false, "comment": "Prefix mask and deny", "protocol": "icmp", "src_ip": "10.0.0.0/16", "additionalSwitch_ip": "ips"}, "65535": {"permit": false, "comment": "Intentional catch-all deny"}, "7000": {"permit": true, "comment": "Source group and segment to destination IP", "dst_ip": "198.51.100.10/32", "src_addrgrp_groups": "test-51-ag-Formats", "src_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0}, "7010": {"permit": true, "comment": "Source IP to destination group list", "src_ip": "192.0.2.10/32", "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_vrf": 0}, "7020": {"permit": false, "comment": "Group to group with all segments", "src_addrgrp_groups": "test-51-ag-Formats", "dst_addrgrp_groups": "test-51-ag-DepthTwo", "src_additionalSwitch_ip": "groups", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0, "dst_vrf": 0, "either_vrf": 0}, "7030": {"permit": true, "comment": "Either-direction address group", "either_addrgrp_groups": "test-51-ag-MultiRule", "additionalSwitch_ip": "groups"}, "7040": {"permit": true, "comment": "Source port range to destination service group", "protocol": "tcp", "src_port": "1024-65535", "dst_srvcgrp_groups": "test-51-sg-TCP", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}, "7050": {"permit": false, "comment": "Source service group to destination port list", "dst_port": "53|123", "src_srvcgrp_groups": "test-51-sg-UDP", "src_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}, "7060": {"permit": true, "comment": "Either-direction service group", "either_srvcgrp_groups": "test-51-sg-MultiRule", "additionalSwitch_port": "groups"}, "7070": {"permit": true, "comment": "Literal source to groups on destination", "src_ip": "192.0.2.0/24", "src_port": "1000-2000", "dst_addrgrp_groups": "test-51-ag-Child", "dst_srvcgrp_groups": "test-51-sg-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}}}}, "options": {"merge": true, "delDependent": true}}}]}, "selection_change": true, "template_mode_change": false, "additions": [{"row": 2, "acl": "test-51-acl", "priority": "1000", "after": {"permit": true, "comment": "Application dependency", "application": "test-51-domain"}}, {"row": 3, "acl": "test-51-acl", "priority": "2000", "after": {"permit": true, "comment": "Application-group dependency", "app_group": "test-51-All_Apps"}}, {"row": 4, "acl": "test-51-acl", "priority": "3000", "after": {"permit": true, "comment": "Directional IPv4 and ports", "protocol": "tcp", "src_ip": "192.0.2.0/24", "dst_ip": "198.51.100.10/32", "src_port": "1000-2000", "dst_port": "443", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}}, {"row": 5, "acl": "test-51-acl", "priority": "4000", "after": {"permit": true, "comment": "Either IPv6, port, and domain", "protocol": "tcp/udp", "either_ip": "2001:db8::/32", "either_port": "443", "either_dns": "example.net", "additionalSwitch_ip": "ips", "additionalSwitch_port": "ports"}}, {"row": 6, "acl": "test-51-acl", "priority": "5000", "after": {"permit": true, "comment": "Directional domains", "src_dns": "*.source.example.com", "dst_dns": "*destination.example.com"}}, {"row": 7, "acl": "test-51-acl", "priority": "6000", "after": {"permit": false, "comment": "Prefix mask and deny", "protocol": "icmp", "src_ip": "10.0.0.0/16", "additionalSwitch_ip": "ips"}}, {"row": 8, "acl": "test-51-acl", "priority": "65535", "after": {"permit": false, "comment": "Intentional catch-all deny"}}, {"row": 9, "acl": "test-51-acl", "priority": "7000", "after": {"permit": true, "comment": "Source group and segment to destination IP", "dst_ip": "198.51.100.10/32", "src_addrgrp_groups": "test-51-ag-Formats", "src_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0}}, {"row": 10, "acl": "test-51-acl", "priority": "7010", "after": {"permit": true, "comment": "Source IP to destination group list", "src_ip": "192.0.2.10/32", "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_vrf": 0}}, {"row": 11, "acl": "test-51-acl", "priority": "7020", "after": {"permit": false, "comment": "Group to group with all segments", "src_addrgrp_groups": "test-51-ag-Formats", "dst_addrgrp_groups": "test-51-ag-DepthTwo", "src_additionalSwitch_ip": "groups", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "src_vrf": 0, "dst_vrf": 0, "either_vrf": 0}}, {"row": 12, "acl": "test-51-acl", "priority": "7030", "after": {"permit": true, "comment": "Either-direction address group", "either_addrgrp_groups": "test-51-ag-MultiRule", "additionalSwitch_ip": "groups"}}, {"row": 13, "acl": "test-51-acl", "priority": "7040", "after": {"permit": true, "comment": "Source port range to destination service group", "protocol": "tcp", "src_port": "1024-65535", "dst_srvcgrp_groups": "test-51-sg-TCP", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}}, {"row": 14, "acl": "test-51-acl", "priority": "7050", "after": {"permit": false, "comment": "Source service group to destination port list", "dst_port": "53|123", "src_srvcgrp_groups": "test-51-sg-UDP", "src_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}}, {"row": 15, "acl": "test-51-acl", "priority": "7060", "after": {"permit": true, "comment": "Either-direction service group", "either_srvcgrp_groups": "test-51-sg-MultiRule", "additionalSwitch_port": "groups"}}, {"row": 16, "acl": "test-51-acl", "priority": "7070", "after": {"permit": true, "comment": "Literal source to groups on destination", "src_ip": "192.0.2.0/24", "src_port": "1000-2000", "dst_addrgrp_groups": "test-51-ag-Child", "dst_srvcgrp_groups": "test-51-sg-Child", "dst_additionalSwitch_ip": "groups", "additionalSwitch_ip": "ips", "dst_additionalSwitch_port": "groups", "additionalSwitch_port": "ports"}}], "overwrites": [], "no_ops": [], "preserved": [], "selection_activates_acls": [], "touched_acls": ["test-51-acl"]}], "errors": [], "eligible_groups": [], "application_dependencies": ["test-51-domain"], "application_group_dependencies": ["test-51-All_Apps"], "address_group_dependencies": ["test-51-ag-Child", "test-51-ag-DepthTwo", "test-51-ag-Excluded", "test-51-ag-Formats", "test-51-ag-MultiRule"], "service_group_dependencies": ["test-51-sg-Child", "test-51-sg-MultiRule", "test-51-sg-TCP", "test-51-sg-UDP"], "segment_dependencies": ["Default"]}, "fingerprint": "sha256:4c0ecd211d16c8e44ad128c2561506621775493ec01bcd650bfd06c5392d5b87", "orchestrator": {"name": "lab", "url": "https://orchestrator.invalid"}, "report_fingerprint": "<FINGERPRINT>"}, {"output": "template-acls-plan.json", "eligible_groups": [], "ineligible_groups": ["EXISTING_OR_NEW_GROUP"]}], "files_written": ["template-acls-plan.json"], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/template-acls.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : template-acls plan
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : template_acls_valid.csv (15 data rows, sha256 17034223c8f1...)
+RESULT       : BLOCKED
+Changes made : no
+Exit code    : 2 = blocked by validation or planning; nothing was written
+
+What was planned or done
+  - template group EXISTING_OR_NEW_GROUP (BLOCKED, new): 15 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances
+
+Rows (15): 8 BLOCKED, 7 NOT ATTEMPTED
+  ROW  OUTCOME        ITEM                        SCOPE / REASON
+  9    BLOCKED        test-51-acl priority 7000   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Formats
+  10   BLOCKED        test-51-acl priority 7010   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Excluded; [DEP-03] missing address group test-51-ag-Child
+  11   BLOCKED        test-51-acl priority 7020   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Formats; [DEP-03] missing address group test-51-ag-DepthTwo
+  12   BLOCKED        test-51-acl priority 7030   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-MultiRule
+  13   BLOCKED        test-51-acl priority 7040   EXISTING_OR_NEW_GROUP | [DEP-03] missing service group test-51-sg-TCP
+  14   BLOCKED        test-51-acl priority 7050   EXISTING_OR_NEW_GROUP | [DEP-03] missing service group test-51-sg-UDP
+  15   BLOCKED        test-51-acl priority 7060   EXISTING_OR_NEW_GROUP | [DEP-03] missing service group test-51-sg-MultiRule
+  16   BLOCKED        test-51-acl priority 7070   EXISTING_OR_NEW_GROUP | [DEP-03] missing address group test-51-ag-Child; [DEP-03] missing service group test-51-sg-Child
+  2    NOT ATTEMPTED  test-51-acl priority 1000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  3    NOT ATTEMPTED  test-51-acl priority 2000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  4    NOT ATTEMPTED  test-51-acl priority 3000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  5    NOT ATTEMPTED  test-51-acl priority 4000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  6    NOT ATTEMPTED  test-51-acl priority 5000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  7    NOT ATTEMPTED  test-51-acl priority 6000   EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+  8    NOT ATTEMPTED  test-51-acl priority 65535  EXISTING_OR_NEW_GROUP | template group blocked by row 9, 10, 11, 12, 13, 14, 15, 16
+
+Why it stopped or what failed
+  - row 9 [DEP-03] missing address group test-51-ag-Formats
+  - row 10 [DEP-03] missing address group test-51-ag-Excluded
+  - row 10 [DEP-03] missing address group test-51-ag-Child
+  - row 11 [DEP-03] missing address group test-51-ag-Formats
+  - row 11 [DEP-03] missing address group test-51-ag-DepthTwo
+  - row 12 [DEP-03] missing address group test-51-ag-MultiRule
+  - row 13 [DEP-03] missing service group test-51-sg-TCP
+  - row 14 [DEP-03] missing service group test-51-sg-UDP
+  - row 15 [DEP-03] missing service group test-51-sg-MultiRule
+  - row 16 [DEP-03] missing address group test-51-ag-Child
+  - row 16 [DEP-03] missing service group test-51-sg-Child
+Report       : reports/template-acls.jsonl
+Report       : reports/template-acls.log
+
+Next step    : Fix every blocking issue listed above, then rerun the same command with --dry-run.
+==============================================================================
+
+--- file template-acls-plan.json
+{
+  "kind": "template-acls",
+  "plan": {
+    "groups": [
+      {
+        "template_group": "EXISTING_OR_NEW_GROUP",
+        "eligible": false,
+        "errors": [
+          "row 9 [DEP-03] missing address group test-51-ag-Formats",
+          "row 10 [DEP-03] missing address group test-51-ag-Excluded",
+          "row 10 [DEP-03] missing address group test-51-ag-Child",
+          "row 11 [DEP-03] missing address group test-51-ag-Formats",
+          "row 11 [DEP-03] missing address group test-51-ag-DepthTwo",
+          "row 12 [DEP-03] missing address group test-51-ag-MultiRule",
+          "row 13 [DEP-03] missing service group test-51-sg-TCP",
+          "row 14 [DEP-03] missing service group test-51-sg-UDP",
+          "row 15 [DEP-03] missing service group test-51-sg-MultiRule",
+          "row 16 [DEP-03] missing address group test-51-ag-Child",
+          "row 16 [DEP-03] missing service group test-51-sg-Child"
+        ],
+        "warnings": [],
+        "create": true,
+        "baseline_group": null,
+        "baseline_acl_value": {
+          "data": {
+            "EXISTING-ACL": {
+              "entry": {}
+            }
+          },
+          "options": {
+            "merge": true,
+            "delDependent": true
+          }
+        },
+        "candidate_acl_value": {
+          "data": {
+            "EXISTING-ACL": {
+              "entry": {}
+            },
+            "test-51-acl": {
+              "entry": {
+                "1000": {
+                  "permit": true,
+                  "comment": "Application dependency",
+                  "application": "test-51-domain"
+                },
+                "2000": {
+                  "permit": true,
+                  "comment": "Application-group dependency",
+                  "app_group": "test-51-All_Apps"
+                },
+                "3000": {
+                  "permit": true,
+                  "comment": "Directional IPv4 and ports",
+                  "protocol": "tcp",
+                  "src_ip": "192.0.2.0/24",
+                  "dst_ip": "198.51.100.10/32",
+                  "src_port": "1000-2000",
+                  "dst_port": "443",
+                  "additionalSwitch_ip": "ips",
+                  "additionalSwitch_port": "ports"
+                },
+                "4000": {
+                  "permit": true,
+                  "comment": "Either IPv6, port, and domain",
+                  "protocol": "tcp/udp",
+                  "either_ip": "2001:db8::/32",
+                  "either_port": "443",
+                  "either_dns": "example.net",
+                  "additionalSwitch_ip": "ips",
+                  "additionalSwitch_port": "ports"
+                },
+                "5000": {
+                  "permit": true,
+                  "comment": "Directional domains",
+                  "src_dns": "*.source.example.com",
+                  "dst_dns": "*destination.example.com"
+                },
+                "6000": {
+                  "permit": false,
+                  "comment": "Prefix mask and deny",
+                  "protocol": "icmp",
+                  "src_ip": "10.0.0.0/16",
+                  "additionalSwitch_ip": "ips"
+                },
+                "65535": {
+                  "permit": false,
+                  "comment": "Intentional catch-all deny"
+                },
+                "7000": {
+                  "permit": true,
+                  "comment": "Source group and segment to destination IP",
+                  "dst_ip": "198.51.100.10/32",
+                  "src_addrgrp_groups": "test-51-ag-Formats",
+                  "src_additionalSwitch_ip": "groups",
+                  "additionalSwitch_ip": "ips",
+                  "src_vrf": 0
+                },
+                "7010": {
+                  "permit": true,
+                  "comment": "Source IP to destination group list",
+                  "src_ip": "192.0.2.10/32",
+                  "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child",
+                  "dst_additionalSwitch_ip": "groups",
+                  "additionalSwitch_ip": "ips",
+                  "dst_vrf": 0
+                },
+                "7020": {
+                  "permit": false,
+                  "comment": "Group to group with all segments",
+                  "src_addrgrp_groups": "test-51-ag-Formats",
+                  "dst_addrgrp_groups": "test-51-ag-DepthTwo",
+                  "src_additionalSwitch_ip": "groups",
+                  "dst_additionalSwitch_ip": "groups",
+                  "additionalSwitch_ip": "ips",
+                  "src_vrf": 0,
+                  "dst_vrf": 0,
+                  "either_vrf": 0
+                },
+                "7030": {
+                  "permit": true,
+                  "comment": "Either-direction address group",
+                  "either_addrgrp_groups": "test-51-ag-MultiRule",
+                  "additionalSwitch_ip": "groups"
+                },
+                "7040": {
+                  "permit": true,
+                  "comment": "Source port range to destination service group",
+                  "protocol": "tcp",
+                  "src_port": "1024-65535",
+                  "dst_srvcgrp_groups": "test-51-sg-TCP",
+                  "dst_additionalSwitch_port": "groups",
+                  "additionalSwitch_port": "ports"
+                },
+                "7050": {
+                  "permit": false,
+                  "comment": "Source service group to destination port list",
+                  "dst_port": "53|123",
+                  "src_srvcgrp_groups": "test-51-sg-UDP",
+                  "src_additionalSwitch_port": "groups",
+                  "additionalSwitch_port": "ports"
+                },
+                "7060": {
+                  "permit": true,
+                  "comment": "Either-direction service group",
+                  "either_srvcgrp_groups": "test-51-sg-MultiRule",
+                  "additionalSwitch_port": "groups"
+                },
+                "7070": {
+                  "permit": true,
+                  "comment": "Literal source to groups on destination",
+                  "src_ip": "192.0.2.0/24",
+                  "src_port": "1000-2000",
+                  "dst_addrgrp_groups": "test-51-ag-Child",
+                  "dst_srvcgrp_groups": "test-51-sg-Child",
+                  "dst_additionalSwitch_ip": "groups",
+                  "additionalSwitch_ip": "ips",
+                  "dst_additionalSwitch_port": "groups",
+                  "additionalSwitch_port": "ports"
+                }
+              }
+            }
+          },
+          "options": {
+            "merge": true,
+            "delDependent": true
+          }
+        },
+        "baseline_selection": [],
+        "candidate_selection": [
+          "acls"
+        ],
+        "associations": [],
+        "baseline_fingerprint": "sha256:0c85c1a8ffb1a7359d0c9cbcbb9fc02c3b39e21c68b45a39a6956370a6a43101",
+        "unrelated_templates": [],
+        "payload": {
+          "name": "EXISTING_OR_NEW_GROUP",
+          "templates": [
+            {
+              "name": "acls",
+              "valObject": {
+                "data": {
+                  "EXISTING-ACL": {
+                    "entry": {}
+                  },
+                  "test-51-acl": {
+                    "entry": {
+                      "1000": {
+                        "permit": true,
+                        "comment": "Application dependency",
+                        "application": "test-51-domain"
+                      },
+                      "2000": {
+                        "permit": true,
+                        "comment": "Application-group dependency",
+                        "app_group": "test-51-All_Apps"
+                      },
+                      "3000": {
+                        "permit": true,
+                        "comment": "Directional IPv4 and ports",
+                        "protocol": "tcp",
+                        "src_ip": "192.0.2.0/24",
+                        "dst_ip": "198.51.100.10/32",
+                        "src_port": "1000-2000",
+                        "dst_port": "443",
+                        "additionalSwitch_ip": "ips",
+                        "additionalSwitch_port": "ports"
+                      },
+                      "4000": {
+                        "permit": true,
+                        "comment": "Either IPv6, port, and domain",
+                        "protocol": "tcp/udp",
+                        "either_ip": "2001:db8::/32",
+                        "either_port": "443",
+                        "either_dns": "example.net",
+                        "additionalSwitch_ip": "ips",
+                        "additionalSwitch_port": "ports"
+                      },
+                      "5000": {
+                        "permit": true,
+                        "comment": "Directional domains",
+                        "src_dns": "*.source.example.com",
+                        "dst_dns": "*destination.example.com"
+                      },
+                      "6000": {
+                        "permit": false,
+                        "comment": "Prefix mask and deny",
+                        "protocol": "icmp",
+                        "src_ip": "10.0.0.0/16",
+                        "additionalSwitch_ip": "ips"
+                      },
+                      "65535": {
+                        "permit": false,
+                        "comment": "Intentional catch-all deny"
+                      },
+                      "7000": {
+                        "permit": true,
+                        "comment": "Source group and segment to destination IP",
+                        "dst_ip": "198.51.100.10/32",
+                        "src_addrgrp_groups": "test-51-ag-Formats",
+                        "src_additionalSwitch_ip": "groups",
+                        "additionalSwitch_ip": "ips",
+                        "src_vrf": 0
+                      },
+                      "7010": {
+                        "permit": true,
+                        "comment": "Source IP to destination group list",
+                        "src_ip": "192.0.2.10/32",
+                        "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child",
+                        "dst_additionalSwitch_ip": "groups",
+                        "additionalSwitch_ip": "ips",
+                        "dst_vrf": 0
+                      },
+                      "7020": {
+                        "permit": false,
+                        "comment": "Group to group with all segments",
+                        "src_addrgrp_groups": "test-51-ag-Formats",
+                        "dst_addrgrp_groups": "test-51-ag-DepthTwo",
+                        "src_additionalSwitch_ip": "groups",
+                        "dst_additionalSwitch_ip": "groups",
+                        "additionalSwitch_ip": "ips",
+                        "src_vrf": 0,
+                        "dst_vrf": 0,
+                        "either_vrf": 0
+                      },
+                      "7030": {
+                        "permit": true,
+                        "comment": "Either-direction address group",
+                        "either_addrgrp_groups": "test-51-ag-MultiRule",
+                        "additionalSwitch_ip": "groups"
+                      },
+                      "7040": {
+                        "permit": true,
+                        "comment": "Source port range to destination service group",
+                        "protocol": "tcp",
+                        "src_port": "1024-65535",
+                        "dst_srvcgrp_groups": "test-51-sg-TCP",
+                        "dst_additionalSwitch_port": "groups",
+                        "additionalSwitch_port": "ports"
+                      },
+                      "7050": {
+                        "permit": false,
+                        "comment": "Source service group to destination port list",
+                        "dst_port": "53|123",
+                        "src_srvcgrp_groups": "test-51-sg-UDP",
+                        "src_additionalSwitch_port": "groups",
+                        "additionalSwitch_port": "ports"
+                      },
+                      "7060": {
+                        "permit": true,
+                        "comment": "Either-direction service group",
+                        "either_srvcgrp_groups": "test-51-sg-MultiRule",
+                        "additionalSwitch_port": "groups"
+                      },
+                      "7070": {
+                        "permit": true,
+                        "comment": "Literal source to groups on destination",
+                        "src_ip": "192.0.2.0/24",
+                        "src_port": "1000-2000",
+                        "dst_addrgrp_groups": "test-51-ag-Child",
+                        "dst_srvcgrp_groups": "test-51-sg-Child",
+                        "dst_additionalSwitch_ip": "groups",
+                        "additionalSwitch_ip": "ips",
+                        "dst_additionalSwitch_port": "groups",
+                        "additionalSwitch_port": "ports"
+                      }
+                    }
+                  }
+                },
+                "options": {
+                  "merge": true,
+                  "delDependent": true
+                }
+              }
+            }
+          ]
+        },
+        "selection_change": true,
+        "template_mode_change": false,
+        "additions": [
+          {
+            "row": 2,
+            "acl": "test-51-acl",
+            "priority": "1000",
+            "after": {
+              "permit": true,
+              "comment": "Application dependency",
+              "application": "test-51-domain"
+            }
+          },
+          {
+            "row": 3,
+            "acl": "test-51-acl",
+            "priority": "2000",
+            "after": {
+              "permit": true,
+              "comment": "Application-group dependency",
+              "app_group": "test-51-All_Apps"
+            }
+          },
+          {
+            "row": 4,
+            "acl": "test-51-acl",
+            "priority": "3000",
+            "after": {
+              "permit": true,
+              "comment": "Directional IPv4 and ports",
+              "protocol": "tcp",
+              "src_ip": "192.0.2.0/24",
+              "dst_ip": "198.51.100.10/32",
+              "src_port": "1000-2000",
+              "dst_port": "443",
+              "additionalSwitch_ip": "ips",
+              "additionalSwitch_port": "ports"
+            }
+          },
+          {
+            "row": 5,
+            "acl": "test-51-acl",
+            "priority": "4000",
+            "after": {
+              "permit": true,
+              "comment": "Either IPv6, port, and domain",
+              "protocol": "tcp/udp",
+              "either_ip": "2001:db8::/32",
+              "either_port": "443",
+              "either_dns": "example.net",
+              "additionalSwitch_ip": "ips",
+              "additionalSwitch_port": "ports"
+            }
+          },
+          {
+            "row": 6,
+            "acl": "test-51-acl",
+            "priority": "5000",
+            "after": {
+              "permit": true,
+              "comment": "Directional domains",
+              "src_dns": "*.source.example.com",
+              "dst_dns": "*destination.example.com"
+            }
+          },
+          {
+            "row": 7,
+            "acl": "test-51-acl",
+            "priority": "6000",
+            "after": {
+              "permit": false,
+              "comment": "Prefix mask and deny",
+              "protocol": "icmp",
+              "src_ip": "10.0.0.0/16",
+              "additionalSwitch_ip": "ips"
+            }
+          },
+          {
+            "row": 8,
+            "acl": "test-51-acl",
+            "priority": "65535",
+            "after": {
+              "permit": false,
+              "comment": "Intentional catch-all deny"
+            }
+          },
+          {
+            "row": 9,
+            "acl": "test-51-acl",
+            "priority": "7000",
+            "after": {
+              "permit": true,
+              "comment": "Source group and segment to destination IP",
+              "dst_ip": "198.51.100.10/32",
+              "src_addrgrp_groups": "test-51-ag-Formats",
+              "src_additionalSwitch_ip": "groups",
+              "additionalSwitch_ip": "ips",
+              "src_vrf": 0
+            }
+          },
+          {
+            "row": 10,
+            "acl": "test-51-acl",
+            "priority": "7010",
+            "after": {
+              "permit": true,
+              "comment": "Source IP to destination group list",
+              "src_ip": "192.0.2.10/32",
+              "dst_addrgrp_groups": "test-51-ag-Excluded|test-51-ag-Child",
+              "dst_additionalSwitch_ip": "groups",
+              "additionalSwitch_ip": "ips",
+              "dst_vrf": 0
+            }
+          },
+          {
+            "row": 11,
+            "acl": "test-51-acl",
+            "priority": "7020",
+            "after": {
+              "permit": false,
+              "comment": "Group to group with all segments",
+              "src_addrgrp_groups": "test-51-ag-Formats",
+              "dst_addrgrp_groups": "test-51-ag-DepthTwo",
+              "src_additionalSwitch_ip": "groups",
+              "dst_additionalSwitch_ip": "groups",
+              "additionalSwitch_ip": "ips",
+              "src_vrf": 0,
+              "dst_vrf": 0,
+              "either_vrf": 0
+            }
+          },
+          {
+            "row": 12,
+            "acl": "test-51-acl",
+            "priority": "7030",
+            "after": {
+              "permit": true,
+              "comment": "Either-direction address group",
+              "either_addrgrp_groups": "test-51-ag-MultiRule",
+              "additionalSwitch_ip": "groups"
+            }
+          },
+          {
+            "row": 13,
+            "acl": "test-51-acl",
+            "priority": "7040",
+            "after": {
+              "permit": true,
+              "comment": "Source port range to destination service group",
+              "protocol": "tcp",
+              "src_port": "1024-65535",
+              "dst_srvcgrp_groups": "test-51-sg-TCP",
+              "dst_additionalSwitch_port": "groups",
+              "additionalSwitch_port": "ports"
+            }
+          },
+          {
+            "row": 14,
+            "acl": "test-51-acl",
+            "priority": "7050",
+            "after": {
+              "permit": false,
+              "comment": "Source service group to destination port list",
+              "dst_port": "53|123",
+              "src_srvcgrp_groups": "test-51-sg-UDP",
+              "src_additionalSwitch_port": "groups",
+              "additionalSwitch_port": "ports"
+            }
+          },
+          {
+            "row": 15,
+            "acl": "test-51-acl",
+            "priority": "7060",
+            "after": {
+              "permit": true,
+              "comment": "Either-direction service group",
+              "either_srvcgrp_groups": "test-51-sg-MultiRule",
+              "additionalSwitch_port": "groups"
+            }
+          },
+          {
+            "row": 16,
+            "acl": "test-51-acl",
+            "priority": "7070",
+            "after": {
+              "permit": true,
+              "comment": "Literal source to groups on destination",
+              "src_ip": "192.0.2.0/24",
+              "src_port": "1000-2000",
+              "dst_addrgrp_groups": "test-51-ag-Child",
+              "dst_srvcgrp_groups": "test-51-sg-Child",
+              "dst_additionalSwitch_ip": "groups",
+              "additionalSwitch_ip": "ips",
+              "dst_additionalSwitch_port": "groups",
+              "additionalSwitch_port": "ports"
+            }
+          }
+        ],
+        "overwrites": [],
+        "no_ops": [],
+        "preserved": [],
+        "selection_activates_acls": [],
+        "touched_acls": [
+          "test-51-acl"
+        ]
+      }
+    ],
+    "errors": [],
+    "eligible_groups": [],
+    "application_dependencies": [
+      "test-51-domain"
+    ],
+    "application_group_dependencies": [
+      "test-51-All_Apps"
+    ],
+    "address_group_dependencies": [
+      "test-51-ag-Child",
+      "test-51-ag-DepthTwo",
+      "test-51-ag-Excluded",
+      "test-51-ag-Formats",
+      "test-51-ag-MultiRule"
+    ],
+    "service_group_dependencies": [
+      "test-51-sg-Child",
+      "test-51-sg-MultiRule",
+      "test-51-sg-TCP",
+      "test-51-sg-UDP"
+    ],
+    "segment_dependencies": [
+      "Default"
+    ]
+  },
+  "fingerprint": "sha256:4c0ecd211d16c8e44ad128c2561506621775493ec01bcd650bfd06c5392d5b87",
+  "orchestrator": {
+    "name": "lab",
+    "url": "https://orchestrator.invalid"
+  },
+  "report_fingerprint": "<FINGERPRINT>"
+}

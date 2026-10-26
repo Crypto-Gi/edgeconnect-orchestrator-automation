@@ -1,0 +1,58 @@
+$ edgeconnect-auto template-acls deploy --csv template_acls_small.csv --dry-run
+exit code: 0
+--- stdout
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : template-acls deploy
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : template_acls_small.csv (1 data rows, sha256 2a74465a28c6...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - template group new-group (eligible, new): 1 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances
+
+Rows (1): 1 WOULD ADD
+  ROW  OUTCOME    ITEM                   SCOPE / REASON
+  2    WOULD ADD  new-acl priority 1000  new-group
+Report       : reports/template-acls.jsonl
+Report       : reports/template-acls.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================
+
+--- file reports/template-acls.jsonl
+{"status": "DRY_RUN", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "template-acls deploy", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "9.7.1", "orchestrator_target": "lab (https://orchestrator.invalid)", "orchestrator": "lab", "orchestrator_url": "https://orchestrator.invalid", "workflow": "template-acls deploy", "command": "edgeconnect-auto --report-dir reports template-acls deploy --csv template_acls_small.csv --dry-run", "dry_run": true, "csv": {"path": "template_acls_small.csv", "sha256": "2a74465a28c6302ef041a6f74f3f92d36090c3823fe4864570c79f189c905cea", "data_rows": 1}, "status": "DRY_RUN", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": ["template group new-group (eligible, new): 1 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances"], "row_outcomes": {"WOULD ADD": 1}, "rows": [{"row": 2, "item": "new-acl priority 1000", "scope": "new-group", "outcome": "WOULD ADD", "reason": ""}], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Review the planned changes, then run the same command without --dry-run to apply.", "reports": ["reports/template-acls.jsonl", "reports/template-acls.log"]}, "outputs": [{"preview": {"kind": "template-acls", "plan": {"groups": [{"template_group": "new-group", "eligible": true, "errors": [], "warnings": [], "create": true, "baseline_group": null, "baseline_acl_value": {"data": {"EXISTING-ACL": {"entry": {}}}, "options": {"merge": true, "delDependent": true}}, "candidate_acl_value": {"data": {"EXISTING-ACL": {"entry": {}}, "new-acl": {"entry": {"1000": {"permit": true, "comment": "web", "protocol": "tcp", "dst_port": "443", "additionalSwitch_port": "ports"}}}}, "options": {"merge": true, "delDependent": true}}, "baseline_selection": [], "candidate_selection": ["acls"], "associations": [], "baseline_fingerprint": "sha256:0c85c1a8ffb1a7359d0c9cbcbb9fc02c3b39e21c68b45a39a6956370a6a43101", "unrelated_templates": [], "payload": {"name": "new-group", "templates": [{"name": "acls", "valObject": {"data": {"EXISTING-ACL": {"entry": {}}, "new-acl": {"entry": {"1000": {"permit": true, "comment": "web", "protocol": "tcp", "dst_port": "443", "additionalSwitch_port": "ports"}}}}, "options": {"merge": true, "delDependent": true}}}]}, "selection_change": true, "template_mode_change": false, "additions": [{"row": 2, "acl": "new-acl", "priority": "1000", "after": {"permit": true, "comment": "web", "protocol": "tcp", "dst_port": "443", "additionalSwitch_port": "ports"}}], "overwrites": [], "no_ops": [], "preserved": [], "selection_activates_acls": [], "touched_acls": ["new-acl"]}], "errors": [], "eligible_groups": ["new-group"], "application_dependencies": [], "application_group_dependencies": [], "address_group_dependencies": [], "service_group_dependencies": [], "segment_dependencies": []}, "fingerprint": "sha256:141f450204674e8ff8f3f549193acd7c9a89a25f79375d14596d1b2567726bae"}, "impact": "template-group Access Lists write", "validation": "fresh central and associated-appliance readback", "recovery": "no automatic rollback; exact recovery requires separate review"}], "files_written": [], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/template-acls.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : template-acls deploy
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator 9.7.1
+Orchestrator : lab (https://orchestrator.invalid)
+CSV          : template_acls_small.csv (1 data rows, sha256 2a74465a28c6...)
+RESULT       : DRY_RUN
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+
+What was planned or done
+  - template group new-group (eligible, new): 1 to add, 0 to overwrite, 0 to delete, 0 already present, associated with no appliances
+
+Rows (1): 1 WOULD ADD
+  ROW  OUTCOME    ITEM                   SCOPE / REASON
+  2    WOULD ADD  new-acl priority 1000  new-group
+Report       : reports/template-acls.jsonl
+Report       : reports/template-acls.log
+
+Next step    : Review the planned changes, then run the same command without --dry-run to apply.
+==============================================================================

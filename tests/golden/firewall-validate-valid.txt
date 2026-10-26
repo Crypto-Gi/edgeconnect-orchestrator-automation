@@ -1,0 +1,52 @@
+$ edgeconnect-auto firewall validate --csv firewall_rules_valid.csv
+exit code: 0
+--- stdout
+{
+  "errors": [],
+  "issues": [],
+  "rules": 54,
+  "segment_pairs": [
+    "Default -> Default"
+  ],
+  "status": "valid",
+  "warnings": []
+}
+
+--- stderr
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall validate
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator not contacted
+CSV          : firewall_rules_valid.csv (54 data rows, sha256 101a5175a66d...)
+RESULT       : VALID
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Run the same workflow with deploy --dry-run to check it against Orchestrator.
+==============================================================================
+
+--- file reports/firewall.jsonl
+{"status": "VALID", "exit_code": 0, "changes_written": "no", "timestamp": "<TIME>", "run_id": "run-<ID>", "workflow": "firewall validate", "orchestrator": "not contacted", "orchestrator_url": "not contacted", "summary": {"run_id": "run-<ID>", "timestamp": "<TIME>", "duration_seconds": "<SECONDS>", "tool_version": "<VERSION>", "orchestrator_release": "not contacted", "orchestrator_target": "", "orchestrator": "not contacted", "orchestrator_url": "not contacted", "workflow": "firewall validate", "command": "edgeconnect-auto --report-dir reports firewall validate --csv firewall_rules_valid.csv", "dry_run": false, "csv": {"path": "firewall_rules_valid.csv", "sha256": "101a5175a66dcac6586eea8ac47c149f2e36ff491cd6af8f7c834d9c587c11fc", "data_rows": 54}, "status": "VALID", "changes_written": "no", "exit_code": 0, "exit_meaning": "completed (success, verified no-op, or dry run)", "counts": [], "row_outcomes": {}, "rows": [], "blocking_issues": [], "warnings": [], "targets": [], "run_reference": "", "next_step": "Run the same workflow with deploy --dry-run to check it against Orchestrator.", "reports": ["reports/firewall.jsonl", "reports/firewall.log"]}, "outputs": [{"status": "valid", "rules": 54, "segment_pairs": ["Default -> Default"], "errors": [], "issues": [], "warnings": []}], "files_written": [], "report_fingerprint": "<FINGERPRINT>"}
+
+--- file reports/firewall.log
+
+==============================================================================
+RUN SUMMARY
+==============================================================================
+Workflow     : firewall validate
+Run          : run-<ID>  at <TIME>  (<SECONDS>)
+Versions     : tool <VERSION>, Orchestrator not contacted
+CSV          : firewall_rules_valid.csv (54 data rows, sha256 101a5175a66d...)
+RESULT       : VALID
+Changes made : no
+Exit code    : 0 = completed (success, verified no-op, or dry run)
+Report       : reports/firewall.jsonl
+Report       : reports/firewall.log
+
+Next step    : Run the same workflow with deploy --dry-run to check it against Orchestrator.
+==============================================================================
