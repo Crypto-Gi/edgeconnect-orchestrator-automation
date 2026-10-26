@@ -1,9 +1,9 @@
-# Runs the unit tests on every pull request and push to main, on the oldest and newest supported Python, on Linux and macOS.
+# Runs the unit tests on every pull request and push to main or gui, on the oldest and newest supported Python, on Linux and macOS.
 name: test
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, gui]
 permissions:
   contents: read
 jobs:

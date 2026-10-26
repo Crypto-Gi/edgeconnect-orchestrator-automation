@@ -1,6 +1,6 @@
 # GUI build plan
 
-The automation GUI is built in the steps below, one pull request per step. Each step starts only after the previous one is merged.
+The automation GUI is built in the steps below, one pull request per step into the `gui` branch. Each step starts only after the previous one is merged there. main stays untouched until the owner decides to merge `gui` into it.
 
 ## Decided (26 Oct)
 - Audience: everyone, including customers. Automation only for now; one GUI for all three tools later.
@@ -17,7 +17,7 @@ The automation GUI is built in the steps below, one pull request per step. Each 
 
 ## Step 0: CI
 GitHub Actions running the existing tests on Python 3.9 and 3.13, on Linux and macOS.
-Done when: green on main (the owner then makes it required for pull requests).
+Done when: green on the `gui` branch.
 
 ## Step 1: Golden outputs and run context
 Record CLI output for representative commands from offline inventory fixtures as golden files (validate, plan and dry-run for each object type). Then replace the cli.py module globals (_TARGET, _TARGET_NAME, _TARGET_URL, _RUN, the gateway cache) with a run context object passed through.
