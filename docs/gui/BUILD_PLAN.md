@@ -30,6 +30,7 @@ Done when: existing gate tests pass unchanged, and new tests prove an approval c
 ## Step 3: Python engine API (engine.py)
 discover, validate, plan, apply, delete, verify, summarize. Each takes a run context and returns structured results: issues (row, column, rule ID, message), preview counts, per-object create/modify/delete with field-level diffs, per-row outcomes. The CLI becomes argument parsing plus printing these.
 Done when: golden outputs unchanged and the structured results have their own tests.
+Built as: `engine.py` runs the CLI's own command code in-process with its own run context and builds the structured results from what the run produced, instead of moving that code out of `cli.py`. The GUI and the CLI still share one code path, and CLI output cannot drift. Writes take a single-use GUI approval in place of the terminal prompts.
 
 ## Step 4: Orchestrator identity and fleet status
 Read identity (URL, release, and a stable ID if the API has one; investigate first). Check all profiles in parallel with a short timeout and classify green, amber or red with a plain reason. Plans record the identity; apply refuses on a mismatch. Add optional <nick>_gui_color, <nick>_gui_label and <nick>_gui_writes (default off) to .env.example.
