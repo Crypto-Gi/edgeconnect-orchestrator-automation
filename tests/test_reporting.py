@@ -131,7 +131,7 @@ class RunReportTests(unittest.TestCase):
         import edgeconnect_automation.cli as cli
 
         def connect(args):
-            cli._TARGET_NAME, cli._TARGET_URL = name, url
+            cli._context().target_name, cli._context().target_url = name, url
             return DeployGateway(baseline())
         return connect
 

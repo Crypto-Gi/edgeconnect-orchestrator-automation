@@ -801,7 +801,7 @@ class DeployCliTests(unittest.TestCase):
 
         def handler(args):
             import edgeconnect_automation.cli as cli
-            cli._RUN.client = type("Client", (), {"write_requests": 1})()
+            cli._context().recorder.client = type("Client", (), {"write_requests": 1})()
             raise DriftError("template group changed before its second write")
 
         with patch("edgeconnect_automation.cli._firewall_delete", handler):
