@@ -66,6 +66,7 @@ class RunRecorder:
         self.appliances: Dict[str, str] = {}
         self.error: Optional[BaseException] = None
         self.tool_version = __version__
+        self.source = "cli"
         self.client: Any = None
 
     def writes_sent(self) -> int:
@@ -653,6 +654,7 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         "orchestrator_url": recorder.orchestrator_url or "not contacted",
         "workflow": " ".join(part for part in (workflow_name(args), action_name(args)) if part),
         "command": "edgeconnect-auto " + " ".join(recorder.argv),
+        "source": recorder.source,
         "dry_run": bool(getattr(args, "dry_run", False)),
         "csv": csv_info,
         "status": status,
@@ -764,13 +766,13 @@ def _summary_of(value: Any, path: str) -> Dict[str, Any]:
     raw = str(result.get("status") or (value.get("status") if isinstance(value, Mapping) else "") or "").upper()
     args = SimpleNamespace(command=re.sub(r"-delete$", "", kind) or "report", dry_run=raw.startswith("DRY_RUN"), report=None, csv=None, output=None, report_dir="")
     summary = build_summary(recorder, args, _LEGACY_EXIT.get(raw, 0 if raw else 1))
-    summary.update(command="not recorded in this report", duration_seconds=None, orchestrator_release=summary["orchestrator_release"].replace("not contacted", "not recorded"), orchestrator=summary["orchestrator"].replace("not contacted", "not recorded"), orchestrator_url=summary["orchestrator_url"].replace("not contacted", "not recorded"), exit_meaning=summary["exit_meaning"] + " (derived from the report status)")
+    summary.update(command="not recorded in this report", source="not recorded", duration_seconds=None, orchestrator_release=summary["orchestrator_release"].replace("not contacted", "not recorded"), orchestrator=summary["orchestrator"].replace("not contacted", "not recorded"), orchestrator_url=summary["orchestrator_url"].replace("not contacted", "not recorded"), exit_meaning=summary["exit_meaning"] + " (derived from the report status)")
     return summary
 
 
 def _headline(summary: Mapping[str, Any]) -> Dict[str, Any]:
     """The same top-level fields, with the same status words, in every report file and log record."""
-    return {key: summary.get(key, "not recorded") for key in ("status", "exit_code", "changes_written", "timestamp", "run_id", "workflow", "orchestrator", "orchestrator_url")}
+    return {key: summary.get(key, "not recorded") for key in ("status", "exit_code", "changes_written", "timestamp", "run_id", "workflow", "orchestrator", "orchestrator_url", "source")}
 
 
 def _append(path: Path, text: str) -> None:

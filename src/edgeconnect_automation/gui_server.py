@@ -16,12 +16,15 @@ import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Mapping, Optional, Tuple
+from types import SimpleNamespace
+from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
+from . import gui_tables
 from .errors import ConfigurationError
 from .fleet import check_all
 from .gui_tasks import FINAL, TaskError, TaskManager, dumps
+from .reporting import ROW_FIELDS, report_dir
 
 STATIC = Path(__file__).with_name("static")
 MAX_BODY = 5 * 1024 * 1024
@@ -43,6 +46,7 @@ class GuiServer(ThreadingHTTPServer):
         self.token = secrets.token_urlsafe(32)
         self.environ = environ
         self.tasks = tasks or TaskManager(environ=environ)
+        self.runlog = gui_tables.RunLog(report_dir(SimpleNamespace(report_dir=self.tasks.report_dir)))  # where the GUI's own runs are logged
         port = self.server_address[1]
         self.hosts = {"127.0.0.1:{}".format(port), "localhost:{}".format(port), "[::1]:{}".format(port)}
         self.url = "http://127.0.0.1:{}/?token={}".format(port, self.token)
@@ -72,7 +76,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._login(parse_qs(parts.query)["token"][0])
             self._require_cookie()
             if method == "GET" and path.startswith("/api/"):
-                return self._get_api(path)
+                return self._get_api(path, {key: values[-1] for key, values in parse_qs(parts.query).items()})
             if method == "POST" and path.startswith("/api/"):
                 return self._post_api(path)
             if method == "GET":
@@ -105,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _get_api(self, path: str) -> None:
+    def _get_api(self, path: str, query: Dict[str, str]) -> None:
         tasks = self.server.tasks
         if path == "/api/orchestrators":
             try:
@@ -115,12 +119,37 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"orchestrators": [dataclasses.asdict(status) for status in statuses]})
         if path == "/api/tasks":
             return self._json(200, {"tasks": [task.view() for task in tasks.list()]})
+        if path.startswith("/api/runs"):
+            return self._runs(path, query)
         task_id, action = _task_path(path)
         if action == "":
             return self._json(200, tasks.get(task_id).view())
         if action == "events":
             return self._events(task_id)
+        if action == "inventory":
+            return self._json(200, gui_tables.inventory_page(tasks.discovery(task_id), query))
         raise TaskError("not found", 404)
+
+    def _runs(self, path: str, query: Dict[str, str]) -> None:
+        """/api/runs[.csv] lists runs; /api/runs/<run_id>[/rows.csv] is one run and its per-row table."""
+        log = self.server.runlog
+        if path in ("/api/runs", "/api/runs.csv"):
+            runs, unreadable = log.runs()
+            if path.endswith(".csv"):
+                rows = gui_tables.select(runs, query, gui_tables.RUN_FILTERS, "timestamp", True)[0]
+                return self._download("runs.csv", gui_tables.to_csv(rows, gui_tables.RUN_FIELDS + ("exit_code",)))
+            folder = str(log.directory) if log.directory is not None else None
+            return self._json(200, dict(gui_tables.page(runs, query, gui_tables.RUN_FILTERS, "timestamp", True), folder=folder, unreadable=unreadable))
+        parts = path.split("/")
+        if len(parts) not in (4, 5) or parts[2] != "runs" or not parts[3] or (len(parts) == 5 and parts[4] != "rows.csv"):
+            raise TaskError("not found", 404)
+        summary = log.find(parts[3])
+        if summary is None:
+            raise TaskError("no run {} in the run log".format(parts[3]), 404)
+        if len(parts) == 5:
+            rows = gui_tables.select(summary["_outcomes"], query, ("outcome",))[0]
+            return self._download("{}-rows.csv".format(parts[3]), gui_tables.to_csv(rows, ROW_FIELDS))
+        return self._json(200, gui_tables.run_detail(summary, query))
 
     def _post_api(self, path: str) -> None:
         if self.headers.get_content_type() != "application/json":
@@ -186,9 +215,14 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, status: int, value: Any) -> None:
         self._send(status, dumps(value), "application/json")
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _download(self, name: str, body: bytes) -> None:
+        self._send(200, body, "text/csv; charset=utf-8", {"Content-Disposition": 'attachment; filename="{}"'.format(name)})
+
+    def _send(self, status: int, body: bytes, content_type: str, headers: Optional[Mapping[str, str]] = None) -> None:
         self.send_response(status)
         self._security_headers()
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

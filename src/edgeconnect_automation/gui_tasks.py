@@ -106,6 +106,16 @@ class TaskManager:
     def list(self) -> List[Task]:
         return sorted(self.tasks.values(), key=lambda task: task.created)
 
+    def discovery(self, task_id: str) -> Mapping[str, Any]:
+        """The inventory a finished discover task read."""
+        task = self.get(task_id)
+        if (task.action, task.state) != ("discover", "done"):
+            raise TaskError("task {} is a {} that is {}, not a finished discover".format(task_id, task.action, task.state), 409)
+        try:
+            return json.loads((task.folder / "discovery.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise TaskError("could not read the inventory of task {}: {}".format(task_id, error), 500) from None
+
     def approve(self, task_id: str, answers: Any) -> Task:
         task = self.get(task_id)
         if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
