@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from edgeconnect_automation import cli
+from edgeconnect_automation.approval import GuiApprovals, delete_gates, write_gates
 from edgeconnect_automation.errors import ApprovalError
 from tests.test_golden import GOLDEN, UPDATE
 
@@ -67,6 +68,69 @@ class TerminalApprovalTests(unittest.TestCase):
         if UPDATE:
             expected.write_text(text, encoding="utf-8")
         self.assertEqual(text, expected.read_text(encoding="utf-8"))
+
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+class GuiApprovalTests(unittest.TestCase):
+    def setUp(self):
+        self.clock = Clock()
+        self.approvals = GuiApprovals(clock=self.clock)
+        self.gates = write_gates(["Z1"])
+
+    def issue(self, plan="sha256:plan", orchestrator="lab"):
+        return self.approvals.issue(self.gates, ["CREATE Z1", "APPLY"], plan, orchestrator)
+
+    def test_approval_is_used_once(self):
+        token = self.issue()
+        self.approvals.redeem(token, "sha256:plan", "lab")
+        with self.assertRaisesRegex(ApprovalError, "already used"):
+            self.approvals.redeem(token, "sha256:plan", "lab")
+
+    def test_approval_expires_after_ten_minutes(self):
+        token = self.issue()
+        self.clock.now += 599
+        self.approvals.redeem(token, "sha256:plan", "lab")
+        token = self.issue()
+        self.clock.now += 600
+        with self.assertRaisesRegex(ApprovalError, "expired"):
+            self.approvals.redeem(token, "sha256:plan", "lab")
+
+    def test_approval_is_refused_for_another_plan_or_orchestrator_and_is_then_spent(self):
+        token = self.issue()
+        with self.assertRaisesRegex(ApprovalError, "different plan"):
+            self.approvals.redeem(token, "sha256:other-plan", "lab")
+        with self.assertRaisesRegex(ApprovalError, "already used"):
+            self.approvals.redeem(token, "sha256:plan", "lab")
+        token = self.issue()
+        with self.assertRaisesRegex(ApprovalError, "different Orchestrator"):
+            self.approvals.redeem(token, "sha256:plan", "other-lab")
+
+    def test_unknown_token_is_refused(self):
+        with self.assertRaisesRegex(ApprovalError, "unknown"):
+            self.approvals.redeem("made-up", "sha256:plan", "lab")
+
+    def test_wrong_or_missing_answer_issues_nothing_and_names_the_gate(self):
+        with self.assertRaisesRegex(ApprovalError, "zone confirmation refused"):
+            self.approvals.issue(self.gates, ["CREATE Z2", "APPLY"], "sha256:plan", "lab")
+        with self.assertRaisesRegex(ApprovalError, "write approval refused"):
+            self.approvals.issue(self.gates, ["CREATE Z1", "apply"], "sha256:plan", "lab")
+        with self.assertRaisesRegex(ApprovalError, "every confirmation"):
+            self.approvals.issue(self.gates, ["CREATE Z1"], "sha256:plan", "lab")
+
+    def test_delete_needs_its_code_and_the_acknowledgement(self):
+        gates = delete_gates("DELETE-ABCDEFGH")
+        with self.assertRaisesRegex(ApprovalError, "deletion confirmation code refused"):
+            self.approvals.issue(gates, ["DELETE-ABCDEFGX", cli.DELETE_ACKNOWLEDGMENT], "sha256:plan", "lab")
+        token = self.approvals.issue(gates, ["DELETE-ABCDEFGH", cli.DELETE_ACKNOWLEDGMENT], "sha256:plan", "lab")
+        self.approvals.redeem(token, "sha256:plan", "lab")
 
 
 if __name__ == "__main__":
