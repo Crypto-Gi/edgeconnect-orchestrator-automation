@@ -4,7 +4,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Mapping, Optional
+from typing import Callable, Dict, Mapping, Optional, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 from .errors import ConfigurationError
@@ -84,7 +84,7 @@ def _profiles(merged: Mapping[str, str]) -> Dict[str, Dict[str, str]]:
         if name in profiles:
             raise ConfigurationError("Orchestrator nickname {!r} is used by both {} and {}".format(name, profiles[name]["slot"], slot))
         profiles[name] = {"slot": slot}
-        for field in ("base_url", "api_key", "ca_bundle", "api_key_header", "tls_sha256"):
+        for field in ("base_url", "api_key", "ca_bundle", "api_key_header", "tls_sha256", "gui_label", "gui_color", "gui_writes"):
             if merged.get("{}_{}".format(name, field)):
                 profiles[name][field] = merged["{}_{}".format(name, field)]
     return profiles
@@ -106,14 +106,8 @@ def _choose_profile(profiles: Mapping[str, Mapping[str, str]], prompt: Callable[
     raise ConfigurationError("unknown Orchestrator choice {!r}; configured: {}".format(answer, ", ".join(names)))
 
 
-def load_config(
-    dotenv_path: Optional[str] = None,
-    environ: Optional[Mapping[str, str]] = None,
-    allow_http: bool = False,
-    orchestrator: Optional[str] = None,
-    interactive: Optional[bool] = None,
-    prompt: Callable[[str], str] = input,
-) -> Config:
+def _settings(dotenv_path: Optional[str], environ: Optional[Mapping[str, str]]) -> Tuple[Callable[[str], Optional[str]], Dict[str, str], Dict[str, Dict[str, str]]]:
+    """The single-Orchestrator key lookup, all keys lower-cased, and the named profiles, from the dotenv file and the environment."""
     dotenv_values: Dict[str, str] = {}
     selected_dotenv = dotenv_path
     if selected_dotenv is None and Path(DEFAULT_DOTENV).is_file():
@@ -131,6 +125,23 @@ def load_config(
         # Keep the single-Orchestrator keys selectable instead of silently ignoring them.
         # The pin belongs to this host only, so unlike ca_bundle it is never a default for nicknames.
         profiles["orchestrator"] = {"slot": "orchestrator_base_url", "base_url": configured_value("base_url") or "", "api_key": configured_value("api_key") or "", "tls_sha256": configured_value("tls_sha256") or ""}
+    return configured_value, merged, profiles
+
+
+def orchestrator_profiles(dotenv_path: Optional[str] = None, environ: Optional[Mapping[str, str]] = None) -> Dict[str, Dict[str, str]]:
+    """Every configured Orchestrator by nickname, in menu order, with its raw keys; {} when only the single-Orchestrator keys are used."""
+    return _settings(dotenv_path, environ)[2]
+
+
+def load_config(
+    dotenv_path: Optional[str] = None,
+    environ: Optional[Mapping[str, str]] = None,
+    allow_http: bool = False,
+    orchestrator: Optional[str] = None,
+    interactive: Optional[bool] = None,
+    prompt: Callable[[str], str] = input,
+) -> Config:
+    configured_value, merged, profiles = _settings(dotenv_path, environ)
     name = ""
     if profiles:
         name = (orchestrator or merged.get("orch_default") or "").strip().lower()

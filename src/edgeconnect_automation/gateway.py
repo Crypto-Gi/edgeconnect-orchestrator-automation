@@ -5,8 +5,20 @@ import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from .client import ApiClient
-from .errors import ResponseFormatError, ValidationError
+from .errors import PermissionDeniedError, ResourceNotFoundError, ResponseFormatError, ValidationError
 from .util import normalize_acl_entries, semantic_equal
+
+
+def require_supported_release(version: Mapping[str, Any]) -> str:
+    """The release from a /gmsserver/briefInfo answer; ValidationError unless it is 9.3 or later."""
+    release = str(version.get("release", ""))
+    try:
+        parts = tuple(int(part) for part in release.split(".")[:2])
+    except ValueError as error:
+        raise ValidationError("unable to parse Orchestrator release {}".format(release)) from error
+    if len(parts) < 2 or parts < (9, 3):
+        raise ValidationError("Orchestrator 9.3 or later is required; found {}".format(release or "unknown"))
+    return release
 
 
 class OrchestratorGateway:
@@ -22,6 +34,14 @@ class OrchestratorGateway:
 
     def get_version(self) -> Mapping[str, Any]:
         return self._shape(self.client.get("/gmsserver/briefInfo"), dict, "Orchestrator version")
+
+    def get_server_id(self) -> str:
+        """The Orchestrator's serial number from /gmsserver/info, which stays the same when its address changes; "" if this key cannot read it."""
+        try:
+            info = self._shape(self.client.get("/gmsserver/info"), dict, "Orchestrator server info")
+        except (PermissionDeniedError, ResourceNotFoundError, ResponseFormatError):
+            return ""
+        return str(info.get("serialNumber") or "")
 
     def discover(self) -> Dict[str, Any]:
         return {

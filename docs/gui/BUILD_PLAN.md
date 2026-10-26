@@ -34,6 +34,7 @@ Built as: `engine.py` runs the CLI's own command code in-process with its own ru
 
 ## Step 4: Orchestrator identity and fleet status
 Read identity (URL, release, and a stable ID if the API has one; investigate first). Check all profiles in parallel with a short timeout and classify green, amber or red with a plain reason. Plans record the identity; apply refuses on a mismatch. Add optional <nick>_gui_color, <nick>_gui_label and <nick>_gui_writes (default off) to .env.example.
+Built as: the stable ID is the Orchestrator serial number (`serialNumber` from `GET /gmsserver/info`, documented by pyedgeconnect; not yet confirmed on a lab Orchestrator). Plans record name, URL, release and serial; apply refuses a different serial at the same URL, and compares URL only when either side has no serial. `fleet.check_all()` gives one try of 5 s per read: green = connected, release 9.3+, serial readable; amber = usable but slow (over 2 s), busy (429) or serial unreadable; red = bad settings, no answer, certificate, DNS, refused, key refused, release too old or server error.
 Done when: fixture tests cover each status and the mismatch refusal, and a read-only check on the lab Orchestrators passes.
 
 ## Step 5: GUI server and task API

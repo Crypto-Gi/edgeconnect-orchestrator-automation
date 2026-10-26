@@ -125,6 +125,16 @@ class EngineTests(unittest.TestCase):
         deleted = engine.delete("address-groups", "address_groups_delete.csv", approval, report_dir="")
         self.assertEqual((deleted.exit_code, WritableGateway.groups), (0, []))
 
+    def test_apply_refuses_a_plan_made_on_another_orchestrator_at_the_same_address(self):
+        engine.plan("address-groups", "plan.json", report_dir="", csv="new_group.csv")
+        with patch.object(WritableGateway, "get_server_id", return_value="ORCH-SERIAL-2"):
+            refused = engine.apply("address-groups", "plan.json", dry_run=True, report_dir="")
+        self.assertEqual((refused.exit_code, refused.approval), (2, None))
+        self.assertIn("made on the Orchestrator with serial number ORCH-SERIAL-1, but https://orchestrator.invalid now answers with serial number ORCH-SERIAL-2", " ".join(issue["message"] for issue in refused.issues))
+        # A serial number this key cannot read is no evidence of a different Orchestrator; the address check still applies.
+        with patch.object(WritableGateway, "get_server_id", return_value=""):
+            self.assertEqual(engine.apply("address-groups", "plan.json", dry_run=True, report_dir="").exit_code, 0)
+
     def test_each_call_gets_its_own_context(self):
         context = engine.RunContext()
         result = engine.plan("zones", "zones.json", report_dir="", context=context, name=["NEW_ZONE"])

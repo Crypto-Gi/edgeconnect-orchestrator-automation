@@ -142,6 +142,10 @@ Exit 3, nothing written. A write or deletion needs a person at a terminal to typ
 
 A plan or inventory file made on another Orchestrator. Rerun with the `--orchestrator` it names, or build a new plan against this one.
 
+### `this plan was made on the Orchestrator with serial number ...`
+
+Exit 2, nothing written. The address is the same, but a different Orchestrator answers there now (rebuilt, restored onto another server, or the name moved), so the plan's baseline is not this Orchestrator's. Build a new plan against it.
+
 ### `--inventory expects the offline inventory JSON used by the contract tests`
 
 Exit 2, nothing written. `firewall plan --inventory` and `firewall deploy --inventory` take the contract-test inventory format (`segments {name: id}`, `zones {"segment|zone": id}`, `policies {"source|destination": policy}`, ...), not a `discovery --output` file. Drop `--inventory` to discover live.
