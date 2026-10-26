@@ -1,0 +1,160 @@
+### write, approved, with zones
+Type CREATE Z1 to confirm this zone: CREATE Z1
+Type CREATE Z2 to confirm this zone: CREATE Z2
+Target Orchestrator: lab (https://orchestrator.invalid)
+Type APPLY to execute the exact preview: APPLY
+=> returned True
+
+### write, wrong zone
+Type CREATE Z1 to confirm this zone: CREATE Z2
+=> ApprovalError: zone confirmation refused
+
+### write, APPLY refused
+Target Orchestrator: lab (https://orchestrator.invalid)
+Type APPLY to execute the exact preview: apply
+=> ApprovalError: write approval refused
+
+### write, dry run
+=> returned False
+
+### write, no terminal
+=> ApprovalError: non-interactive writes are refused
+
+### template ACLs, approved
+Type the exact template group name new-group to authorize creation: new-group
+Type SELECT ACLS existing-group to select Access Lists: SELECT ACLS existing-group
+Type MERGE ACLS existing-group to change appliance template mode: MERGE ACLS existing-group
+Target Orchestrator: lab (https://orchestrator.invalid)
+Type APPLY to execute the exact preview: APPLY
+=> returned True
+
+### template ACLs, wrong group name
+Type the exact template group name new-group to authorize creation: New-Group
+=> ApprovalError: template group creation confirmation refused
+
+### template ACLs, selection refused
+Type the exact template group name new-group to authorize creation: new-group
+Type SELECT ACLS existing-group to select Access Lists: SELECT ACLS new-group
+=> ApprovalError: Access Lists selection confirmation refused
+
+### template ACLs, merge mode refused
+Type the exact template group name new-group to authorize creation: new-group
+Type SELECT ACLS existing-group to select Access Lists: SELECT ACLS existing-group
+Type MERGE ACLS existing-group to change appliance template mode: MERGE
+=> ApprovalError: template merge-mode confirmation refused
+
+### template ACLs, no terminal
+=> ApprovalError: non-interactive writes are refused
+
+### delete, approved
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (2 resources)
+
++---+---------------+-------+------------------+
+| # | RESOURCE TYPE | NAME  | IDENTITY / SCOPE |
++---+---------------+-------+------------------+
+| 1 | address-group | web   | address-groups   |
+| 2 | service-group | https | service-groups   |
++---+---------------+-------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+
+WARNING 2 OF 3 — Type this system-generated code exactly:
+
+DELETE-AAAAAAAA
+
+Deletion code: DELETE-AAAAAAAA
+
+WARNING 3 OF 3 — FINAL DESTRUCTIVE ACTION WARNING
+The complete table above will be deleted. Dependencies may stop working, rollback is not automatic, and you are responsible for this abyss action.
+
+To answer 'Are you absolutely sure?' type exactly:
+
+I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION
+
+Final acknowledgment: I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION
+=> returned True
+
+### delete, wrong code
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (2 resources)
+
++---+---------------+-------+------------------+
+| # | RESOURCE TYPE | NAME  | IDENTITY / SCOPE |
++---+---------------+-------+------------------+
+| 1 | address-group | web   | address-groups   |
+| 2 | service-group | https | service-groups   |
++---+---------------+-------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+
+WARNING 2 OF 3 — Type this system-generated code exactly:
+
+DELETE-AAAAAAAA
+
+Deletion code: DELETE-AAAAAAAB
+=> ApprovalError: deletion confirmation code refused
+
+### delete, acknowledgement refused
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (2 resources)
+
++---+---------------+-------+------------------+
+| # | RESOURCE TYPE | NAME  | IDENTITY / SCOPE |
++---+---------------+-------+------------------+
+| 1 | address-group | web   | address-groups   |
+| 2 | service-group | https | service-groups   |
++---+---------------+-------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+
+WARNING 2 OF 3 — Type this system-generated code exactly:
+
+DELETE-AAAAAAAA
+
+Deletion code: DELETE-AAAAAAAA
+
+WARNING 3 OF 3 — FINAL DESTRUCTIVE ACTION WARNING
+The complete table above will be deleted. Dependencies may stop working, rollback is not automatic, and you are responsible for this abyss action.
+
+To answer 'Are you absolutely sure?' type exactly:
+
+I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION
+
+Final acknowledgment: yes
+=> ApprovalError: final deletion acknowledgment refused
+
+### delete, dry run
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (2 resources)
+
++---+---------------+-------+------------------+
+| # | RESOURCE TYPE | NAME  | IDENTITY / SCOPE |
++---+---------------+-------+------------------+
+| 1 | address-group | web   | address-groups   |
+| 2 | service-group | https | service-groups   |
++---+---------------+-------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+=> returned False
+
+### delete, nothing to delete
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (0 resources)
+
++---+---------------+------+------------------+
+| # | RESOURCE TYPE | NAME | IDENTITY / SCOPE |
++---+---------------+------+------------------+
++---+---------------+------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+=> returned False
+
+### delete, no terminal
+
+WARNING 1 OF 3 — COMPLETE DELETION TABLE (2 resources)
+
++---+---------------+-------+------------------+
+| # | RESOURCE TYPE | NAME  | IDENTITY / SCOPE |
++---+---------------+-------+------------------+
+| 1 | address-group | web   | address-groups   |
+| 2 | service-group | https | service-groups   |
++---+---------------+-------+------------------+
+Target Orchestrator: lab (https://orchestrator.invalid)
+=> ApprovalError: non-interactive deletion is refused
+
