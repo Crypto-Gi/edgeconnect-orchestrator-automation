@@ -162,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(201, tasks.create(body).view())
         task_id, action = _task_path(path)
         if action == "approve":
-            return self._json(202, tasks.approve(task_id, body.get("answers"), body.get("orchestrator", "")).view())
+            return self._json(202, tasks.approve(task_id, body.get("answers"), body.get("orchestrator", ""), body.get("understood", False)).view())
         if action == "cancel":
             return self._json(202, tasks.cancel(task_id).view())
         raise TaskError("not found", 404)

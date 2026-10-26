@@ -50,48 +50,68 @@
       </div>
     </section>
 
-    <section id="view-firewall" class="view" aria-labelledby="fw-title" hidden>
+    <section id="view-flow" class="view" aria-labelledby="flow-title" hidden>
       <a class="back" href="#/">← All tasks</a>
-      <div class="eyebrow" id="fw-orch"></div>
-      <h1 id="fw-title">Firewall rules</h1>
-      <ol class="stepper" id="fw-steps" aria-label="Steps"></ol>
+      <div class="eyebrow" id="flow-orch"></div>
+      <h1 id="flow-title"></h1>
+      <ol class="stepper" id="flow-steps" aria-label="Steps"></ol>
 
-      <section class="panel" id="fw-load" aria-labelledby="fw-load-title">
-        <h2 id="fw-load-title">Load a firewall CSV</h2>
-        <p class="muted">One row per rule, with the same columns the command line uses. Nothing is sent to Orchestrator until you approve the exact changes.</p>
-        <div class="toolbar"><label class="btn" for="fw-file">Choose CSV…</label><input type="file" id="fw-file" accept=".csv,text/csv" class="sr-only"><span id="fw-file-name" class="muted"></span></div>
+      <section class="panel" id="flow-load" aria-labelledby="flow-load-title">
+        <h2 id="flow-load-title"></h2>
+        <p class="muted" id="flow-load-text"></p>
+        <div class="toolbar" id="flow-remove-kind" hidden>
+          <label for="flow-kind">Object type</label>
+          <select id="flow-kind">
+            <option value="firewall">Firewall rules</option>
+            <option value="template-acls">Template ACLs</option>
+            <option value="address-groups">Address groups</option>
+            <option value="service-groups">Service groups</option>
+            <option value="app-groups">Application groups</option>
+            <option value="app-definitions">Applications</option>
+          </select>
+        </div>
+        <div class="toolbar" id="flow-csv"><label class="btn" for="flow-file">Choose CSV…</label><input type="file" id="flow-file" accept=".csv,text/csv" class="sr-only"><span id="flow-file-name" class="muted"></span></div>
+        <form id="flow-names" class="gate" hidden>
+          <label for="flow-zone-names">Zone names, one per line</label>
+          <textarea id="flow-zone-names" rows="5" required spellcheck="false" autocomplete="off"></textarea>
+          <div class="actions"><button class="btn primary" type="submit">Plan these zones</button></div>
+        </form>
       </section>
 
-      <section class="panel" id="fw-fix" aria-labelledby="fw-fix-title" hidden>
-        <h2 id="fw-fix-title"></h2>
-        <p id="fw-fix-text" class="muted" role="status"></p>
-        <ul class="notes" id="fw-fix-warnings"></ul>
-        <div id="fw-issues"></div>
-        <div class="actions"><button class="btn" type="button" id="fw-reload">Load a corrected CSV</button><button class="btn primary" type="button" id="fw-plan">Plan on this Orchestrator</button></div>
+      <section class="panel" id="flow-fix" aria-labelledby="flow-fix-title" hidden>
+        <h2 id="flow-fix-title"></h2>
+        <p id="flow-fix-text" class="muted" role="status"></p>
+        <ul class="notes" id="flow-fix-warnings"></ul>
+        <div id="flow-issues"></div>
+        <div class="actions"><button class="btn" type="button" id="flow-reload">Load a corrected CSV</button><button class="btn primary" type="button" id="flow-plan">Plan on this Orchestrator</button></div>
       </section>
 
-      <section class="panel" id="fw-review" aria-labelledby="fw-review-title" hidden>
-        <h2 id="fw-review-title">Review the changes</h2>
-        <div class="callout bad" id="fw-deletes" hidden></div>
-        <div id="fw-warnings"></div>
-        <ul class="notes" id="fw-counts"></ul>
-        <div id="fw-changes"></div>
-        <p class="muted" id="fw-writes-off" hidden></p>
-        <div class="actions"><button class="btn" type="button" id="fw-restart">Start again</button><button class="btn primary" type="button" id="fw-approve">Approve these changes…</button></div>
+      <section class="panel" id="flow-review" aria-labelledby="flow-review-title" hidden>
+        <h2 id="flow-review-title"></h2>
+        <div class="callout bad" id="flow-deletes" hidden></div>
+        <div id="flow-warnings"></div>
+        <ul class="notes" id="flow-counts"></ul>
+        <div id="flow-changes"></div>
+        <p class="muted" id="flow-writes-off" hidden></p>
+        <div class="callout bad" id="flow-confirm" hidden>
+          <label class="check" for="flow-understood"><input type="checkbox" id="flow-understood"> <span id="flow-understood-text"></span></label>
+          <div class="actions"><button class="btn danger" type="button" id="flow-delete" disabled>Delete…</button></div>
+        </div>
+        <div class="actions"><button class="btn" type="button" id="flow-restart">Start again</button><button class="btn primary" type="button" id="flow-approve">Approve these changes…</button></div>
       </section>
 
-      <section class="panel" id="fw-progress" aria-labelledby="fw-progress-title" hidden>
-        <h2 id="fw-progress-title"></h2>
-        <p id="fw-progress-text" role="status" aria-live="polite"></p>
-        <div class="actions"><button class="btn" type="button" id="fw-open-approval" hidden>Open the approval</button><button class="btn danger" type="button" id="fw-cancel" hidden>Cancel this write</button></div>
+      <section class="panel" id="flow-progress" aria-labelledby="flow-progress-title" hidden>
+        <h2 id="flow-progress-title"></h2>
+        <p id="flow-progress-text" role="status" aria-live="polite"></p>
+        <div class="actions"><button class="btn" type="button" id="flow-open-approval" hidden>Open the approval</button><button class="btn danger" type="button" id="flow-cancel" hidden>Cancel this write</button></div>
       </section>
 
-      <section class="panel" id="fw-done" aria-labelledby="fw-done-title" hidden>
-        <h2 id="fw-done-title"></h2>
-        <p id="fw-done-text"></p>
-        <ul class="notes" id="fw-done-counts"></ul>
-        <div id="fw-rows"></div>
-        <div class="actions"><a class="btn" id="fw-run-link" href="#/runs">Open this run</a><button class="btn primary" type="button" id="fw-again">Start again</button></div>
+      <section class="panel" id="flow-done" aria-labelledby="flow-done-title" hidden>
+        <h2 id="flow-done-title"></h2>
+        <p id="flow-done-text"></p>
+        <ul class="notes" id="flow-done-counts"></ul>
+        <div id="flow-rows"></div>
+        <div class="actions"><a class="btn" id="flow-run-link" href="#/runs">Open this run</a><button class="btn primary" type="button" id="flow-again">Start again</button></div>
       </section>
     </section>
 
@@ -125,13 +145,6 @@
       <div class="panel" id="inventory-table" role="tabpanel" hidden></div>
     </section>
 
-    <section id="view-task" aria-labelledby="task-title" hidden>
-      <a class="back" href="#/">← All tasks</a>
-      <div class="eyebrow" id="task-orch"></div>
-      <h1 id="task-title"></h1>
-      <p class="lede" id="task-text"></p>
-      <div class="panel notice"><p id="task-note"></p></div>
-    </section>
   </div>
 </main>
 

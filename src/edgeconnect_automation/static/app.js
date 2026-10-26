@@ -3,20 +3,21 @@
 "use strict";
 
 const TASKS = [
-  { id: "firewall", title: "Firewall rules", text: "Add or change zone-based firewall rules between segments, from a CSV.", writes: true, href: "#/firewall" },
-  { id: "applications", title: "Applications", text: "Define custom applications by address, port or domain, and AppExpress entries.", writes: true },
-  { id: "app-groups", title: "Application groups", text: "Group applications so one firewall rule can match them all.", writes: true },
-  { id: "groups", title: "Address or service groups", text: "Name sets of addresses or ports for firewall rules to use.", writes: true },
-  { id: "template-acls", title: "Template ACLs", text: "Merge access lists into the Access Lists template of template groups.", writes: true },
-  { id: "zones", title: "Missing zones", text: "Create the firewall zones a CSV needs that this Orchestrator does not have yet.", writes: true },
-  { id: "remove", title: "Remove by CSV", text: "Delete exactly the objects listed in a CSV, after a typed confirmation.", writes: true },
+  { id: "firewall", title: "Firewall rules", text: "Add or change zone-based firewall rules between segments, from a CSV.", writes: true, href: "#/do/firewall" },
+  { id: "applications", title: "Applications", text: "Define custom applications by address, port or domain, and AppExpress entries.", writes: true, href: "#/do/app-definitions" },
+  { id: "app-groups", title: "Application groups", text: "Group applications so one firewall rule can match them all.", writes: true, href: "#/do/app-groups" },
+  { id: "address-groups", title: "Address groups", text: "Name sets of addresses for firewall rules to use.", writes: true, href: "#/do/address-groups" },
+  { id: "service-groups", title: "Service groups", text: "Name sets of protocols and ports for firewall rules to use.", writes: true, href: "#/do/service-groups" },
+  { id: "template-acls", title: "Template ACLs", text: "Merge access lists into the Access Lists template of template groups.", writes: true, href: "#/do/template-acls" },
+  { id: "zones", title: "Missing zones", text: "Create the firewall zones your rules need that this Orchestrator does not have yet.", writes: true, href: "#/do/zones" },
+  { id: "remove", title: "Remove by CSV", text: "Delete exactly the objects listed in a CSV, after three warnings and typed confirmations.", writes: true, href: "#/remove" },
   { id: "changes", title: "See what changed", text: "Look through earlier runs, their outcomes and every row they touched.", writes: false, href: "#/runs" },
   { id: "inventory", title: "Inventory", text: "Look through the segments, zones and groups this Orchestrator has now.", writes: false, href: "#/inventory" },
 ];
 const SHAPE = { green: "●", amber: "▲", red: "■" };
 const OPEN_STATES = new Set(["queued", "running", "awaiting_approval"]);
 
-const state = { fleet: [], current: null, tasks: [], work: { csvs: {}, inventory: null, firewall: {} } };
+const state = { fleet: [], current: null, tasks: [], work: { csvs: {}, inventory: null, flow: {} } };
 const $ = (id) => document.getElementById(id);
 
 function store(key, value) {
@@ -120,7 +121,6 @@ function renderHeader() {
   status.title = orch ? orch.reason : "";
   const label = orch ? nameOf(orch) : "No Orchestrator configured";
   $("home-orch").textContent = label;
-  $("task-orch").textContent = label;
   $("home-writes").textContent = !orch ? "Add an Orchestrator to .env, then check again."
     : orch.writes ? "Changes are allowed on " + nameOf(orch) + ". Every write still shows its preview and needs your typed confirmation."
     : "Read-only on " + nameOf(orch) + ": you can plan and preview, but writes are off. Set " + orch.name + "_gui_writes=on in .env to allow them.";
@@ -154,7 +154,7 @@ async function switchTo(name) {
     try { await post("/api/tasks/" + task.id + "/cancel"); } catch (_) { /* already finished */ }
   }
   state.current = name;
-  state.work = { csvs: {}, inventory: null, firewall: {} };
+  state.work = { csvs: {}, inventory: null, flow: {} };
   store("ec-orchestrator", name);
   renderSwitcher();
   renderFleet();
@@ -176,7 +176,7 @@ function downloadCsvs() {
 function renderIntents() {
   const orch = current();
   $("intents").replaceChildren(...TASKS.map((task) => el("li", null,
-    el("a", { class: "intent", href: task.href || "#/task/" + task.id },
+    el("a", { class: "intent", href: task.href },
       // Title first, so a screen reader names the link by its task; CSS shows the kind above it.
       el("h3", { text: task.title }),
       el("p", { text: task.text }),
@@ -184,7 +184,7 @@ function renderIntents() {
 }
 
 function show(view) {
-  for (const id of ["view-home", "view-task", "view-firewall", "view-runs", "view-run", "view-inventory"]) $(id).hidden = id !== view;
+  for (const id of ["view-home", "view-flow", "view-runs", "view-run", "view-inventory"]) $(id).hidden = id !== view;
 }
 
 function render() {
@@ -193,14 +193,11 @@ function render() {
   const run = hash.match(/^#\/runs\/([\w-]+)$/);
   if (run) { show("view-run"); return loadRun(run[1]); }
   if (hash === "#/inventory") { show("view-inventory"); return renderInventory(); }
-  if (hash === "#/firewall") { show("view-firewall"); return renderFirewall(); }
-  const match = hash.match(/^#\/task\/([\w-]+)$/);
-  const task = match && TASKS.find((item) => item.id === match[1] && !item.href);
-  show(task ? "view-task" : "view-home");
-  if (!task) return renderIntents();
-  $("task-title").textContent = task.title;
-  $("task-text").textContent = task.text;
-  $("task-note").textContent = "This guided task is not built yet. Until it is, use the edgeconnect-auto command line for it.";
+  if (hash === "#/remove") { show("view-flow"); return openFlow("", true); }
+  const kind = hash.match(/^#\/do\/([\w-]+)$/);
+  if (kind && FLOWS[kind[1]]) { show("view-flow"); return openFlow(kind[1], false); }
+  show("view-home");
+  renderIntents();
 }
 
 async function loadTasks() {
@@ -517,8 +514,20 @@ async function readInventory() {
   events.onerror = () => events.close();
 }
 
-/* guided firewall task: Load, Fix, Plan, Review, Approve, Apply, Done. Each step is a server task; this only shows them. */
+/* guided tasks. A change: Load, Fix, Plan, Review, Approve, Apply, Done. Remove by CSV: Load, Preview, Confirm, Delete, Done.
+   Each step is a server task; this only shows them. */
+const FLOWS = {
+  firewall: { title: "Firewall rules", things: "rules", file: "a firewall CSV", help: "One row per rule, with the same columns the command line uses.", validate: true },
+  "app-definitions": { title: "Applications", things: "applications", file: "an applications CSV", help: "One row per application definition or AppExpress entry, with the same columns the command line uses." },
+  "app-groups": { title: "Application groups", things: "application groups", file: "an application groups CSV", help: "One row per application group, with the same columns the command line uses." },
+  "address-groups": { title: "Address groups", things: "address groups", file: "an address groups CSV", help: "One row per address group rule, with the same columns the command line uses." },
+  "service-groups": { title: "Service groups", things: "service groups", file: "a service groups CSV", help: "One row per service group rule, with the same columns the command line uses." },
+  "template-acls": { title: "Template ACLs", things: "access list entries", file: "a template ACLs CSV", help: "One row per access list entry, with the same columns the command line uses." },
+  zones: { title: "Missing zones", things: "zones", names: true },
+};
+const REMOVABLE = ["firewall", "template-acls", "address-groups", "service-groups", "app-groups", "app-definitions"];
 const STEPS = ["Load", "Fix", "Plan", "Review", "Approve", "Apply", "Done"];
+const REMOVE_STEPS = ["Load", "Preview", "Confirm", "Delete", "Done"];
 const FINAL_STATES = new Set(["planned", "done", "failed", "rejected", "expired", "cancelled"]);
 
 function follow(work, key, task, onChange) {
@@ -544,9 +553,18 @@ async function startTask(work, key, body, onChange) {
   onChange();
 }
 
-function firewallStep(fw) {
-  if (!fw.csv) return [0, false];
-  const { validate, plan, apply } = fw;
+// [step index, stopped] for the stepper
+function flowStep(flow) {
+  const { validate, plan, apply } = flow;
+  if (flow.remove) {
+    if (!apply) return [0, false];
+    const asked = Boolean(apply.result && apply.result.approval);
+    if (!FINAL_STATES.has(apply.state) && !asked) return [1, false];
+    if (!asked) return [1, true];  // blocked, or nothing in the CSV exists
+    if (apply.state === "awaiting_approval") return [2, false];
+    if (apply.state === "applying") return [3, false];
+    return [4, apply.state !== "done"];
+  }
   if (apply) {
     if (apply.state === "applying") return [5, false];
     if (FINAL_STATES.has(apply.state)) return [6, apply.state !== "done"];
@@ -556,6 +574,7 @@ function firewallStep(fw) {
     if (plan.state === "planned") return [3, false];
     return [2, plan.state === "failed"];
   }
+  if (!flow.csv) return [0, false];
   return [1, Boolean(validate && validate.state === "failed")];
 }
 
@@ -563,8 +582,8 @@ const issueColumns = [
   { key: "row", label: "Row" }, { key: "column", label: "Column" }, { key: "rule", label: "Rule", mono: true },
   { key: "value", label: "Value", mono: true }, { key: "message", label: "Problem" }, { key: "fix", label: "Fix" },
 ];
-let fwIssueTask = "";
-const fwIssues = new PagedTable({ id: "fw-issues", label: "problems in the CSV", container: $("fw-issues"), path: () => fwIssueTask && "/api/tasks/" + fwIssueTask + "/issues", filters: [{ key: "rule", label: "All rules" }, { key: "column", label: "All columns" }], columns: issueColumns, empty: "No problems." });
+let flowIssueTask = "";
+const flowIssues = new PagedTable({ id: "flow-issues", label: "problems in the CSV", container: $("flow-issues"), path: () => flowIssueTask && "/api/tasks/" + flowIssueTask + "/issues", filters: [{ key: "rule", label: "All rules" }, { key: "column", label: "All columns" }], columns: issueColumns, empty: "No problems." });
 
 function diffCell(row) {
   if (!row.fields.length) return "";
@@ -574,9 +593,9 @@ function diffCell(row) {
     item.before == null || item.after == null ? null : " → ",
     item.after == null ? el("span", { class: "before", text: "(removed)" }) : el("span", { class: "after", text: JSON.stringify(item.after) }))));
 }
-let fwPlanTask = "";
-const fwChanges = new PagedTable({
-  id: "fw-changes", label: "changes", container: $("fw-changes"), path: () => fwPlanTask && "/api/tasks/" + fwPlanTask + "/changes",
+let flowPlanTask = "";
+const flowChanges = new PagedTable({
+  id: "flow-changes", label: "changes", container: $("flow-changes"), path: () => flowPlanTask && "/api/tasks/" + flowPlanTask + "/changes",
   problems: "Deletes only", filters: [{ key: "action", label: "All actions" }, { key: "type", label: "All object types" }], empty: "Nothing to change.",
   columns: [
     { key: "action", label: "Action", cell: (row) => row.action === "delete" ? toneCell("delete", "bad") : row.action },
@@ -584,9 +603,9 @@ const fwChanges = new PagedTable({
     { key: "fields", label: "Field changes", cell: diffCell },
   ],
 });
-let fwApplyTask = "";
-const fwRows = new PagedTable({
-  id: "fw-rows", label: "rows written", container: $("fw-rows"), path: () => fwApplyTask && "/api/tasks/" + fwApplyTask + "/rows",
+let flowApplyTask = "";
+const flowRows = new PagedTable({
+  id: "flow-rows", label: "rows written", container: $("flow-rows"), path: () => flowApplyTask && "/api/tasks/" + flowApplyTask + "/rows",
   problems: "Problems only", filters: [{ key: "outcome", label: "All outcomes" }], empty: "No per-row outcomes for this run.",
   columns: [{ key: "row", label: "Row" }, { key: "item", label: "Item" }, { key: "scope", label: "Scope" }, { key: "outcome", label: "Outcome", cell: (row) => toneCell(row.outcome, row.tone) }, { key: "reason", label: "Reason" }],
 });
@@ -595,127 +614,197 @@ function notes(list, items) {
   list.replaceChildren(...(items || []).map((item) => el("li", { text: item })));
 }
 
-function renderFirewall() {
-  const fw = state.work.firewall;
+function plural(count, word) { return count + " " + word + (count === 1 ? "" : "s"); }
+
+// The flow the address asks for; another kind, or switching between change and remove, starts fresh.
+function openFlow(kind, remove) {
+  const flow = state.work.flow;
+  if (Boolean(flow.remove) !== remove || (!remove && flow.kind !== kind)) {
+    state.work.flow = { kind: remove ? (flow.remove && flow.kind) || "firewall" : kind, remove };
+    state.work.csvs = {};
+  }
+  renderFlow();
+}
+
+function renderFlow() {
+  const flow = state.work.flow;
+  const info = FLOWS[flow.kind];
   const orch = current();
-  const [step, stopped] = firewallStep(fw);
-  $("fw-orch").textContent = orch ? nameOf(orch) : "No Orchestrator configured";
-  $("fw-steps").replaceChildren(...STEPS.map((name, index) => {
-    const finished = index < step || (index === 6 && step === 6 && !stopped);
+  const where = orch ? nameOf(orch) : "this Orchestrator";
+  const steps = flow.remove ? REMOVE_STEPS : STEPS;
+  const last = steps.length - 1;
+  const [step, stopped] = flowStep(flow);
+  $("flow-orch").textContent = orch ? nameOf(orch) : "No Orchestrator configured";
+  $("flow-title").textContent = flow.remove ? "Remove by CSV" : info.title;
+  $("flow-steps").replaceChildren(...steps.map((name, index) => {
+    const finished = index < step || (index === last && step === last && !stopped);
     const item = el("li", { class: finished ? "done" : index === step && stopped ? "stopped" : "", text: name });
     if (index === step) item.setAttribute("aria-current", "step");
     return item;
   }));
-  for (const id of ["fw-load", "fw-fix", "fw-review", "fw-progress", "fw-done"]) $(id).hidden = true;
-  $("fw-file-name").textContent = fw.file ? "Loaded " + fw.file : "";
-  if (step === 0) { $("fw-load").hidden = false; return; }
+  for (const id of ["flow-load", "flow-fix", "flow-review", "flow-progress", "flow-done"]) $(id).hidden = true;
 
-  if (step === 1 || (step === 2 && stopped)) {
-    const task = step === 1 ? fw.validate : fw.plan;
+  if (step === 0) {
+    $("flow-load").hidden = false;
+    $("flow-remove-kind").hidden = !flow.remove;
+    $("flow-names").hidden = !info.names || flow.remove;
+    $("flow-csv").hidden = Boolean(info.names) && !flow.remove;
+    $("flow-load-title").textContent = flow.remove ? "Load the CSV of what to delete" : info.names ? "Name the zones to create" : "Load " + info.file;
+    $("flow-load-text").textContent = flow.remove ? "Pick the object type, then load a CSV with the same columns you would use to create them. Only the exact objects it names are deleted, after three warnings."
+      : info.names ? "One zone name per line. Planning reads which zones " + where + " already has and changes nothing."
+      : info.help + " Nothing is sent to Orchestrator until you approve the exact changes.";
+    $("flow-file-name").textContent = flow.file ? "Loaded " + flow.file : "";
+    return;
+  }
+
+  if (flow.remove && step === 1 && !stopped) {
+    $("flow-progress").hidden = false;
+    $("flow-progress-title").textContent = "Building the deletion table";
+    $("flow-progress-text").textContent = flow.apply.state === "queued" ? "Waiting for another write on this Orchestrator to finish." : "Matching every row of " + flow.file + " to what " + where + " has now. Nothing is deleted.";
+    $("flow-open-approval").hidden = true;
+    $("flow-cancel").hidden = false;
+    return;
+  }
+
+  if ((!flow.remove && (step === 1 || (step === 2 && stopped))) || (flow.remove && step === 1)) {
+    const task = flow.remove ? flow.apply : step === 1 ? flow.validate : flow.plan;
     const result = task && task.result;
-    $("fw-fix").hidden = false;
-    $("fw-plan").hidden = !(step === 1 && task && task.state === "done");
-    $("fw-plan").textContent = "Plan on " + (orch ? nameOf(orch) : "this Orchestrator");
-    $("fw-fix-title").textContent = step === 1 ? "Check " + fw.file : "Plan stopped";
-    $("fw-fix-text").textContent = !task || !FINAL_STATES.has(task.state) ? "Checking every row…"
-      : result && result.issues ? result.issues + " problem" + (result.issues > 1 ? "s" : "") + " to fix in the CSV. Correct them, then load it again." + (step === 2 ? " Nothing was written." : "")
+    const finished = !info.validate && step === 1 && !flow.remove ? true : task && FINAL_STATES.has(task.state);
+    $("flow-fix").hidden = false;
+    $("flow-plan").hidden = flow.remove || step !== 1 || !(info.validate ? task && task.state === "done" : true);
+    $("flow-plan").textContent = "Plan on " + where;
+    $("flow-fix-title").textContent = flow.remove ? "Nothing deleted" : step === 1 ? "Check " + flow.file : "Plan stopped";
+    $("flow-fix-text").textContent = !finished ? "Checking every row…"
+      : !flow.remove && !info.validate && step === 1 ? flow.file + " is checked while planning. Plan it on " + where + ": that reads the Orchestrator and changes nothing."
+      : result && result.issues ? plural(result.issues, "problem") + " to fix in the CSV. Correct them, then load it again." + (step > 1 || flow.remove ? " Nothing was written." : "")
       : task.state === "failed" ? task.message
-      : "Every row is valid. Next, plan it against " + nameOf(orch) + ": that reads the Orchestrator and changes nothing.";
-    notes($("fw-fix-warnings"), result ? result.warnings : []);
-    $("fw-issues").hidden = !(result && result.issues);
+      : flow.remove ? "None of the " + info.things + " in " + flow.file + " exist on " + where + ", so there is nothing to delete."
+      : "Every row is valid. Next, plan it against " + where + ": that reads the Orchestrator and changes nothing.";
+    notes($("flow-fix-warnings"), result ? result.warnings : []);
+    $("flow-issues").hidden = !(result && result.issues);
     if (result && result.issues) {
-      if (fwIssueTask !== task.id) { fwIssueTask = task.id; fwIssues.reset(); }
-      fwIssues.load();
+      if (flowIssueTask !== task.id) { flowIssueTask = task.id; flowIssues.reset(); }
+      flowIssues.load();
     }
     return;
   }
-  if (step === 3) {
-    const result = fw.plan.result;
-    $("fw-review").hidden = false;
-    $("fw-deletes").hidden = !result.deletes;
-    $("fw-deletes").textContent = result.deletes ? result.deletes + " object" + (result.deletes > 1 ? "s" : "") + " will be deleted. They are listed first." : "";
-    $("fw-warnings").replaceChildren(...(result.warnings.length ? [el("div", { class: "callout gate" }, el("p", { class: "notes-title", text: "Warnings (do not block)" }), el("ul", { class: "notes" }, ...result.warnings.map((item) => el("li", { text: item }))))] : []));
-    notes($("fw-counts"), result.counts);
-    if (fwPlanTask !== fw.plan.id) { fwPlanTask = fw.plan.id; fwChanges.reset(); }
-    fwChanges.load();
+
+  if ((!flow.remove && step === 3) || (flow.remove && step === 2)) {
+    const task = flow.remove ? flow.apply : flow.plan;
+    const result = task.result;
+    $("flow-review").hidden = false;
+    $("flow-review-title").textContent = flow.remove ? "Warning 1 of 3: everything below will be deleted" : "Review the changes";
+    $("flow-deletes").hidden = !result.deletes;
+    $("flow-deletes").textContent = !result.deletes ? ""
+      : flow.remove ? plural(result.deletes, "object") + " will be deleted from " + where + ". Anything that uses " + (result.deletes === 1 ? "it" : "them") + " may stop working, and nothing is restored automatically."
+      : plural(result.deletes, "object") + " will be deleted. They are listed first.";
+    $("flow-warnings").replaceChildren(...(result.warnings.length ? [el("div", { class: "callout gate" }, el("p", { class: "notes-title", text: "Warnings (do not block)" }), el("ul", { class: "notes" }, ...result.warnings.map((item) => el("li", { text: item }))))] : []));
+    notes($("flow-counts"), result.counts);
+    if (flowPlanTask !== task.id) { flowPlanTask = task.id; flowChanges.reset(); $("flow-understood").checked = false; }
+    flowChanges.load();
+    $("flow-confirm").hidden = !flow.remove;
+    $("flow-understood-text").textContent = "I understand that " + (result.deletes === 1 ? "this object" : "these " + plural(result.deletes, "object")) + " will be deleted from " + where + " and are not restored automatically.";
+    $("flow-delete").disabled = !$("flow-understood").checked;
     const canWrite = Boolean(orch && orch.writes && result.changes);
-    $("fw-approve").hidden = !canWrite;
-    $("fw-writes-off").hidden = canWrite;
-    $("fw-writes-off").textContent = !result.changes ? "Nothing to change: Orchestrator already has every rule in this CSV."
-      : "Writes are off for " + nameOf(orch) + ". Set " + orch.name + "_gui_writes=on in .env to approve changes here, or apply this plan with the command line.";
+    $("flow-approve").hidden = flow.remove || !canWrite;
+    $("flow-writes-off").hidden = flow.remove || canWrite;
+    $("flow-writes-off").textContent = !result.changes ? "Nothing to change: " + where + " already has every one of the " + info.things + " in this request."
+      : "Writes are off for " + where + ". Set " + orch.name + "_gui_writes=on in .env to approve changes here, or apply this plan with the command line.";
     return;
   }
-  if (step === 2) {
-    $("fw-progress").hidden = false;
-    $("fw-progress-title").textContent = "Planning on " + nameOf(orch);
-    $("fw-progress-text").textContent = fw.plan.state === "queued" ? "Waiting to start." : "Reading the segments, zones and current rules, then working out every change. Nothing is written.";
-    $("fw-open-approval").hidden = true;
-    $("fw-cancel").hidden = true;
+
+  if (!flow.remove && step === 2) {
+    $("flow-progress").hidden = false;
+    $("flow-progress-title").textContent = "Planning on " + where;
+    $("flow-progress-text").textContent = flow.plan.state === "queued" ? "Waiting to start." : "Reading what " + where + " has now, then working out every change. Nothing is written.";
+    $("flow-open-approval").hidden = true;
+    $("flow-cancel").hidden = true;
     return;
   }
-  if (step === 4 || step === 5) {
-    const task = fw.apply;
-    $("fw-progress").hidden = false;
-    const awaiting = task.state === "awaiting_approval";
-    $("fw-progress-title").textContent = step === 5 ? "Writing to " + nameOf(orch) : awaiting ? "Waiting for your approval" : "Building the exact preview";
-    $("fw-progress-text").textContent = step === 5 ? "Writing, then reading back to confirm every appliance has it. Do not close this page."
-      : awaiting ? "Nothing has been written. Type the confirmations to approve this exact preview." : task.state === "queued" ? "Waiting for another write on this Orchestrator to finish." : "Checking that Orchestrator still matches the plan.";
-    $("fw-open-approval").hidden = !awaiting;
-    $("fw-cancel").hidden = step === 5;
-    if (awaiting && !task.prompted) { task.prompted = true; openApproval(); }
+
+  if (step < last) {
+    const writing = flow.apply.state === "applying";
+    const awaiting = flow.apply.state === "awaiting_approval";
+    $("flow-progress").hidden = false;
+    $("flow-progress-title").textContent = writing ? (flow.remove ? "Deleting from " : "Writing to ") + where : awaiting ? "Waiting for your approval" : "Building the exact preview";
+    $("flow-progress-text").textContent = writing ? (flow.remove ? "Deleting, then reading back to confirm they are gone." : "Writing, then reading back to confirm every appliance has it.") + " Do not close this page."
+      : awaiting ? "Nothing has been written. Type the confirmations to approve this exact preview." : flow.apply.state === "queued" ? "Waiting for another write on this Orchestrator to finish." : "Checking that Orchestrator still matches the plan.";
+    $("flow-open-approval").hidden = !awaiting;
+    $("flow-cancel").hidden = writing;
+    if (awaiting && !flow.apply.prompted) { flow.apply.prompted = true; openApproval(); }
     return;
   }
-  const task = fw.apply;
+
+  const task = flow.apply;
   const result = task.result || {};
-  $("fw-done").hidden = false;
-  $("fw-done-title").replaceChildren(task.state === "done" ? toneCell("Written and confirmed", "ok") : toneCell({ rejected: "Rejected", expired: "Expired", cancelled: "Cancelled", failed: "Stopped" }[task.state] || task.state, "bad"));
-  $("fw-done-text").textContent = task.state === "done" ? "Every change was written to " + nameOf(orch) + " and read back from it." : task.message;
-  notes($("fw-done-counts"), result.counts);
-  $("fw-run-link").hidden = !result.run_id;
-  $("fw-run-link").href = "#/runs/" + (result.run_id || "");
-  $("fw-rows").hidden = !result.rows;
+  $("flow-done").hidden = false;
+  $("flow-done-title").replaceChildren(task.state === "done" ? toneCell(flow.remove ? "Deleted and confirmed" : "Written and confirmed", "ok") : toneCell({ rejected: "Rejected", expired: "Expired", cancelled: "Cancelled", failed: "Stopped" }[task.state] || task.state, "bad"));
+  $("flow-done-text").textContent = task.state !== "done" ? task.message
+    : flow.remove ? "Every object in the table was deleted from " + where + ", and reading back confirms it."
+    : "Every change was written to " + where + " and read back from it.";
+  notes($("flow-done-counts"), result.counts);
+  $("flow-run-link").hidden = !result.run_id;
+  $("flow-run-link").href = "#/runs/" + (result.run_id || "");
+  $("flow-rows").hidden = !result.rows;
   if (result.rows) {
-    if (fwApplyTask !== task.id) { fwApplyTask = task.id; fwRows.reset(); }
-    fwRows.load();
+    if (flowApplyTask !== task.id) { flowApplyTask = task.id; flowRows.reset(); }
+    flowRows.load();
   }
 }
 
-function rerenderFirewall() { if (location.hash === "#/firewall") renderFirewall(); }
+function rerenderFlow() { if (!$("view-flow").hidden) renderFlow(); }
 
-function loadFirewallCsv(file) {
+function loadFlowCsv(file) {
   const reader = new FileReader();
   reader.onload = () => {
     const text = String(reader.result);
-    state.work.firewall = { file: file.name, csv: text };
+    const flow = state.work.flow;
+    if (flow.remove) flow.kind = $("flow-kind").value;
+    Object.assign(flow, { file: file.name, csv: text });
     state.work.csvs = { [file.name]: text };
-    startTask(state.work.firewall, "validate", { action: "validate", csv_text: text }, rerenderFirewall);
+    if (flow.remove) startTask(flow, "apply", { action: "delete", kind: flow.kind, csv_text: text }, rerenderFlow);
+    else if (FLOWS[flow.kind].validate) startTask(flow, "validate", { action: "validate", csv_text: text }, rerenderFlow);
+    else renderFlow();
   };
   reader.readAsText(file);
 }
 
-function restartFirewall() {
-  state.work.firewall = {};
-  state.work.csvs = {};
-  $("fw-file").value = "";
-  renderFirewall();
-  $("fw-file").focus();
+function planZones(event) {
+  event.preventDefault();
+  const names = $("flow-zone-names").value.split(/[\n,]+/).map((name) => name.trim()).filter(Boolean);
+  Object.assign(state.work.flow, { names, file: plural(names.length, "zone") });
+  startTask(state.work.flow, "plan", { action: "plan", kind: "zones", names }, rerenderFlow);
 }
 
-/* approval: the server checks every answer; the dialog only collects them */
+function restartFlow() {
+  const flow = state.work.flow;
+  if (flow.apply && flow.apply.id && OPEN_STATES.has(flow.apply.state)) post("/api/tasks/" + flow.apply.id + "/cancel").catch(() => {});  // already finished
+  state.work.flow = { kind: flow.kind, remove: flow.remove };
+  state.work.csvs = {};
+  $("flow-file").value = "";
+  renderFlow();
+  (FLOWS[flow.kind].names && !flow.remove ? $("flow-zone-names") : $("flow-file")).focus();
+}
+
+/* approval: the server checks every answer, and the tick box; the dialog only collects them */
 let clock = null;
 function openApproval() {
-  const task = state.work.firewall.apply;
+  const task = state.work.flow.apply;
   const orch = current();
   if (!task || task.state !== "awaiting_approval" || !orch) return;
+  const remove = state.work.flow.remove;
   const gates = task.result.approval.gates;
   $("approve-band").replaceChildren(el("span", { text: nameOf(orch) + " " }), el("span", { class: "mono", text: "(" + orch.name + ", " + orch.url + ")" }));
-  $("approve-text").textContent = "You are approving exactly the changes you reviewed, on " + nameOf(orch) + ". The approval works once.";
+  $("approve-title").textContent = remove ? "Approve this deletion" : "Approve this write";
+  $("approve-text").textContent = "You are approving exactly the " + (remove ? "deletion table" : "changes") + " you reviewed, on " + nameOf(orch) + ". The approval works once.";
   $("approve-gates").replaceChildren(...gates.map((gate, index) => el("label", { class: "gate", for: "gate-" + index },
     gate.notice ? el("pre", { text: gate.notice.trim() }) : null,
     el("span", { text: gate.prompt.replace(/:\s*$/, "") }),
     el("input", { type: "text", id: "gate-" + index, autocomplete: "off", spellcheck: "false", required: "" }))));
   $("approve-orch-label").textContent = "Type the Orchestrator nickname " + orch.name + " to confirm where this goes";
   $("approve-orch").value = "";
+  $("approve-submit").textContent = remove ? "Delete" : "Approve and write";
+  $("approve-submit").className = "btn " + (remove ? "danger" : "primary");
   const tick = () => {
     const left = Math.max(0, Math.round((task.deadline || 0) - Date.now() / 1000));
     $("approve-clock").textContent = "This approval expires in " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0") + ".";
@@ -730,14 +819,14 @@ function openApproval() {
 
 async function submitApproval(event) {
   event.preventDefault();
-  const task = state.work.firewall.apply;
+  const flow = state.work.flow;
   const answers = [...$("approve-gates").querySelectorAll("input")].map((input) => input.value);
   const orchestrator = $("approve-orch").value;
   $("approve-dialog").close();
   try {
-    await post("/api/tasks/" + task.id + "/approve", { answers, orchestrator });
+    await post("/api/tasks/" + flow.apply.id + "/approve", { answers, orchestrator, understood: Boolean(flow.remove && $("flow-understood").checked) });
   } catch (error) {
-    $("fw-progress-text").textContent = "Could not send the approval: " + error.message;
+    $(flow.remove ? "flow-counts" : "flow-progress-text").textContent = "Could not send the approval: " + error.message;
   }
 }
 
@@ -747,7 +836,7 @@ let paletteIndex = 0;
 
 function commands() {
   const list = [{ label: "Go to all tasks", hint: "home", run: () => { location.hash = "#/"; } }];
-  for (const task of TASKS) list.push({ label: task.title, hint: task.writes ? "task" : "read only", run: () => { location.hash = task.href || "#/task/" + task.id; } });
+  for (const task of TASKS) list.push({ label: task.title, hint: task.writes ? "task" : "read only", run: () => { location.hash = task.href; } });
   for (const orch of state.fleet) if (orch.name !== state.current) list.push({ label: "Switch to " + nameOf(orch), hint: orch.status, run: () => requestSwitch(orch.name) });
   list.push({ label: "Check Orchestrators again", hint: "status", run: loadFleet });
   list.push({ label: "Switch light or dark theme", hint: "theme", run: toggleTheme });
@@ -789,15 +878,18 @@ function runCommand(index) {
 applyTheme(store("ec-theme"));
 $("theme").addEventListener("click", toggleTheme);
 $("inventory-load").addEventListener("click", readInventory);
-$("fw-file").addEventListener("change", (event) => { if (event.target.files[0]) loadFirewallCsv(event.target.files[0]); });
-$("fw-reload").addEventListener("click", restartFirewall);
-$("fw-restart").addEventListener("click", restartFirewall);
-$("fw-again").addEventListener("click", restartFirewall);
-$("fw-plan").addEventListener("click", () => startTask(state.work.firewall, "plan", { action: "plan", kind: "firewall", csv_text: state.work.firewall.csv }, rerenderFirewall));
-$("fw-approve").addEventListener("click", () => startTask(state.work.firewall, "apply", { action: "apply", kind: "firewall", plan_task: state.work.firewall.plan.id }, rerenderFirewall));
-$("fw-open-approval").addEventListener("click", openApproval);
-$("fw-cancel").addEventListener("click", async () => {
-  try { await post("/api/tasks/" + state.work.firewall.apply.id + "/cancel"); } catch (error) { $("fw-progress-text").textContent = error.message; }
+$("flow-file").addEventListener("change", (event) => { if (event.target.files[0]) loadFlowCsv(event.target.files[0]); });
+$("flow-reload").addEventListener("click", restartFlow);
+$("flow-restart").addEventListener("click", restartFlow);
+$("flow-again").addEventListener("click", restartFlow);
+$("flow-plan").addEventListener("click", () => startTask(state.work.flow, "plan", { action: "plan", kind: state.work.flow.kind, csv_text: state.work.flow.csv }, rerenderFlow));
+$("flow-approve").addEventListener("click", () => startTask(state.work.flow, "apply", { action: "apply", kind: state.work.flow.kind, plan_task: state.work.flow.plan.id }, rerenderFlow));
+$("flow-names").addEventListener("submit", planZones);
+$("flow-understood").addEventListener("change", () => { $("flow-delete").disabled = !$("flow-understood").checked; });
+$("flow-delete").addEventListener("click", openApproval);
+$("flow-open-approval").addEventListener("click", openApproval);
+$("flow-cancel").addEventListener("click", async () => {
+  try { await post("/api/tasks/" + state.work.flow.apply.id + "/cancel"); } catch (error) { $("flow-progress-text").textContent = error.message; }
 });
 $("approve-form").addEventListener("submit", submitApproval);
 $("approve-later").addEventListener("click", () => $("approve-dialog").close());

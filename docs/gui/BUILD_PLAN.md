@@ -60,6 +60,7 @@ Built as: the stepper and its panels follow server tasks (validate, plan, apply)
 ## Step 9: The other six tasks plus delete
 Template ACLs, zones, address groups, service groups, application definitions, application groups on the same stepper. Danger-zone delete by CSV: warnings, an "I understand" tick box, then the deletion code and sentence.
 Done when: each has a lab run compared with the CLI, and the delete gates are tested.
+Built as: one guided view for every object type (`#/do/<kind>`) and Remove by CSV (`#/remove`, steps Load, Preview, Confirm, Delete, Done) over the same server tasks; the step 8 firewall view became that view. Address and service groups are two tasks (the home had one card for both). Only firewall rules have an offline check, so the others check rows while planning. Missing zones takes names instead of a CSV. The "I understand" tick box is sent with the approval and checked in Python (`understood` must be `true` for a delete), after the nickname and before the typed gates. Offline, every object type's plan through the GUI is identical to the CLI's saved plan; the lab comparisons are still to run.
 
 ## Step 10: Grid editor
 Paged grid with a per-row form, dropdowns from the live inventory, start from templates and examples, dependency warnings before planning, CSV save. Validation stays in Python.

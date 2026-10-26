@@ -60,7 +60,7 @@ select, input[type="text"] { font: 500 .9rem/1.2 var(--f-body); color: var(--tex
 .btn.danger { color: var(--bad); border-color: var(--bad); }
 
 main { padding-block: 2.2rem 3rem; outline: none; }
-#view-home, #view-task { display: grid; gap: 1.2rem; }
+#view-home { display: grid; gap: 1.2rem; }
 .panel-head .btn.primary { flex: none; }
 .eyebrow { font: 500 .75rem/1 var(--f-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
 .lede { color: var(--muted); font-size: 1.05rem; max-width: 68ch; }
@@ -136,7 +136,7 @@ td { overflow-wrap: break-word; }  /* not "anywhere": narrow screens scroll the 
 .orch-band .mono { color: var(--muted); font-weight: 400; }
 .gate { display: grid; gap: .35rem; margin-top: .8rem; font-size: .9rem; }
 .gate pre { margin: 0; white-space: pre-wrap; color: var(--gate); font: 500 .85rem/1.4 var(--f-mono); }
-.gate input { font: 500 1rem/1.2 var(--f-mono); color: var(--text); background: var(--ink); border: 1px solid var(--gate); border-radius: 10px; padding: .6rem .8rem; width: 100%; }
+.gate input, .gate textarea { font: 500 1rem/1.2 var(--f-mono); color: var(--text); background: var(--ink); border: 1px solid var(--gate); border-radius: 10px; padding: .6rem .8rem; width: 100%; }
 .toolbar:has(input[type="file"]:focus-visible) label.btn { outline: 2px solid var(--gate); outline-offset: 3px; }
 #approve-dialog { width: min(40rem, calc(100vw - 32px)); }
 #approve-text { color: var(--muted); margin-top: .4rem; }
@@ -161,3 +161,4 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
   select { flex: 1; max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+#flow-confirm .check { white-space: normal; align-items: flex-start; }
