@@ -102,6 +102,27 @@ def outcome_row(row: Mapping[str, Any]) -> Dict[str, Any]:
     return dict({key: row.get(key, "") for key in ROW_FIELDS}, tone="bad" if problem else "ok", _problem=problem, _text=_text(row.get(key) for key in ROW_FIELDS))
 
 
+ISSUE_FIELDS = ("row", "column", "rule", "value", "message", "fix", "blocks")
+_ACTION_ORDER = {"delete": 0, "modify": 1, "create": 2}
+
+
+def issue_row(issue: Mapping[str, Any]) -> Dict[str, Any]:
+    row = {key: issue.get(key) if issue.get(key) is not None else "" for key in ISSUE_FIELDS}
+    return dict(row, _problem=True, _text=_text(row.values()))
+
+
+def change_row(change: Mapping[str, Any]) -> Dict[str, Any]:
+    """One object a write creates, modifies or deletes, with its field-level diff; deletes sort first."""
+    fields = list(change.get("fields") or [])
+    row = {"action": change.get("action", ""), "type": change.get("type", ""), "scope": change.get("scope", ""), "object": change.get("object", ""), "fields": fields}
+    return dict(
+        row,
+        _problem=row["action"] == "delete",
+        _sort_action="{}|{}|{}|{}".format(_ACTION_ORDER.get(row["action"], 3), row["type"], row["scope"], row["object"]),
+        _text=_text([row["action"], row["type"], row["scope"], row["object"]] + [part for item in fields for part in (item.get("field"), item.get("before"), item.get("after"))]),
+    )
+
+
 def to_csv(rows: Sequence[Mapping[str, Any]], fields: Sequence[str]) -> bytes:
     """The same CSV that reporting.write_rows_csv writes, as bytes for a download."""
     return csv_text(rows, fields).encode("utf-8")

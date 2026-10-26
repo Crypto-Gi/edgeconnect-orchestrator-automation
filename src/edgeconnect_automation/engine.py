@@ -4,6 +4,8 @@ Each call runs the same command code the CLI runs, in this process with its own 
 structured issues, counts, per-object changes with field-level diffs, per-row outcomes, and what approving the write
 takes. Writes need a GUI approval token; without one a write is refused like a CLI run with no terminal.
 """
+import datetime
+import getpass
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
@@ -34,19 +36,44 @@ class Result:
 
 @dataclass(frozen=True)
 class Approval:
-    """A GUI approval token, redeemed against the exact preview the run is about to write and the run's Orchestrator."""
+    """A GUI approval token, redeemed against the exact preview the run is about to write and the run's Orchestrator.
+
+    Redeeming it records who approved what in the run's log: the OS user, the time, the fingerprint of the exact preview,
+    the Orchestrator, and every confirmation as typed.
+    """
 
     approvals: GuiApprovals
     token: str
+    answers: Tuple[str, ...] = ()
+    typed_orchestrator: str = ""
 
     def __call__(self, gates: Sequence[Gate], subject: Any, no_terminal: str) -> None:
-        self.approvals.redeem(self.token, fingerprint(subject), _context().target_url)
+        context = _context()
+        plan = fingerprint(subject)
+        self.approvals.redeem(self.token, plan, context.target_url)
+        if context.recorder is not None:
+            context.recorder.approval = {
+                "by": _os_user(),
+                "time": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                "plan_fingerprint": plan,
+                "orchestrator": context.target,
+                "orchestrator_id": context.target_id,
+                "typed_orchestrator": self.typed_orchestrator,
+                "typed": list(self.answers),
+            }
 
 
-def approve(approvals: GuiApprovals, request: Mapping[str, Any], answers: Sequence[str]) -> Approval:
+def _os_user() -> str:
+    try:
+        return getpass.getuser()
+    except Exception:  # no user name in the environment or the password database; the approval still stands
+        return "unknown"
+
+
+def approve(approvals: GuiApprovals, request: Mapping[str, Any], answers: Sequence[str], typed_orchestrator: str = "") -> Approval:
     """Check the typed answers against a Result.approval request and return the single-use approval for that exact write."""
     gates = [Gate(**gate) for gate in request["gates"]]
-    return Approval(approvals, approvals.issue(gates, answers, request["fingerprint"], request["orchestrator"]))
+    return Approval(approvals, approvals.issue(gates, answers, request["fingerprint"], request["orchestrator"]), tuple(answers), typed_orchestrator)
 
 
 def _refuse(gates: Sequence[Gate], subject: Any, no_terminal: str) -> None:

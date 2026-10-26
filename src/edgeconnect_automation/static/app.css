@@ -118,6 +118,29 @@ td { overflow-wrap: break-word; }  /* not "anywhere": narrow screens scroll the 
 .tabs { display: flex; flex-wrap: wrap; gap: .4rem; }
 .tabs [role="tab"][aria-selected="true"] { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
 
+/* guided tasks: stepper, review, approval */
+.stepper { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; counter-reset: step; }
+.stepper li { counter-increment: step; font: 500 .8rem/1 var(--f-mono); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .45rem .7rem; }
+.stepper li::before { content: counter(step) ". "; }
+.stepper li.done { color: var(--ok); border-color: var(--ok); }
+.stepper li.done::after { content: " ✓"; }
+.stepper li[aria-current="step"] { color: var(--on-signal); background: var(--signal); border-color: var(--signal); }
+.stepper li.stopped { color: var(--bad); border-color: var(--bad); }
+.callout { border: 1px solid var(--line); border-left-width: 4px; border-radius: 10px; padding: .7rem .9rem; }
+.callout.bad { border-color: var(--bad); }
+.callout.gate { border-color: var(--gate); }
+.diff { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; font: 400 .8rem/1.4 var(--f-mono); }
+.diff .before { color: var(--bad); text-decoration: line-through; }
+.diff .after { color: var(--ok); }
+.orch-band { margin: -1rem -1rem .9rem; padding: .7rem 1rem; border-bottom: 1px solid var(--line); border-top: 6px solid var(--orch-color); border-radius: var(--r) var(--r) 0 0; font: 600 .95rem/1.3 var(--f-body); }
+.orch-band .mono { color: var(--muted); font-weight: 400; }
+.gate { display: grid; gap: .35rem; margin-top: .8rem; font-size: .9rem; }
+.gate pre { margin: 0; white-space: pre-wrap; color: var(--gate); font: 500 .85rem/1.4 var(--f-mono); }
+.gate input { font: 500 1rem/1.2 var(--f-mono); color: var(--text); background: var(--ink); border: 1px solid var(--gate); border-radius: 10px; padding: .6rem .8rem; width: 100%; }
+.toolbar:has(input[type="file"]:focus-visible) label.btn { outline: 2px solid var(--gate); outline-offset: 3px; }
+#approve-dialog { width: min(40rem, calc(100vw - 32px)); }
+#approve-text { color: var(--muted); margin-top: .4rem; }
+
 /* dialogs: command palette and the switch confirmation */
 dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem; width: min(36rem, calc(100vw - 32px)); }
 dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }

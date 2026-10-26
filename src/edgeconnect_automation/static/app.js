@@ -3,7 +3,7 @@
 "use strict";
 
 const TASKS = [
-  { id: "firewall", title: "Firewall rules", text: "Add or change zone-based firewall rules between segments, from a CSV.", writes: true },
+  { id: "firewall", title: "Firewall rules", text: "Add or change zone-based firewall rules between segments, from a CSV.", writes: true, href: "#/firewall" },
   { id: "applications", title: "Applications", text: "Define custom applications by address, port or domain, and AppExpress entries.", writes: true },
   { id: "app-groups", title: "Application groups", text: "Group applications so one firewall rule can match them all.", writes: true },
   { id: "groups", title: "Address or service groups", text: "Name sets of addresses or ports for firewall rules to use.", writes: true },
@@ -16,7 +16,7 @@ const TASKS = [
 const SHAPE = { green: "●", amber: "▲", red: "■" };
 const OPEN_STATES = new Set(["queued", "running", "awaiting_approval"]);
 
-const state = { fleet: [], current: null, tasks: [], work: { csvs: {}, inventory: null } };
+const state = { fleet: [], current: null, tasks: [], work: { csvs: {}, inventory: null, firewall: {} } };
 const $ = (id) => document.getElementById(id);
 
 function store(key, value) {
@@ -154,7 +154,7 @@ async function switchTo(name) {
     try { await post("/api/tasks/" + task.id + "/cancel"); } catch (_) { /* already finished */ }
   }
   state.current = name;
-  state.work = { csvs: {}, inventory: null };
+  state.work = { csvs: {}, inventory: null, firewall: {} };
   store("ec-orchestrator", name);
   renderSwitcher();
   renderFleet();
@@ -184,7 +184,7 @@ function renderIntents() {
 }
 
 function show(view) {
-  for (const id of ["view-home", "view-task", "view-runs", "view-run", "view-inventory"]) $(id).hidden = id !== view;
+  for (const id of ["view-home", "view-task", "view-firewall", "view-runs", "view-run", "view-inventory"]) $(id).hidden = id !== view;
 }
 
 function render() {
@@ -193,6 +193,7 @@ function render() {
   const run = hash.match(/^#\/runs\/([\w-]+)$/);
   if (run) { show("view-run"); return loadRun(run[1]); }
   if (hash === "#/inventory") { show("view-inventory"); return renderInventory(); }
+  if (hash === "#/firewall") { show("view-firewall"); return renderFirewall(); }
   const match = hash.match(/^#\/task\/([\w-]+)$/);
   const task = match && TASKS.find((item) => item.id === match[1] && !item.href);
   show(task ? "view-task" : "view-home");
@@ -414,6 +415,7 @@ function renderRun(run) {
     ["Release", run.orchestrator_release],
     ["From", run.source],
     ["Changes made", run.changes_written],
+    ["Approved by", run.approval ? run.approval.by + " at " + String(run.approval.time).replace("T", " ") + ", typing " + [run.approval.typed_orchestrator].concat(run.approval.typed || []).filter(Boolean).join(", ") : ""],
     ["Exit code", run.exit_code + " = " + run.exit_meaning],
     ["Seconds", run.duration_seconds],
     ["Rows", run.row_outcomes_text],
@@ -515,6 +517,230 @@ async function readInventory() {
   events.onerror = () => events.close();
 }
 
+/* guided firewall task: Load, Fix, Plan, Review, Approve, Apply, Done. Each step is a server task; this only shows them. */
+const STEPS = ["Load", "Fix", "Plan", "Review", "Approve", "Apply", "Done"];
+const FINAL_STATES = new Set(["planned", "done", "failed", "rejected", "expired", "cancelled"]);
+
+function follow(work, key, task, onChange) {
+  work[key] = task;
+  const events = new EventSource("/api/tasks/" + task.id + "/events");
+  events.onmessage = (message) => {
+    const view = JSON.parse(message.data).task;
+    if (work[key] !== task && (!work[key] || work[key].id !== view.id)) return events.close();  // started again or switched away
+    work[key] = view;
+    if (FINAL_STATES.has(view.state)) events.close();
+    onChange(view);
+    loadTasks();
+  };
+  events.onerror = () => events.close();
+}
+
+async function startTask(work, key, body, onChange) {
+  try {
+    follow(work, key, await post("/api/tasks", Object.assign({ orchestrator: state.current }, body)), onChange);
+  } catch (error) {
+    work[key] = { state: "failed", message: error.message, result: null };
+  }
+  onChange();
+}
+
+function firewallStep(fw) {
+  if (!fw.csv) return [0, false];
+  const { validate, plan, apply } = fw;
+  if (apply) {
+    if (apply.state === "applying") return [5, false];
+    if (FINAL_STATES.has(apply.state)) return [6, apply.state !== "done"];
+    return [4, false];
+  }
+  if (plan) {
+    if (plan.state === "planned") return [3, false];
+    return [2, plan.state === "failed"];
+  }
+  return [1, Boolean(validate && validate.state === "failed")];
+}
+
+const issueColumns = [
+  { key: "row", label: "Row" }, { key: "column", label: "Column" }, { key: "rule", label: "Rule", mono: true },
+  { key: "value", label: "Value", mono: true }, { key: "message", label: "Problem" }, { key: "fix", label: "Fix" },
+];
+let fwIssueTask = "";
+const fwIssues = new PagedTable({ id: "fw-issues", label: "problems in the CSV", container: $("fw-issues"), path: () => fwIssueTask && "/api/tasks/" + fwIssueTask + "/issues", filters: [{ key: "rule", label: "All rules" }, { key: "column", label: "All columns" }], columns: issueColumns, empty: "No problems." });
+
+function diffCell(row) {
+  if (!row.fields.length) return "";
+  return el("ul", { class: "diff" }, ...row.fields.map((item) => el("li", null,
+    el("span", { text: item.field + ": " }),
+    item.before == null ? null : el("span", { class: "before", text: JSON.stringify(item.before) }),
+    item.before == null || item.after == null ? null : " → ",
+    item.after == null ? el("span", { class: "before", text: "(removed)" }) : el("span", { class: "after", text: JSON.stringify(item.after) }))));
+}
+let fwPlanTask = "";
+const fwChanges = new PagedTable({
+  id: "fw-changes", label: "changes", container: $("fw-changes"), path: () => fwPlanTask && "/api/tasks/" + fwPlanTask + "/changes",
+  problems: "Deletes only", filters: [{ key: "action", label: "All actions" }, { key: "type", label: "All object types" }], empty: "Nothing to change.",
+  columns: [
+    { key: "action", label: "Action", cell: (row) => row.action === "delete" ? toneCell("delete", "bad") : row.action },
+    { key: "type", label: "Type" }, { key: "scope", label: "Where" }, { key: "object", label: "Object", mono: true },
+    { key: "fields", label: "Field changes", cell: diffCell },
+  ],
+});
+let fwApplyTask = "";
+const fwRows = new PagedTable({
+  id: "fw-rows", label: "rows written", container: $("fw-rows"), path: () => fwApplyTask && "/api/tasks/" + fwApplyTask + "/rows",
+  problems: "Problems only", filters: [{ key: "outcome", label: "All outcomes" }], empty: "No per-row outcomes for this run.",
+  columns: [{ key: "row", label: "Row" }, { key: "item", label: "Item" }, { key: "scope", label: "Scope" }, { key: "outcome", label: "Outcome", cell: (row) => toneCell(row.outcome, row.tone) }, { key: "reason", label: "Reason" }],
+});
+
+function notes(list, items) {
+  list.replaceChildren(...(items || []).map((item) => el("li", { text: item })));
+}
+
+function renderFirewall() {
+  const fw = state.work.firewall;
+  const orch = current();
+  const [step, stopped] = firewallStep(fw);
+  $("fw-orch").textContent = orch ? nameOf(orch) : "No Orchestrator configured";
+  $("fw-steps").replaceChildren(...STEPS.map((name, index) => {
+    const finished = index < step || (index === 6 && step === 6 && !stopped);
+    const item = el("li", { class: finished ? "done" : index === step && stopped ? "stopped" : "", text: name });
+    if (index === step) item.setAttribute("aria-current", "step");
+    return item;
+  }));
+  for (const id of ["fw-load", "fw-fix", "fw-review", "fw-progress", "fw-done"]) $(id).hidden = true;
+  $("fw-file-name").textContent = fw.file ? "Loaded " + fw.file : "";
+  if (step === 0) { $("fw-load").hidden = false; return; }
+
+  if (step === 1 || (step === 2 && stopped)) {
+    const task = step === 1 ? fw.validate : fw.plan;
+    const result = task && task.result;
+    $("fw-fix").hidden = false;
+    $("fw-plan").hidden = !(step === 1 && task && task.state === "done");
+    $("fw-plan").textContent = "Plan on " + (orch ? nameOf(orch) : "this Orchestrator");
+    $("fw-fix-title").textContent = step === 1 ? "Check " + fw.file : "Plan stopped";
+    $("fw-fix-text").textContent = !task || !FINAL_STATES.has(task.state) ? "Checking every row…"
+      : result && result.issues ? result.issues + " problem" + (result.issues > 1 ? "s" : "") + " to fix in the CSV. Correct them, then load it again." + (step === 2 ? " Nothing was written." : "")
+      : task.state === "failed" ? task.message
+      : "Every row is valid. Next, plan it against " + nameOf(orch) + ": that reads the Orchestrator and changes nothing.";
+    notes($("fw-fix-warnings"), result ? result.warnings : []);
+    $("fw-issues").hidden = !(result && result.issues);
+    if (result && result.issues) {
+      if (fwIssueTask !== task.id) { fwIssueTask = task.id; fwIssues.reset(); }
+      fwIssues.load();
+    }
+    return;
+  }
+  if (step === 3) {
+    const result = fw.plan.result;
+    $("fw-review").hidden = false;
+    $("fw-deletes").hidden = !result.deletes;
+    $("fw-deletes").textContent = result.deletes ? result.deletes + " object" + (result.deletes > 1 ? "s" : "") + " will be deleted. They are listed first." : "";
+    $("fw-warnings").replaceChildren(...(result.warnings.length ? [el("div", { class: "callout gate" }, el("p", { class: "notes-title", text: "Warnings (do not block)" }), el("ul", { class: "notes" }, ...result.warnings.map((item) => el("li", { text: item }))))] : []));
+    notes($("fw-counts"), result.counts);
+    if (fwPlanTask !== fw.plan.id) { fwPlanTask = fw.plan.id; fwChanges.reset(); }
+    fwChanges.load();
+    const canWrite = Boolean(orch && orch.writes && result.changes);
+    $("fw-approve").hidden = !canWrite;
+    $("fw-writes-off").hidden = canWrite;
+    $("fw-writes-off").textContent = !result.changes ? "Nothing to change: Orchestrator already has every rule in this CSV."
+      : "Writes are off for " + nameOf(orch) + ". Set " + orch.name + "_gui_writes=on in .env to approve changes here, or apply this plan with the command line.";
+    return;
+  }
+  if (step === 2) {
+    $("fw-progress").hidden = false;
+    $("fw-progress-title").textContent = "Planning on " + nameOf(orch);
+    $("fw-progress-text").textContent = fw.plan.state === "queued" ? "Waiting to start." : "Reading the segments, zones and current rules, then working out every change. Nothing is written.";
+    $("fw-open-approval").hidden = true;
+    $("fw-cancel").hidden = true;
+    return;
+  }
+  if (step === 4 || step === 5) {
+    const task = fw.apply;
+    $("fw-progress").hidden = false;
+    const awaiting = task.state === "awaiting_approval";
+    $("fw-progress-title").textContent = step === 5 ? "Writing to " + nameOf(orch) : awaiting ? "Waiting for your approval" : "Building the exact preview";
+    $("fw-progress-text").textContent = step === 5 ? "Writing, then reading back to confirm every appliance has it. Do not close this page."
+      : awaiting ? "Nothing has been written. Type the confirmations to approve this exact preview." : task.state === "queued" ? "Waiting for another write on this Orchestrator to finish." : "Checking that Orchestrator still matches the plan.";
+    $("fw-open-approval").hidden = !awaiting;
+    $("fw-cancel").hidden = step === 5;
+    if (awaiting && !task.prompted) { task.prompted = true; openApproval(); }
+    return;
+  }
+  const task = fw.apply;
+  const result = task.result || {};
+  $("fw-done").hidden = false;
+  $("fw-done-title").replaceChildren(task.state === "done" ? toneCell("Written and confirmed", "ok") : toneCell({ rejected: "Rejected", expired: "Expired", cancelled: "Cancelled", failed: "Stopped" }[task.state] || task.state, "bad"));
+  $("fw-done-text").textContent = task.state === "done" ? "Every change was written to " + nameOf(orch) + " and read back from it." : task.message;
+  notes($("fw-done-counts"), result.counts);
+  $("fw-run-link").hidden = !result.run_id;
+  $("fw-run-link").href = "#/runs/" + (result.run_id || "");
+  $("fw-rows").hidden = !result.rows;
+  if (result.rows) {
+    if (fwApplyTask !== task.id) { fwApplyTask = task.id; fwRows.reset(); }
+    fwRows.load();
+  }
+}
+
+function rerenderFirewall() { if (location.hash === "#/firewall") renderFirewall(); }
+
+function loadFirewallCsv(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = String(reader.result);
+    state.work.firewall = { file: file.name, csv: text };
+    state.work.csvs = { [file.name]: text };
+    startTask(state.work.firewall, "validate", { action: "validate", csv_text: text }, rerenderFirewall);
+  };
+  reader.readAsText(file);
+}
+
+function restartFirewall() {
+  state.work.firewall = {};
+  state.work.csvs = {};
+  $("fw-file").value = "";
+  renderFirewall();
+  $("fw-file").focus();
+}
+
+/* approval: the server checks every answer; the dialog only collects them */
+let clock = null;
+function openApproval() {
+  const task = state.work.firewall.apply;
+  const orch = current();
+  if (!task || task.state !== "awaiting_approval" || !orch) return;
+  const gates = task.result.approval.gates;
+  $("approve-band").replaceChildren(el("span", { text: nameOf(orch) + " " }), el("span", { class: "mono", text: "(" + orch.name + ", " + orch.url + ")" }));
+  $("approve-text").textContent = "You are approving exactly the changes you reviewed, on " + nameOf(orch) + ". The approval works once.";
+  $("approve-gates").replaceChildren(...gates.map((gate, index) => el("label", { class: "gate", for: "gate-" + index },
+    gate.notice ? el("pre", { text: gate.notice.trim() }) : null,
+    el("span", { text: gate.prompt.replace(/:\s*$/, "") }),
+    el("input", { type: "text", id: "gate-" + index, autocomplete: "off", spellcheck: "false", required: "" }))));
+  $("approve-orch-label").textContent = "Type the Orchestrator nickname " + orch.name + " to confirm where this goes";
+  $("approve-orch").value = "";
+  const tick = () => {
+    const left = Math.max(0, Math.round((task.deadline || 0) - Date.now() / 1000));
+    $("approve-clock").textContent = "This approval expires in " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0") + ".";
+  };
+  tick();
+  clearInterval(clock);
+  clock = setInterval(tick, 1000);
+  $("approve-dialog").showModal();
+  const first = $("approve-gates").querySelector("input");
+  (first || $("approve-orch")).focus();
+}
+
+async function submitApproval(event) {
+  event.preventDefault();
+  const task = state.work.firewall.apply;
+  const answers = [...$("approve-gates").querySelectorAll("input")].map((input) => input.value);
+  const orchestrator = $("approve-orch").value;
+  $("approve-dialog").close();
+  try {
+    await post("/api/tasks/" + task.id + "/approve", { answers, orchestrator });
+  } catch (error) {
+    $("fw-progress-text").textContent = "Could not send the approval: " + error.message;
+  }
+}
+
 /* command palette: combobox and listbox, all by keyboard */
 let paletteItems = [];
 let paletteIndex = 0;
@@ -563,6 +789,19 @@ function runCommand(index) {
 applyTheme(store("ec-theme"));
 $("theme").addEventListener("click", toggleTheme);
 $("inventory-load").addEventListener("click", readInventory);
+$("fw-file").addEventListener("change", (event) => { if (event.target.files[0]) loadFirewallCsv(event.target.files[0]); });
+$("fw-reload").addEventListener("click", restartFirewall);
+$("fw-restart").addEventListener("click", restartFirewall);
+$("fw-again").addEventListener("click", restartFirewall);
+$("fw-plan").addEventListener("click", () => startTask(state.work.firewall, "plan", { action: "plan", kind: "firewall", csv_text: state.work.firewall.csv }, rerenderFirewall));
+$("fw-approve").addEventListener("click", () => startTask(state.work.firewall, "apply", { action: "apply", kind: "firewall", plan_task: state.work.firewall.plan.id }, rerenderFirewall));
+$("fw-open-approval").addEventListener("click", openApproval);
+$("fw-cancel").addEventListener("click", async () => {
+  try { await post("/api/tasks/" + state.work.firewall.apply.id + "/cancel"); } catch (error) { $("fw-progress-text").textContent = error.message; }
+});
+$("approve-form").addEventListener("submit", submitApproval);
+$("approve-later").addEventListener("click", () => $("approve-dialog").close());
+$("approve-dialog").addEventListener("close", () => clearInterval(clock));
 $("inventory-tabs").addEventListener("keydown", (event) => {
   const tabs = [...$("inventory-tabs").querySelectorAll("[role=tab]")];
   const index = tabs.indexOf(document.activeElement);
