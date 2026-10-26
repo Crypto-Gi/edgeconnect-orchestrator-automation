@@ -133,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
         raise TaskError("not found", 404)
 
     def _runs(self, path: str, query: Dict[str, str]) -> None:
-        """/api/runs[.csv] lists runs; /api/runs/<run_id>[/rows.csv] is one run and its per-row table."""
+        """/api/runs[.csv] lists runs; /api/runs/<run_id>[/rows.csv|/revert] is one run, its per-row table, or what undoing it would delete."""
         log = self.server.runlog
         if path in ("/api/runs", "/api/runs.csv"):
             runs, unreadable = log.runs()
@@ -143,11 +143,13 @@ class Handler(BaseHTTPRequestHandler):
             folder = str(log.directory) if log.directory is not None else None
             return self._json(200, dict(gui_tables.page(runs, query, gui_tables.RUN_FILTERS, "timestamp", True), folder=folder, unreadable=unreadable))
         parts = path.split("/")
-        if len(parts) not in (4, 5) or parts[2] != "runs" or not parts[3] or (len(parts) == 5 and parts[4] != "rows.csv"):
+        if len(parts) not in (4, 5) or parts[2] != "runs" or not parts[3] or (len(parts) == 5 and parts[4] not in ("rows.csv", "revert")):
             raise TaskError("not found", 404)
         summary = log.find(parts[3])
         if summary is None:
             raise TaskError("no run {} in the run log".format(parts[3]), 404)
+        if len(parts) == 5 and parts[4] == "revert":
+            return self._json(200, _revert_view(summary, self.server.tasks.revert(parts[3])))
         if len(parts) == 5:
             rows = gui_tables.select(summary["_outcomes"], query, ("outcome",))[0]
             return self._download("{}-rows.csv".format(parts[3]), gui_tables.to_csv(rows, ROW_FIELDS))
@@ -233,6 +235,15 @@ class Handler(BaseHTTPRequestHandler):
     def _security_headers(self) -> None:
         for name, value in _HEADERS.items():
             self.send_header(name, value)
+
+
+def _revert_view(summary: Dict[str, Any], kept: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Whether this run can be undone from the GUI; an empty reason means the run is not an upload, so nothing is shown."""
+    if kept is not None:
+        return dict(kept, available=bool(kept.get("csv_text")))
+    wrote = str(summary.get("workflow", "")).rsplit(" ", 1)[-1] in ("apply", "deploy", "create") and summary.get("changes_written") != "no"
+    reason = "Undo is kept only for uploads made in this GUI. To undo this one, load the rows it created in Remove by CSV." if wrote else ""
+    return {"available": False, "reason": reason}
 
 
 def _task_path(path: str) -> Tuple[str, str]:

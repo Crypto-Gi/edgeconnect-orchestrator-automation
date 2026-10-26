@@ -131,7 +131,9 @@ class TaskTests(Offline):
             tasks.create({"action": "apply", "orchestrator": "lab", "kind": "zones", "plan_task": self.planned(tasks).id})
 
 
-class ServerTests(Offline):
+class ServerCase(Offline):
+    """A GUI server on the fake Orchestrator, and a request helper that records every response body."""
+
     def setUp(self):
         super().setUp()
         check = functools.partial(fleet.check_all, client_factory=FleetClient)
@@ -166,6 +168,8 @@ class ServerTests(Offline):
         self.assertFalse([name for name in response.headers if name.lower().startswith("access-control-")], "no CORS headers, ever")
         return response, text
 
+
+class ServerTests(ServerCase):
     def test_launch_link_sets_a_strict_http_only_cookie_and_drops_the_token(self):
         response, _ = self.request("GET", "/?token=" + self.server.token, cookie=False)
         self.assertEqual((response.status, response.headers["Location"]), (303, "/"))
@@ -176,7 +180,7 @@ class ServerTests(Offline):
         self.assertIn("<title>EdgeConnect Automation</title>", text)
 
     def test_missing_or_wrong_cookie_is_refused_everywhere(self):
-        for path in ("/", "/app.js", "/api/tasks", "/api/orchestrators", "/api/tasks/task-1/events", "/api/tasks/task-1/inventory", "/api/runs", "/api/runs.csv", "/api/runs/run-1", "/api/runs/run-1/rows.csv"):
+        for path in ("/", "/app.js", "/api/tasks", "/api/orchestrators", "/api/tasks/task-1/events", "/api/tasks/task-1/inventory", "/api/runs", "/api/runs.csv", "/api/runs/run-1", "/api/runs/run-1/rows.csv", "/api/runs/run-1/revert"):
             for cookie in (False, "edgeconnect_gui_{}=guess".format(self.port), "edgeconnect_gui_1=" + self.server.token):
                 self.assertEqual(self.request("GET", path, cookie=cookie)[0].status, 401, path)
         self.assertEqual(self.request("POST", "/api/tasks", {"action": "discover"}, cookie=False)[0].status, 401)

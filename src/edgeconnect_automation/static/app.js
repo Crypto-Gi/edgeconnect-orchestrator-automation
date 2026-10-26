@@ -398,8 +398,38 @@ function loadRun(id) {
     runId = id;
     rowsTable.reset();
     $("run-title").textContent = "Loading…";
+    $("run-revert").hidden = true;
   }
   rowsTable.load();
+  loadRevert(id);
+}
+
+/* undo an upload: Python kept the delete CSV of exactly what it created; deleting it is an ordinary Remove by CSV */
+let revert = null;
+async function loadRevert(id) {
+  try {
+    revert = await api("/api/runs/" + id + "/revert");
+  } catch (error) {
+    revert = { available: false, reason: "" };
+  }
+  if (id === runId) renderRevert();
+}
+
+function renderRevert() {
+  const orch = current();
+  const here = revert.available && orch && orch.name === revert.orchestrator;
+  $("run-revert").hidden = !revert.available && !revert.reason;
+  $("run-revert-text").textContent = !revert.available ? revert.reason
+    : !here ? "This upload went to " + revert.orchestrator + ". Switch to it to undo the upload."
+    : "Deletes the " + plural(revert.count, "row") + " of " + FLOWS[revert.kind].things + " this upload created, and nothing that existed before. You get the same preview and warnings as Remove by CSV, and nothing is deleted until you approve it.";
+  $("run-revert-start").hidden = !here;
+}
+
+function startRevert() {
+  state.work.flow = { kind: revert.kind, remove: true, file: "the rows " + runId + " created", csv: revert.csv_text, revert: runId };
+  state.work.csvs = { [runId + "-undo.csv"]: revert.csv_text };
+  location.hash = "#/remove";
+  startTask(state.work.flow, "apply", { action: "delete", kind: revert.kind, revert: runId }, rerenderFlow);
 }
 
 function renderRun(run) {
@@ -635,7 +665,7 @@ function renderFlow() {
   const last = steps.length - 1;
   const [step, stopped] = flowStep(flow);
   $("flow-orch").textContent = orch ? nameOf(orch) : "No Orchestrator configured";
-  $("flow-title").textContent = flow.remove ? "Remove by CSV" : info.title;
+  $("flow-title").textContent = flow.revert ? "Undo upload " + flow.revert : flow.remove ? "Remove by CSV" : info.title;
   $("flow-steps").replaceChildren(...steps.map((name, index) => {
     const finished = index < step || (index === last && step === last && !stopped);
     const item = el("li", { class: finished ? "done" : index === step && stopped ? "stopped" : "", text: name });
@@ -882,6 +912,7 @@ $("flow-file").addEventListener("change", (event) => { if (event.target.files[0]
 $("flow-reload").addEventListener("click", restartFlow);
 $("flow-restart").addEventListener("click", restartFlow);
 $("flow-again").addEventListener("click", restartFlow);
+$("run-revert-start").addEventListener("click", startRevert);
 $("flow-plan").addEventListener("click", () => startTask(state.work.flow, "plan", { action: "plan", kind: state.work.flow.kind, csv_text: state.work.flow.csv }, rerenderFlow));
 $("flow-approve").addEventListener("click", () => startTask(state.work.flow, "apply", { action: "apply", kind: state.work.flow.kind, plan_task: state.work.flow.plan.id }, rerenderFlow));
 $("flow-names").addEventListener("submit", planZones);

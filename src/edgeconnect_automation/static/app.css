@@ -79,6 +79,7 @@ main { padding-block: 2.2rem 3rem; outline: none; }
 .split > * { min-width: 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 1.1rem; display: grid; gap: .8rem; align-content: start; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+.panel > .btn { justify-self: start; }
 .notice { border-color: var(--gate); }
 
 /* fleet status: shape and word carry the status, colour only repeats it */

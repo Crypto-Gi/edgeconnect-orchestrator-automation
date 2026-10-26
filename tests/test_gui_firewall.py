@@ -32,7 +32,9 @@ class FirewallGateway(WritableGateway):
         return True
 
 
-class GuidedWriteTests(Offline):
+class FirewallCase(Offline):
+    """The task manager on an Orchestrator whose firewall policy and address groups can be written."""
+
     def setUp(self):
         super().setUp()
         FirewallGateway.policies, FirewallGateway.groups = {}, []
@@ -45,6 +47,8 @@ class GuidedWriteTests(Offline):
         self.assertEqual(plan.state, "planned", plan.message)
         return self.wait(tasks.create({"action": "apply", "orchestrator": "lab", "kind": kind, "plan_task": plan.id}), "awaiting_approval", "failed", "done")
 
+
+class GuidedWriteTests(FirewallCase):
     def test_the_orchestrator_nickname_must_be_typed_exactly(self):
         for typed in ("Lab", "", "lab "):
             tasks = self.manager()
