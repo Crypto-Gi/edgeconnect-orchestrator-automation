@@ -100,6 +100,14 @@ edgeconnect-auto firewall deploy \
 
 Type uppercase `APPLY` only after reviewing the complete preview.
 
+## 7. Or use the web GUI
+
+```bash
+edgeconnect-auto gui
+```
+
+Run it from the folder that holds `.env`. It prints a sign-in link and opens your browser. Load a CSV, fix the problems it lists, plan, then approve by typing `APPLY` and the Orchestrator nickname. Writes stay off until `.env` has `<nickname>_gui_writes=on`, for example `lab_gui_writes=on`. On WSL it opens the Windows browser.
+
 ## Other workflows
 
 ```bash

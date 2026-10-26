@@ -162,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     summarize.add_argument("--rows-csv", help="also write the per-row outcome table to this CSV file")
     summarize.set_defaults(handler=_report_summarize, no_run_log=True)
 
-    gui = subparsers.add_parser("gui", help="EXPERIMENTAL: local web GUI on 127.0.0.1, for this computer only")
+    gui = subparsers.add_parser("gui", help="local web GUI on 127.0.0.1, for this computer only")
     gui.add_argument("--port", type=int, default=0, help="port to listen on (default: any free port)")
     gui.add_argument("--no-browser", action="store_true", help="only print the link; do not open a browser")
     gui.set_defaults(handler=_gui, no_run_log=True)
@@ -171,9 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _gui(args: argparse.Namespace) -> int:
-    if args.dotenv or args.orchestrator:
-        # shortcut: the GUI reads ./.env and offers every Orchestrator in it; add --dotenv support when someone needs it.
-        raise ConfigurationError("the GUI reads ./.env in the folder it starts in and lets you choose the Orchestrator; run it without --dotenv and --orchestrator")
+    if args.orchestrator:
+        raise ConfigurationError("the GUI lets you choose the Orchestrator; run it without --orchestrator")
+    # shortcut: the GUI reads ./.env only; setup.sh's launcher always passes --dotenv <install folder>/.env, which is that
+    # file when started there. Pass the path through to the GUI if someone needs another folder.
+    if args.dotenv and not (Path(".env").is_file() and Path(args.dotenv).resolve() == Path(".env").resolve()):
+        raise ConfigurationError("the GUI reads .env in the folder it starts in; start it from {}".format(Path(args.dotenv).resolve().parent))
     from .gui_server import serve
 
     return serve(args.port, browser=not args.no_browser)
