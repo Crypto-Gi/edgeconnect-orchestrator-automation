@@ -11,9 +11,9 @@ from urllib.parse import urlsplit
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .approval import DELETE_ACKNOWLEDGMENT, ask_in_terminal, delete_gates, template_acl_gates, write_gates
+from .approval import DELETE_ACKNOWLEDGMENT, Gate, ask_in_terminal, delete_gates, template_acl_gates, write_gates
 from .client import ApiClient
 from .config import load_config
 from .errors import ApprovalError, ConfigurationError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
@@ -203,15 +203,25 @@ def _add_delete_args(parser: Any) -> None:
     parser.add_argument("--dry-run", action="store_true")
 
 
+def _terminal_approver(gates: Sequence[Gate], subject: Any, no_terminal: str) -> None:
+    ask_in_terminal(gates, no_terminal)
+
+
 @dataclass
 class RunContext:
-    """One command run: its recorder, the Orchestrator it targets, and that Orchestrator's gateway once connected."""
+    """One command run: its recorder, the Orchestrator it targets, that Orchestrator's gateway once connected, and who approves writes.
+
+    approver(gates, subject, no_terminal) raises ApprovalError to refuse the write of subject (the exact preview or deletion table).
+    approval_request holds the gates and the subject's fingerprint of the last approval this run reached, dry runs included.
+    """
 
     recorder: Optional[RunRecorder] = None
     target: str = ""
     target_name: str = ""
     target_url: str = ""
     gateway: Optional[OrchestratorGateway] = None
+    approver: Callable[[Sequence[Gate], Any, str], None] = _terminal_approver
+    approval_request: Optional[Dict[str, Any]] = None
 
 
 # Each main() call sets its own RunContext, so runs in different threads (or contexts) never see each other's state.
@@ -321,18 +331,12 @@ def _load_json(path: str) -> Any:
 
 def _approve(preview: Any, dry_run: bool, zone_names: Sequence[str] = ()) -> bool:
     _show_preview({"preview": preview, "impact": "configuration write", "validation": "fresh readback and normalized comparison", "recovery": "workflow-specific preservation or rollback"}, dry_run)
-    if dry_run:
-        return False
-    ask_in_terminal(write_gates(zone_names, _context().target))
-    return True
+    return _request_approval(write_gates(zone_names, _context().target), preview, dry_run)
 
 
 def _approve_template_acls(preview: Mapping[str, Any], dry_run: bool) -> bool:
     _show_preview({"preview": preview, "impact": "template-group Access Lists write", "validation": "fresh central and associated-appliance readback", "recovery": "no automatic rollback; exact recovery requires separate review"}, dry_run)
-    if dry_run:
-        return False
-    ask_in_terminal(template_acl_gates(preview, _context().target))
-    return True
+    return _request_approval(template_acl_gates(preview, _context().target), preview, dry_run)
 
 
 def _deletion_table(rows: Sequence[Tuple[str, str, str]]) -> str:
@@ -353,9 +357,18 @@ def _approve_delete(rows: Sequence[Tuple[str, str, str]], dry_run: bool) -> bool
     print("\nWARNING 1 OF 3 — COMPLETE DELETION TABLE ({} resources)\n".format(len(rows)))
     print(_deletion_table(rows))
     _print_target()
-    if dry_run or not rows:
+    if not rows:
         return False
-    ask_in_terminal(delete_gates(), "non-interactive deletion is refused")
+    return _request_approval(delete_gates(), [list(row) for row in rows], dry_run, "non-interactive deletion is refused")
+
+
+def _request_approval(gates: Sequence[Gate], subject: Any, dry_run: bool, no_terminal: str = "non-interactive writes are refused") -> bool:
+    """Record what approving this write takes; then, unless it is a dry run, ask the run's approver (it raises to refuse)."""
+    context = _context()
+    context.approval_request = {"gates": list(gates), "fingerprint": fingerprint(subject), "subject": subject}
+    if dry_run:
+        return False
+    context.approver(gates, subject, no_terminal)
     return True
 
 
@@ -1537,44 +1550,51 @@ def _validate_report(value: Mapping[str, Any], kind: str) -> None:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    recorder = RunRecorder(sys.argv[1:] if argv is None else argv)
-    token = _CONTEXT.set(RunContext(recorder=recorder))
+    return execute(sys.argv[1:] if argv is None else argv)[0]
+
+
+def execute(argv: Sequence[str], context: Optional[RunContext] = None) -> Tuple[int, Optional[Dict[str, Any]], RunContext]:
+    """Run one command in this process with its own context; return the exit code, the run summary (None without a run log) and the context."""
+    args = build_parser().parse_args(argv)
+    context = context or RunContext()
+    recorder = context.recorder = RunRecorder(argv)
+    token = _CONTEXT.set(context)
     recorder.verbose = args.verbose
     code = 1
+    summary: Optional[Dict[str, Any]] = None
     try:
-        code = int(args.handler(args))
-        return code
+        code = _handle(args, recorder)
+    finally:
+        _CONTEXT.reset(token)
+        if not getattr(args, "no_run_log", False):
+            summary = finish(recorder, args, code)
+    return code, summary, context
+
+
+def _handle(args: argparse.Namespace, recorder: RunRecorder) -> int:
+    try:
+        return int(args.handler(args))
     except (ApprovalError, EOFError) as error:
         recorder.error = error
         print(str(error) or "input closed before approval", file=sys.stderr)
-        code = 5 if recorder.writes_sent() else 3
-        return code
+        return 5 if recorder.writes_sent() else 3
     except EdgeConnectError as error:
         recorder.error = error
         print(str(redact(str(error))), file=sys.stderr)
         # A drift, validation or approval stop after a write request is a partial run, never "nothing was written".
-        code = 5 if recorder.writes_sent() and error.exit_code in {2, 3, 4} else error.exit_code
-        return code
+        return 5 if recorder.writes_sent() and error.exit_code in {2, 3, 4} else error.exit_code
     except (OSError, ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError, csv.Error) as error:
         recorder.error = error
         if args.verbose >= 2:
             traceback.print_exc()
         print("error: {}: {}".format(type(error).__name__, redact(str(error))), file=sys.stderr)
-        code = 1
-        return code
+        return 1
     except KeyboardInterrupt as error:
         recorder.error = error
-        code = 130
-        return code
+        return 130
     except Exception as error:
         recorder.error = error
         raise
-    finally:
-        _CONTEXT.reset(token)
-        if not getattr(args, "no_run_log", False):
-            finish(recorder, args, code)
 
 
 if __name__ == "__main__":
