@@ -1,0 +1,7 @@
+/* Placeholder styles; the design system arrives in GUI step 6. */
+body { font-family: system-ui, sans-serif; margin: 0 16px 32px; background: #0d1117; color: #e6edf3; }
+@media (prefers-color-scheme: light) { body { background: #fff; color: #1f2328; } }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #8884; }
+.tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #d29922; color: #000; vertical-align: middle; }
+.green { color: #3fb950; } .amber { color: #d29922; } .red { color: #f85149; }

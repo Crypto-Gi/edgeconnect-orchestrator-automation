@@ -8,6 +8,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+edgeconnect_automation = ["static/*"]
+
 [project]
 name = "edgeconnect-automation"
 version = "1.2.11"
