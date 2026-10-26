@@ -20,8 +20,8 @@ from types import SimpleNamespace
 from typing import Any, Dict, Mapping, Optional, Tuple
 from urllib.parse import parse_qs, urlsplit
 
-from . import gui_tables
-from .errors import ConfigurationError
+from . import gui_editor, gui_tables
+from .errors import ConfigurationError, EdgeConnectError
 from .fleet import check_all
 from .gui_tasks import FINAL, TaskError, TaskManager, dumps
 from .reporting import ROW_FIELDS, report_dir
@@ -121,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"tasks": [task.view() for task in tasks.list()]})
         if path.startswith("/api/runs"):
             return self._runs(path, query)
+        if path.startswith("/api/editor/"):
+            return self._editor_get(path, query)
         task_id, action = _task_path(path)
         if action == "":
             return self._json(200, tasks.get(task_id).view())
@@ -153,6 +155,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._download("{}-rows.csv".format(parts[3]), gui_tables.to_csv(rows, ROW_FIELDS))
         return self._json(200, gui_tables.run_detail(summary, query))
 
+    def _editor_get(self, path: str, query: Dict[str, str]) -> None:
+        """The firewall CSV editor: its columns and starting points, the inventory's choices, and application search."""
+        if path == "/api/editor/firewall":
+            return self._json(200, gui_editor.spec())
+        if path == "/api/editor/firewall/source":
+            try:
+                return self._json(200, gui_editor.parse(gui_editor.source(query.get("id", ""))))
+            except ValueError as error:
+                raise TaskError(str(error), 404) from None
+        if path == "/api/editor/options":
+            return self._json(200, gui_editor.options(self.server.tasks.discovery(query.get("task", ""))))
+        if path == "/api/editor/search":
+            orchestrator = self.server.tasks.known_orchestrator(query.get("orchestrator"), writes=False)
+            try:
+                return self._json(200, {"names": gui_editor.search(query.get("kind", ""), query.get("q", ""), orchestrator, self.server.environ)})
+            except ValueError as error:
+                raise TaskError(str(error)) from None
+            except EdgeConnectError as error:
+                raise TaskError("Orchestrator search failed: {}".format(error), 502) from None
+        raise TaskError("not found", 404)
+
     def _post_api(self, path: str) -> None:
         if self.headers.get_content_type() != "application/json":
             raise TaskError("send JSON (Content-Type: application/json)", 415)
@@ -160,6 +183,15 @@ class Handler(BaseHTTPRequestHandler):
         tasks = self.server.tasks
         if path == "/api/tasks":
             return self._json(201, tasks.create(body).view())
+        if path == "/api/editor/firewall/parse":
+            if not isinstance(body.get("csv_text"), str):
+                raise TaskError("csv_text is required")
+            return self._json(200, gui_editor.parse(body["csv_text"]))
+        if path == "/api/editor/firewall/csv":
+            rows, extra = body.get("rows"), body.get("extra") or []
+            if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows) or not isinstance(extra, list):
+                raise TaskError("rows must be a list of objects and extra a list of column names")
+            return self._json(200, {"csv_text": gui_editor.write(rows, [str(name) for name in extra])})
         task_id, action = _task_path(path)
         if action == "approve":
             return self._json(202, tasks.approve(task_id, body.get("answers"), body.get("orchestrator", ""), body.get("understood", False)).view())

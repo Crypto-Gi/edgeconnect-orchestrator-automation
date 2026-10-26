@@ -131,7 +131,9 @@ class TaskTests(Offline):
             tasks.create({"action": "apply", "orchestrator": "lab", "kind": "zones", "plan_task": self.planned(tasks).id})
 
 
-class ServerTests(Offline):
+class ServerCase(Offline):
+    """A GUI server on the fake Orchestrator, and a request helper that also checks no response sends CORS headers."""
+
     def setUp(self):
         super().setUp()
         check = functools.partial(fleet.check_all, client_factory=FleetClient)
@@ -166,6 +168,8 @@ class ServerTests(Offline):
         self.assertFalse([name for name in response.headers if name.lower().startswith("access-control-")], "no CORS headers, ever")
         return response, text
 
+
+class ServerTests(ServerCase):
     def test_launch_link_sets_a_strict_http_only_cookie_and_drops_the_token(self):
         response, _ = self.request("GET", "/?token=" + self.server.token, cookie=False)
         self.assertEqual((response.status, response.headers["Location"]), (303, "/"))
