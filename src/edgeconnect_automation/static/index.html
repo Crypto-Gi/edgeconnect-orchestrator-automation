@@ -3,21 +3,81 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EdgeConnect automation</title>
+<title>EdgeConnect Automation</title>
+<link rel="preload" href="ibm-plex-sans-latin-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header><h1>EdgeConnect automation <span class="tag">experimental</span></h1></header>
-<main>
-  <section aria-labelledby="fleet-title">
-    <h2 id="fleet-title">Orchestrators</h2>
-    <table><thead><tr><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Release</th><th scope="col">Writes</th><th scope="col">Reason</th></tr></thead><tbody id="fleet"><tr><td colspan="5">Checking…</td></tr></tbody></table>
-  </section>
-  <section aria-labelledby="tasks-title">
-    <h2 id="tasks-title">Tasks</h2>
-    <table><thead><tr><th scope="col">Task</th><th scope="col">Action</th><th scope="col">Orchestrator</th><th scope="col">State</th><th scope="col">Message</th></tr></thead><tbody id="tasks"></tbody></table>
-  </section>
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar" id="bar">
+  <div class="wrap bar-row">
+    <a class="brand" href="#/">EdgeConnect <b>Automation</b></a>
+    <span class="tag" title="Still being built; use the command line for real work">experimental</span>
+    <div class="switcher">
+      <label for="orch" class="sr-only">Orchestrator</label>
+      <span class="orch-swatch" id="orch-swatch" aria-hidden="true"></span>
+      <select id="orch" disabled><option>Loading…</option></select>
+      <span class="status-word" id="orch-status" aria-live="polite"></span>
+    </div>
+    <button class="btn" id="palette-open" type="button" aria-keyshortcuts="Control+K Meta+K">Commands <kbd>Ctrl K</kbd></button>
+    <button class="btn" id="theme" type="button" aria-label="Switch between light and dark theme">Theme</button>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+  <div class="wrap">
+    <section id="view-home" aria-labelledby="home-title">
+      <div class="eyebrow" id="home-orch"></div>
+      <h1 id="home-title">What do you want to do?</h1>
+      <p class="lede" id="home-writes"></p>
+      <ul class="intents" id="intents" aria-label="Tasks"></ul>
+
+      <div class="split">
+        <section class="panel" aria-labelledby="fleet-title">
+          <div class="panel-head">
+            <h2 id="fleet-title">Orchestrators</h2>
+            <button class="btn" id="fleet-refresh" type="button">Check again</button>
+          </div>
+          <ul class="fleet" id="fleet" aria-live="polite" aria-busy="true"><li class="muted">Checking every Orchestrator…</li></ul>
+        </section>
+        <section class="panel" aria-labelledby="tasks-title">
+          <div class="panel-head"><h2 id="tasks-title">Tasks in this session</h2></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th scope="col">Task</th><th scope="col">Orchestrator</th><th scope="col">State</th><th scope="col">Message</th></tr></thead>
+            <tbody id="tasks"><tr><td colspan="4" class="muted">No tasks yet.</td></tr></tbody>
+          </table></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-task" aria-labelledby="task-title" hidden>
+      <a class="back" href="#/">← All tasks</a>
+      <div class="eyebrow" id="task-orch"></div>
+      <h1 id="task-title"></h1>
+      <p class="lede" id="task-text"></p>
+      <div class="panel notice"><p id="task-note"></p></div>
+    </section>
+  </div>
 </main>
+
+<dialog id="palette" aria-labelledby="palette-label">
+  <label id="palette-label" for="palette-input" class="sr-only">Type a command</label>
+  <input id="palette-input" type="text" role="combobox" aria-expanded="true" aria-controls="palette-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Type a command or a task…">
+  <ul id="palette-list" role="listbox" aria-label="Commands"></ul>
+  <p class="hint">↑ ↓ to move, Enter to run, Esc to close</p>
+</dialog>
+
+<dialog id="switch-dialog" aria-labelledby="switch-title" aria-describedby="switch-text">
+  <h2 id="switch-title">Switch Orchestrator?</h2>
+  <p id="switch-text"></p>
+  <div class="actions">
+    <button class="btn" id="switch-download" type="button">Download my CSVs</button>
+    <button class="btn danger" id="switch-confirm" type="button">Switch and start fresh</button>
+    <button class="btn" id="switch-cancel" type="button" autofocus>Stay here</button>
+  </div>
+</dialog>
+
+<footer class="wrap foot">Runs on this computer only. Fonts: IBM Plex and Bricolage Grotesque, <a href="OFL-IBM-Plex.txt">OFL</a> / <a href="OFL-Bricolage-Grotesque.txt">OFL</a>.</footer>
 <script src="app.js"></script>
 </body>
 </html>
