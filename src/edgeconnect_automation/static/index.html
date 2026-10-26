@@ -50,6 +50,51 @@
       </div>
     </section>
 
+    <section id="view-firewall" class="view" aria-labelledby="fw-title" hidden>
+      <a class="back" href="#/">← All tasks</a>
+      <div class="eyebrow" id="fw-orch"></div>
+      <h1 id="fw-title">Firewall rules</h1>
+      <ol class="stepper" id="fw-steps" aria-label="Steps"></ol>
+
+      <section class="panel" id="fw-load" aria-labelledby="fw-load-title">
+        <h2 id="fw-load-title">Load a firewall CSV</h2>
+        <p class="muted">One row per rule, with the same columns the command line uses. Nothing is sent to Orchestrator until you approve the exact changes.</p>
+        <div class="toolbar"><label class="btn" for="fw-file">Choose CSV…</label><input type="file" id="fw-file" accept=".csv,text/csv" class="sr-only"><span id="fw-file-name" class="muted"></span></div>
+      </section>
+
+      <section class="panel" id="fw-fix" aria-labelledby="fw-fix-title" hidden>
+        <h2 id="fw-fix-title"></h2>
+        <p id="fw-fix-text" class="muted" role="status"></p>
+        <ul class="notes" id="fw-fix-warnings"></ul>
+        <div id="fw-issues"></div>
+        <div class="actions"><button class="btn" type="button" id="fw-reload">Load a corrected CSV</button><button class="btn primary" type="button" id="fw-plan">Plan on this Orchestrator</button></div>
+      </section>
+
+      <section class="panel" id="fw-review" aria-labelledby="fw-review-title" hidden>
+        <h2 id="fw-review-title">Review the changes</h2>
+        <div class="callout bad" id="fw-deletes" hidden></div>
+        <div id="fw-warnings"></div>
+        <ul class="notes" id="fw-counts"></ul>
+        <div id="fw-changes"></div>
+        <p class="muted" id="fw-writes-off" hidden></p>
+        <div class="actions"><button class="btn" type="button" id="fw-restart">Start again</button><button class="btn primary" type="button" id="fw-approve">Approve these changes…</button></div>
+      </section>
+
+      <section class="panel" id="fw-progress" aria-labelledby="fw-progress-title" hidden>
+        <h2 id="fw-progress-title"></h2>
+        <p id="fw-progress-text" role="status" aria-live="polite"></p>
+        <div class="actions"><button class="btn" type="button" id="fw-open-approval" hidden>Open the approval</button><button class="btn danger" type="button" id="fw-cancel" hidden>Cancel this write</button></div>
+      </section>
+
+      <section class="panel" id="fw-done" aria-labelledby="fw-done-title" hidden>
+        <h2 id="fw-done-title"></h2>
+        <p id="fw-done-text"></p>
+        <ul class="notes" id="fw-done-counts"></ul>
+        <div id="fw-rows"></div>
+        <div class="actions"><a class="btn" id="fw-run-link" href="#/runs">Open this run</a><button class="btn primary" type="button" id="fw-again">Start again</button></div>
+      </section>
+    </section>
+
     <section id="view-runs" class="view" aria-labelledby="runs-title" hidden>
       <a class="back" href="#/">← All tasks</a>
       <div class="eyebrow">Run log</div>
@@ -105,6 +150,21 @@
     <button class="btn danger" id="switch-confirm" type="button">Switch and start fresh</button>
     <button class="btn" id="switch-cancel" type="button" autofocus>Stay here</button>
   </div>
+</dialog>
+
+<dialog id="approve-dialog" aria-labelledby="approve-title" aria-describedby="approve-text">
+  <div class="orch-band" id="approve-band"></div>
+  <h2 id="approve-title">Approve this write</h2>
+  <p id="approve-text"></p>
+  <form id="approve-form" method="dialog">
+    <div id="approve-gates"></div>
+    <label class="gate" for="approve-orch"><span id="approve-orch-label"></span><input type="text" id="approve-orch" autocomplete="off" spellcheck="false" required></label>
+    <p class="muted" id="approve-clock" aria-live="off"></p>
+    <div class="actions">
+      <button class="btn primary" type="submit" id="approve-submit">Approve and write</button>
+      <button class="btn" type="button" id="approve-later">Not yet</button>
+    </div>
+  </form>
 </dialog>
 
 <footer class="wrap foot">Runs on this computer only. Fonts: IBM Plex and Bricolage Grotesque, <a href="OFL-IBM-Plex.txt">OFL</a> / <a href="OFL-Bricolage-Grotesque.txt">OFL</a>.</footer>

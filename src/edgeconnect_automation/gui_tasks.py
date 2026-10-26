@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
-from . import engine
+from . import engine, gui_tables
 from .approval import APPROVAL_SECONDS, GuiApprovals
 from .config import orchestrator_profiles
 from .errors import ApprovalError, ConfigurationError
@@ -46,7 +46,10 @@ class Task:
         self.result: Optional[engine.Result] = None
         self.events: List[Dict[str, Any]] = []
         self.answers: Optional[List[str]] = None
+        self.typed_orchestrator = ""
+        self.deadline: Optional[float] = None
         self.cancelled = False
+        self._tables: Dict[str, List[Dict[str, Any]]] = {}
         self.changed = threading.Condition()
 
     def set(self, state: str, message: str = "", result: Optional[engine.Result] = None) -> None:
@@ -54,15 +57,40 @@ class Task:
             self.state, self.message = state, message
             if result is not None:
                 self.result = result
+                self._tables = {}
             self.events.append({"state": state, "message": message, "time": time.time()})
             self.changed.notify_all()
 
     def view(self) -> Dict[str, Any]:
+        """The task as the browser sees it. Issues, changes and rows can run to thousands, so they come a page at a time from table()."""
         result = None
         if self.result is not None:
-            result = dataclasses.asdict(self.result)
-            result.pop("outputs")  # full payloads stay in the run log; the browser gets the structured fields
-        return {"id": self.id, "action": self.action, "orchestrator": self.orchestrator, "kind": self.kind, "state": self.state, "message": self.message, "created": self.created, "result": result}
+            found = self.result
+            summary = found.summary or {}
+            result = {
+                "exit_code": found.exit_code,
+                "status": found.status,
+                "changes_written": found.changes_written,
+                "counts": found.counts,
+                "warnings": found.warnings,
+                "approval": found.approval,
+                "run_id": summary.get("run_id", ""),
+                "row_outcomes": summary.get("row_outcomes", {}),
+                "issues": len(found.issues),
+                "changes": len(found.changes),
+                "deletes": sum(1 for change in found.changes if change.get("action") == "delete"),
+                "rows": len(found.rows),
+            }
+        return {"id": self.id, "action": self.action, "orchestrator": self.orchestrator, "kind": self.kind, "state": self.state, "message": self.message, "created": self.created, "deadline": self.deadline, "result": result}
+
+    def table(self, name: str) -> List[Dict[str, Any]]:
+        """The rows of one of the result's tables (issues, changes, rows), built once per result."""
+        if self.result is None:
+            return []
+        if name not in self._tables:
+            build = {"issues": gui_tables.issue_row, "changes": gui_tables.change_row, "rows": gui_tables.outcome_row}[name]
+            self._tables[name] = [build(item) for item in getattr(self.result, name)]
+        return self._tables[name]
 
 
 class TaskManager:
@@ -116,14 +144,26 @@ class TaskManager:
         except (OSError, ValueError) as error:
             raise TaskError("could not read the inventory of task {}: {}".format(task_id, error), 500) from None
 
-    def approve(self, task_id: str, answers: Any) -> Task:
+    def table(self, task_id: str, name: str, params: Mapping[str, str]) -> Dict[str, Any]:
+        """One page of a task's issues, changes (deletes first) or per-row outcomes."""
+        task = self.get(task_id)
+        if name == "issues":
+            return gui_tables.page(task.table(name), params, ("rule", "column"))
+        if name == "changes":
+            return gui_tables.page(task.table(name), params, ("action", "type"), default_sort="action")
+        return gui_tables.page(task.table(name), params, ("outcome",))
+
+    def approve(self, task_id: str, answers: Any, orchestrator: Any = "") -> Task:
+        """Hand the typed confirmations, and the Orchestrator nickname as typed, to a task awaiting approval."""
         task = self.get(task_id)
         if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
             raise TaskError("answers must be a list of the typed confirmations")
+        if not isinstance(orchestrator, str):
+            raise TaskError("orchestrator must be the nickname as typed")
         with task.changed:
             if task.state != "awaiting_approval" or task.answers is not None:
                 raise TaskError("task {} is {}, not awaiting approval".format(task_id, task.state), 409)
-            task.answers = answers
+            task.answers, task.typed_orchestrator = answers, orchestrator
             task.changed.notify_all()
         return task
 
@@ -220,6 +260,7 @@ class TaskManager:
         if preview.exit_code != 0 or preview.approval is None:
             # Blocked, or nothing to write: the preview is the outcome.
             return task.set("failed" if preview.exit_code else "done", _first_issue(preview) or preview.status, preview)
+        task.deadline = time.time() + self.approval_seconds  # for the browser's countdown; the wait below uses the monotonic clock
         task.set("awaiting_approval", "type the confirmations to approve this exact preview", preview)
         deadline = time.monotonic() + self.approval_seconds
         with task.changed:
@@ -230,10 +271,14 @@ class TaskManager:
             return task.set("cancelled")
         if answers is None:
             return task.set("expired", "no approval within {:g} minutes; nothing was written".format(self.approval_seconds / 60))
+        if task.typed_orchestrator != task.orchestrator:
+            # The GUI's own gate: the nickname proves the person looked at which Orchestrator this write goes to.
+            return task.set("rejected", "Orchestrator nickname refused (typed {!r}, this write goes to {!r}); nothing was written".format(task.typed_orchestrator, task.orchestrator))
         try:
-            approval = engine.approve(self.approvals, preview.approval, answers)
+            approval = engine.approve(self.approvals, preview.approval, answers, task.typed_orchestrator)
         except ApprovalError as error:
             return task.set("rejected", "{}; nothing was written".format(error))
+        task.deadline = None
         task.set("applying")
         self._finish(task, lambda: call(approval, False), "done")
 

@@ -68,6 +68,7 @@ class RunRecorder:
         self.error: Optional[BaseException] = None
         self.tool_version = __version__
         self.source = "cli"
+        self.approval: Optional[Dict[str, Any]] = None
         self.client: Any = None
 
     def writes_sent(self) -> int:
@@ -659,7 +660,7 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         elif not rows and csv_text:
             rows = _unattempted_csv_rows(csv_text, lines[0])
             counts.append("command stopped before processing any row; {} row(s) not attempted".format(len(rows)))
-    return {
+    summary = {
         "run_id": recorder.run_id,
         "timestamp": recorder.started.isoformat(timespec="seconds"),
         "duration_seconds": round((datetime.datetime.now().astimezone() - recorder.started).total_seconds(), 1),
@@ -686,6 +687,9 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         "run_reference": result.get("run_reference", ""),
         "next_step": _next_step(status, result),
     }
+    if recorder.approval is not None:
+        summary["approval"] = recorder.approval
+    return summary
 
 
 def _named(recorder: RunRecorder, lines: Sequence[str]) -> List[str]:
@@ -733,6 +737,9 @@ def render(summary: Mapping[str, Any], title: str = "RUN SUMMARY", row_limit: Op
         "Changes made : {}".format(summary["changes_written"]),
         "Exit code    : {} = {}".format(summary["exit_code"], summary["exit_meaning"]),
     ]
+    approval = summary.get("approval")
+    if approval:
+        lines.append("Approved by  : {} at {} in the GUI, typing {}".format(approval.get("by"), approval.get("time"), ", ".join(repr(text) for text in [approval.get("typed_orchestrator")] + list(approval.get("typed") or []) if text)))
     if summary.get("run_reference"):
         lines.append("Run ref      : {} (Orchestrator audit log comments start with it, followed by -<segment map>)".format(summary["run_reference"]))
     lines += _section("What was planned or done", summary.get("counts", []))

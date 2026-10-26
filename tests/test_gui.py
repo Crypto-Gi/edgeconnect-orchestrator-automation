@@ -69,22 +69,24 @@ class TaskTests(Offline):
     def test_plan_then_apply_waits_for_the_typed_approval_then_writes(self):
         tasks = self.manager()
         plan = self.planned(tasks)
-        self.assertEqual((plan.state, plan.view()["result"]["changes"][0]["object"]), ("planned", "new"))
+        self.assertEqual((plan.state, tasks.table(plan.id, "changes", {})["rows"][0]["object"]), ("planned", "new"))
         task = self.wait(self.apply(tasks, plan), "awaiting_approval")
         self.assertEqual([gate["expected"] for gate in task.view()["result"]["approval"]["gates"]], ["APPLY"])
         self.assertEqual(WritableGateway.groups, [])
-        tasks.approve(task.id, ["APPLY"])
+        self.assertIsNotNone(task.view()["deadline"])
+        tasks.approve(task.id, ["APPLY"], "lab")
         self.wait(task, "done")
+        self.assertIsNone(task.view()["deadline"])
         self.assertEqual(WritableGateway.groups, [NEW_GROUP])
         self.assertEqual([event["state"] for event in task.events], ["queued", "running", "awaiting_approval", "applying", "done"])
 
     def test_wrong_answer_is_rejected_and_writes_nothing(self):
         tasks = self.manager()
         task = self.wait(self.apply(tasks, self.planned(tasks)), "awaiting_approval")
-        tasks.approve(task.id, ["apply"])
+        tasks.approve(task.id, ["apply"], "lab")
         self.assertEqual((self.wait(task, "rejected").message, WritableGateway.groups), ("write approval refused; nothing was written", []))
         with self.assertRaisesRegex(TaskError, "not awaiting approval"):
-            tasks.approve(task.id, ["APPLY"])
+            tasks.approve(task.id, ["APPLY"], "lab")
 
     def test_unanswered_approval_expires(self):
         tasks = self.manager(approval_seconds=0.2)
@@ -201,7 +203,7 @@ class ServerTests(Offline):
         _, text = self.request("POST", "/api/tasks", {"action": "apply", "orchestrator": "lab", "kind": "address-groups", "plan_task": plan.id})
         task_id = json.loads(text)["id"]
         self.wait(self.server.tasks.get(task_id), "awaiting_approval")
-        self.assertEqual(self.request("POST", "/api/tasks/{}/approve".format(task_id), {"answers": ["APPLY"]})[0].status, 202)
+        self.assertEqual(self.request("POST", "/api/tasks/{}/approve".format(task_id), {"answers": ["APPLY"], "orchestrator": "lab"})[0].status, 202)
         response, stream = self.request("GET", "/api/tasks/{}/events".format(task_id))
         self.assertEqual(response.headers["Content-Type"], "text/event-stream")
         states = [json.loads(line[6:])["state"] for line in stream.splitlines() if line.startswith("data: ")]
