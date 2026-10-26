@@ -4,14 +4,12 @@ Python searches, filters, sorts and pages every table, so the browser only ever 
 tens of thousands of runs). Run summaries come from reporting's own reader, so each table shows what
 `report summarize` prints for the same file, and the row CSV is the one `report summarize --rows-csv` writes.
 """
-import csv
-import io
 import json
 import threading
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from .reporting import _PROBLEMS, ROW_FIELDS, _summary_of
+from .reporting import _PROBLEMS, ROW_FIELDS, _summary_of, csv_text
 
 PAGE_SIZES = (25, 50, 100, 200)
 OK_STATUSES = {"SUCCESS", "NO_OP", "DRY_RUN", "VALID", "PLANNED"}
@@ -106,11 +104,7 @@ def outcome_row(row: Mapping[str, Any]) -> Dict[str, Any]:
 
 def to_csv(rows: Sequence[Mapping[str, Any]], fields: Sequence[str]) -> bytes:
     """The same CSV that reporting.write_rows_csv writes, as bytes for a download."""
-    handle = io.StringIO(newline="")
-    writer = csv.DictWriter(handle, fields, extrasaction="ignore")
-    writer.writeheader()
-    writer.writerows(rows)
-    return handle.getvalue().encode("utf-8")
+    return csv_text(rows, fields).encode("utf-8")
 
 
 class RunLog:

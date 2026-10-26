@@ -9,7 +9,7 @@ from unittest.mock import patch
 from edgeconnect_automation.cli import main
 from edgeconnect_automation.errors import DriftError, ValidationError
 from edgeconnect_automation.firewall import parse_firewall_text, rule_payload
-from edgeconnect_automation.reporting import RunRecorder, build_summary, preview_text, render
+from edgeconnect_automation.reporting import ROW_FIELDS, RunRecorder, build_summary, preview_text, render, write_rows_csv
 from edgeconnect_automation.util import fingerprint
 from edgeconnect_automation.workflows import plan_appexpress_modes
 from tests.test_hardening import firewall_text
@@ -339,6 +339,31 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(summary["status"], "PARTIAL")
         for expected in ("3.NE (branch-03): unreachable", "rollback unresolved", "readback differs", "5 = partial"):
             self.assertIn(expected, text)
+
+
+
+class SpreadsheetSafeCsvTests(unittest.TestCase):
+    ROWS = [
+        {"row": 2, "item": "=HYPERLINK(\"http://evil.example\")", "scope": "+cmd", "outcome": "FAILED", "reason": "-2+3"},
+        {"row": 3, "item": "@SUM(A1)", "scope": "\tx", "outcome": "CREATED", "reason": "fine - a dash inside is kept"},
+        {"row": "", "item": "plain", "scope": "Default -> Default", "outcome": "WOULD DELETE", "reason": ""},
+    ]
+    EXPECTED = (
+        "row,item,scope,outcome,reason\r\n"
+        "2,\"'=HYPERLINK(\"\"http://evil.example\"\")\",'+cmd,FAILED,'-2+3\r\n"
+        "3,'@SUM(A1),'\tx,CREATED,fine - a dash inside is kept\r\n"
+        ",plain,Default -> Default,WOULD DELETE,\r\n"
+    )
+
+    def test_cli_rows_csv_never_starts_a_cell_with_a_formula(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rows.csv"
+            write_rows_csv(str(path), self.ROWS)
+            self.assertEqual(path.read_bytes().decode("utf-8"), self.EXPECTED)
+
+    def test_gui_exports_are_the_same_safe_csv(self):
+        from edgeconnect_automation.gui_tables import to_csv
+        self.assertEqual(to_csv(self.ROWS, ROW_FIELDS).decode("utf-8"), self.EXPECTED)
 
 
 if __name__ == "__main__":
