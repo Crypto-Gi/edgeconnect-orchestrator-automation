@@ -4,7 +4,6 @@ import copy
 import csv
 import json
 import re
-import secrets
 import sys
 import time
 import traceback
@@ -14,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
+from .approval import DELETE_ACKNOWLEDGMENT, ask_in_terminal, delete_gates, template_acl_gates, write_gates
 from .client import ApiClient
 from .config import load_config
 from .errors import ApprovalError, ConfigurationError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
@@ -323,44 +323,15 @@ def _approve(preview: Any, dry_run: bool, zone_names: Sequence[str] = ()) -> boo
     _show_preview({"preview": preview, "impact": "configuration write", "validation": "fresh readback and normalized comparison", "recovery": "workflow-specific preservation or rollback"}, dry_run)
     if dry_run:
         return False
-    if not sys.stdin.isatty():
-        raise ApprovalError("non-interactive writes are refused")
-    for name in zone_names:
-        expected = "CREATE {}".format(name)
-        if input("Type {} to confirm this zone: ".format(expected)) != expected:
-            raise ApprovalError("zone confirmation refused")
-    _print_target()
-    if input("Type APPLY to execute the exact preview: ") != "APPLY":
-        raise ApprovalError("write approval refused")
+    ask_in_terminal(write_gates(zone_names, _context().target))
     return True
-
-
-DELETE_ACKNOWLEDGMENT = "I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION"
 
 
 def _approve_template_acls(preview: Mapping[str, Any], dry_run: bool) -> bool:
     _show_preview({"preview": preview, "impact": "template-group Access Lists write", "validation": "fresh central and associated-appliance readback", "recovery": "no automatic rollback; exact recovery requires separate review"}, dry_run)
     if dry_run:
         return False
-    if not sys.stdin.isatty():
-        raise ApprovalError("non-interactive writes are refused")
-    for group in preview["plan"]["groups"]:
-        if not group["eligible"]:
-            continue
-        name = group["template_group"]
-        if group["create"] and input("Type the exact template group name {} to authorize creation: ".format(name)) != name:
-            raise ApprovalError("template group creation confirmation refused")
-        if not group["create"] and group["selection_change"]:
-            expected = "SELECT ACLS {}".format(name)
-            if input("Type {} to select Access Lists: ".format(expected)) != expected:
-                raise ApprovalError("Access Lists selection confirmation refused")
-        if group["template_mode_change"]:
-            expected = "MERGE ACLS {}".format(name)
-            if input("Type {} to change appliance template mode: ".format(expected)) != expected:
-                raise ApprovalError("template merge-mode confirmation refused")
-    _print_target()
-    if input("Type APPLY to execute the exact preview: ") != "APPLY":
-        raise ApprovalError("write approval refused")
+    ask_in_terminal(template_acl_gates(preview, _context().target))
     return True
 
 
@@ -384,18 +355,7 @@ def _approve_delete(rows: Sequence[Tuple[str, str, str]], dry_run: bool) -> bool
     _print_target()
     if dry_run or not rows:
         return False
-    if not sys.stdin.isatty():
-        raise ApprovalError("non-interactive deletion is refused")
-    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    code = "DELETE-{}".format("".join(secrets.choice(alphabet) for _ in range(8)))
-    print("\nWARNING 2 OF 3 — Type this system-generated code exactly:\n\n{}\n".format(code))
-    if input("Deletion code: ") != code:
-        raise ApprovalError("deletion confirmation code refused")
-    print("\nWARNING 3 OF 3 — FINAL DESTRUCTIVE ACTION WARNING")
-    print("The complete table above will be deleted. Dependencies may stop working, rollback is not automatic, and you are responsible for this abyss action.")
-    print("\nTo answer 'Are you absolutely sure?' type exactly:\n\n{}\n".format(DELETE_ACKNOWLEDGMENT))
-    if input("Final acknowledgment: ") != DELETE_ACKNOWLEDGMENT:
-        raise ApprovalError("final deletion acknowledgment refused")
+    ask_in_terminal(delete_gates(), "non-interactive deletion is refused")
     return True
 
 
