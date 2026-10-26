@@ -14,6 +14,7 @@ The automation GUI is built in the steps below, one pull request per step into t
 - Platforms: macOS, Linux, Windows via WSL only.
 - Style: the toolkit page's design tokens. Dark-first plus a light theme; Bricolage Grotesque, IBM Plex Sans and IBM Plex Mono bundled locally under the OFL; blue for data and primary actions, amber for gates, green ok, red bad; 14px rounded panels, pill buttons, sticky blurred top bar, stat tiles.
 - Zero new Python dependencies (standard-library server).
+- Bulk only: the GUI uploads CSVs and never builds or edits individual rules. A CSV with problems is listed row by row and fixed in the file.
 
 ## Step 0: CI
 GitHub Actions running the existing tests on Python 3.9 and 3.13, on Linux and macOS.
@@ -62,10 +63,8 @@ Template ACLs, zones, address groups, service groups, application definitions, a
 Done when: each has a lab run compared with the CLI, and the delete gates are tested.
 Built as: one guided view for every object type (`#/do/<kind>`) and Remove by CSV (`#/remove`, steps Load, Preview, Confirm, Delete, Done) over the same server tasks; the step 8 firewall view became that view. Address and service groups are two tasks (the home had one card for both). Only firewall rules have an offline check, so the others check rows while planning. Missing zones takes names instead of a CSV. The "I understand" tick box is sent with the approval and checked in Python (`understood` must be `true` for a delete), after the nickname and before the typed gates. Offline, every object type's plan through the GUI is identical to the CLI's saved plan; the lab comparisons are still to run.
 
-## Step 10: Grid editor
-Paged grid with a per-row form, dropdowns from the live inventory, start from templates and examples, dependency warnings before planning, CSV save. Validation stays in Python.
-Done when: a firewall CSV can be built with no typed names, and 5,000 rows stay responsive.
-Built as: a firewall CSV editor (`#/edit/firewall`, `gui_editor.py`). Python owns the column list (the template's, checked against the firewall parser's headers), CSV parsing and writing (extra columns kept), the inventory choices (from a discover task; zones per segment from the segment-zone map), and application search: user-defined applications and groups plus Orchestrator's read-only wildcard search, whose answer shape is undocumented, so names are collected from `name`, `group` and `displayName` wherever they appear (to confirm on the lab). The browser keeps the rows and shows 50 per page; "dependency warnings before planning" is the read-only plan's own DEP and FW-32 checks, run from the editor with each problem linking to its row, so no dependency logic is duplicated. Only firewall rules have an editor; the other types keep loading CSVs. Measured in headless Chromium: a 5,000-row CSV loads in about 0.2 s, a search answers in about 30 ms, paging is instant, and checking all 5,000 rows takes under 1 s. A rule built only from dropdowns and search, with no name typed, passes the offline check.
+## Step 10: Grid editor (dropped)
+Dropped by the owner on 26 Oct, after it was built and merged: the GUI uploads CSVs in bulk and does not edit rules. A loaded CSV is checked, every problem is listed with its row, column and fix, and the person corrects the file and loads it again. The editor was removed in the change that records this.
 
 ## Step 11: Revert
 Store the pre-change state with each apply. A Revert action on the run page builds a new plan that goes through the same review and approval.

@@ -89,7 +89,7 @@ main { padding-block: 2.2rem 3rem; outline: none; }
 .fleet .meta { grid-column: 1 / -1; font: 400 .78rem/1.4 var(--f-mono); color: var(--muted); overflow-wrap: anywhere; }
 .s-green { color: var(--ok); } .s-amber { color: var(--gate); } .s-red { color: var(--bad); }
 
-.table-wrap { overflow-x: auto; position: relative; }  /* keeps .sr-only cells inside the scroll box */
+.table-wrap { overflow-x: auto; position: relative; }
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { font: 500 .72rem/1.2 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -162,18 +162,3 @@ dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 #flow-confirm .check { white-space: normal; align-items: flex-start; }
-
-/* firewall CSV editor */
-.btn.small { padding: .35rem .65rem; font-size: .8rem; }
-.row-actions { white-space: nowrap; }
-.row-actions .btn + .btn { margin-left: .3rem; }
-#row-dialog { width: min(52rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
-#row-form fieldset { border: 1px solid var(--line); border-radius: 10px; margin: .8rem 0 0; padding: .6rem .8rem .8rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .7rem; }
-#row-form legend { font: 600 .8rem/1 var(--f-mono); color: var(--muted); padding: 0 .3rem; }
-#row-form .field { display: grid; gap: .3rem; font-size: .85rem; align-content: start; }
-#row-form .field select, #row-form .field input[type="text"], #row-form .field input[type="search"] { max-width: none; width: 100%; }
-#row-form select[multiple] { border-radius: 10px; }
-.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .3rem; }
-.chip { font: 500 .8rem/1 var(--f-mono); color: var(--text); background: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: .35rem .6rem; cursor: pointer; }
-.chip.add { border-style: dashed; }
-.search-field { display: grid; gap: .4rem; }
