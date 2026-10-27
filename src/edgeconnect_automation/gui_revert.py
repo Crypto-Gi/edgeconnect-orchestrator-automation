@@ -26,7 +26,7 @@ def build(kind: str, orchestrator: str, csv_text: str, rows: Iterable[Mapping[st
 
     rows are the run summary's row outcomes, plan the approved plan and status the run's result (SUCCESS, PARTIAL...).
     """
-    value: Dict[str, Any] = {"kind": kind, "orchestrator": orchestrator, "csv_text": "", "count": 0, "reason": ""}
+    value: Dict[str, Any] = {"kind": kind, "orchestrator": orchestrator, "csv_text": "", "count": 0, "objects": 0, "reason": ""}
     rows = list(rows)
     plan = plan or {}
     plan = plan["plan"] if isinstance(plan.get("plan"), Mapping) else plan
@@ -52,6 +52,8 @@ def build(kind: str, orchestrator: str, csv_text: str, rows: Iterable[Mapping[st
             numbers, names = {}, names | (set(plan.get("candidate") or {}) - set(plan.get("baseline") or {}))
         priorities = {number: int(found.group(1)) for number, found in numbers.items() if found}
         value["csv_text"], value["count"] = _keep(csv_text, set(numbers), names, priorities, kind == "firewall")
+        # count is CSV rows; a group spread over several rows is still one object to delete.
+        value["objects"] = len({str({key.strip(): cell for key, cell in row.items() if key}.get("Name", "")).strip() for row in csv.DictReader(io.StringIO(value["csv_text"]))}) if kind in _GROUPS else value["count"]
         if not value["count"]:
             value["reason"] = "This upload created nothing, so there is nothing to undo."
     return value

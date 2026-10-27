@@ -7,6 +7,7 @@
 - GUI: each problem in a CSV is listed once (some were listed twice), application-group problems show their row in the Row column, and a task whose command line is refused ends as failed instead of staying "running".
 - The run summary (and `report summarize`, `--rows-csv` and the GUI) says CREATED after a real `app-definitions apply` or `app-groups apply`; it said WOULD CREATE, because their results were not recognised as results.
 - Address-group and service-group plans count groups, as the result does, and add the row count when a group has several rules: `to create: 25 (27 rows)` where it said `to create: 27`.
+- GUI Undo counts what it deletes as the delete preview does: "Deletes the address groups this upload created (25, from 27 CSV rows)" where it said "the 27 rows of address groups".
 - GUI: a plan cancelled while it runs ends as cancelled (it ended as planned and could be applied), and the GUI deletes its temporary folder of uploaded CSVs and plans when it stops.
 - Every command reads the Orchestrator's serial number for the plan's identity. If that read fails for any reason, the command now goes on and compares the address only; before, any error other than 403 or 404 (such as 400, 401, a 5xx or a timeout) stopped the command.
 

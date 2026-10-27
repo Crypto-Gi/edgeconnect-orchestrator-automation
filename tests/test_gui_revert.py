@@ -58,6 +58,7 @@ class BuildFromRealOutcomesTests(unittest.TestCase):
         plan = {"kind": "address-groups", "new_rows": [{"Name": "multi", "_row": 2}, {"Name": "multi", "_row": 4}], "no_ops": ["old"]}
         value = self.build("address-groups", text, plan, {"status": "success", "created": ["multi"]})
         self.assertEqual((value["csv_text"], value["count"]), ("Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment\nmulti,10.0.0.0/24,,,first\nmulti,10.0.1.0/24,,,second\n", 2))
+        self.assertEqual(value.get("objects"), 1)
 
     def test_applications_are_undone_by_the_rows_the_plan_created_even_when_two_share_a_name(self):
         text = "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\nDNS,app,,OFF\nTCP_PORT,there,22,OFF\n"
