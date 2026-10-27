@@ -249,5 +249,14 @@ class ServerTests(ServerCase):
             self.assertEqual(self.request("GET", path)[0].status, 404, path)
 
 
+class IconTests(ServerCase):
+    def test_the_page_names_an_icon_the_server_has_so_browsers_do_not_ask_for_a_missing_favicon(self):
+        page = self.request("GET", "/")[1]
+        self.assertIn('<link rel="icon" href="favicon.svg"', page)
+        response, body = self.request("GET", "/favicon.svg")
+        self.assertEqual((response.status, response.headers["Content-Type"]), (200, "image/svg+xml"))
+        self.assertTrue(body.startswith("<svg"))
+
+
 if __name__ == "__main__":
     unittest.main()
