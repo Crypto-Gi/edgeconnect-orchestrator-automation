@@ -421,8 +421,14 @@ function renderRevert() {
   $("run-revert").hidden = !revert.available && !revert.reason;
   $("run-revert-text").textContent = !revert.available ? revert.reason
     : !here ? "This upload went to " + revert.orchestrator + ". Switch to it to undo the upload."
-    : "Deletes the " + plural(revert.count, "row") + " of " + FLOWS[revert.kind].things + " this upload created, and nothing that existed before. You get the same preview and warnings as Remove by CSV, and nothing is deleted until you approve it.";
+    : "Deletes the " + FLOWS[revert.kind].things + " this upload created (" + undoCount() + "), and nothing that existed before. You get the same preview and warnings as Remove by CSV, and nothing is deleted until you approve it.";
   $("run-revert-start").hidden = !here;
+}
+
+// Objects, as the delete preview counts them, with the CSV rows when a group spans several; runs kept before objects was saved have only count.
+function undoCount() {
+  const objects = revert.objects || revert.count;
+  return objects === revert.count ? String(objects) : objects + ", from " + plural(revert.count, "CSV row");
 }
 
 function startRevert() {

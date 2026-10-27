@@ -69,6 +69,7 @@ class BrowserSmokeTests(ServerCase, FirewallCase):
 
         page.click("#flow-run-link")
         page.wait_for_selector("#run-revert-start:visible")
+        self.assertRegex(page.text_content("#run-revert-text"), r"^Deletes the rules this upload created \(\d+\), and nothing")
         self.assert_page_is_sound()
         page.click("#run-revert-start")
         page.wait_for_selector("#flow-understood:visible")
