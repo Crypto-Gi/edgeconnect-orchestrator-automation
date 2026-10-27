@@ -82,6 +82,14 @@ class EngineTests(unittest.TestCase):
                 self.assertEqual([issue["message"] for issue in issues if issue["message"].startswith("ValidationError")], [])
                 self.assertEqual({type(issue["row"]) for issue in issues} - {int, type(None)}, set())
 
+    def test_application_group_problems_carry_their_row(self):
+        # The CLI words these as "row N name: reason" with no rule ID; the row still belongs in the Row column.
+        examples = Path(__file__).resolve().parents[1] / "examples" / "edgeconnect"
+        shutil.copy(examples / "application_groups_mixed.csv", "groups.csv")
+        issues = engine.plan("app-groups", "plan.json", report_dir="", csv="groups.csv").issues
+        self.assertEqual([issue["row"] for issue in issues], [3, 5], issues)
+        self.assertTrue(all(not issue["message"].startswith("row ") for issue in issues), issues)
+
     def test_firewall_plan_lists_each_rule_with_field_level_diffs(self):
         result = engine.plan("firewall", "plan.json", report_dir="", csv="firewall_rules_small.csv", inventory="firewall_inventory.json")
         self.assertEqual((result.exit_code, result.status), (0, "PLANNED"))

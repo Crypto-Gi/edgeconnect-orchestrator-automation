@@ -4,7 +4,7 @@
 
 - GUI: the launch link works once. It gives the browser a separate session cookie, so a link read by another account on the computer is useless after you open it. Opening it again in the same browser just shows the GUI. To use another browser, restart the GUI.
 - GUI Undo: groups with several rules are undone whole (they were refused before), and uploads of applications and application groups can now be undone. Undo is not offered when an upload also changed something a delete cannot restore: a template group it created, its Access Lists template or merge mode, or AppExpress entries that already existed (including one already on monitor for a new application).
-- GUI: each problem in a CSV is listed once (some were listed twice), and a task whose command line is refused ends as failed instead of staying "running".
+- GUI: each problem in a CSV is listed once (some were listed twice), application-group problems show their row in the Row column, and a task whose command line is refused ends as failed instead of staying "running".
 - Every command reads the Orchestrator's serial number for the plan's identity. If that read fails for any reason, the command now goes on and compares the address only; before, any error other than 403 or 404 (such as 400, 401, a 5xx or a timeout) stopped the command.
 
 ## 1.3.0rc1 — 2026-10-26 (pre-release, `gui` branch)
