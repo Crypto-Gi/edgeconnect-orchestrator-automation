@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from .client import ApiClient
-from .errors import PermissionDeniedError, ResourceNotFoundError, ResponseFormatError, ValidationError
+from .errors import ApiError, ResponseFormatError, ValidationError
 from .util import normalize_acl_entries, semantic_equal
 
 
@@ -38,12 +38,13 @@ class OrchestratorGateway:
     def get_server_id(self) -> str:
         """The Orchestrator's serial number from /gmsserver/info, which stays the same when its address changes.
 
-        "" when this key cannot read it or it is a placeholder: cloud-hosted Orchestrators (9.6.4, 9.7.1, 10.0) all report
+        "" when it cannot be read for any reason (commands that worked before it was read must keep working; plans then
+        compare the address only) or it is a placeholder: cloud-hosted Orchestrators (9.6.4, 9.7.1, 10.0) all report
         00-00-00-00-00-00, which would make every one of them look like the same Orchestrator.
         """
         try:
             info = self._shape(self.client.get("/gmsserver/info"), dict, "Orchestrator server info")
-        except (PermissionDeniedError, ResourceNotFoundError, ResponseFormatError):
+        except (ApiError, ValidationError):
             return ""
         serial = str(info.get("serialNumber") or "")
         return serial if re.sub(r"[^0-9A-Za-z]", "", serial).strip("0") else ""

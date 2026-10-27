@@ -71,6 +71,17 @@ class EngineTests(unittest.TestCase):
         self.assertEqual((issue["rule"], issue["column"], issue["value"]), ("CMP-09", "vlan", "Data"))
         self.assertIn("interface label Data is unknown", issue["message"])
 
+    def test_each_problem_is_listed_once_with_its_row_as_a_number(self):
+        examples = Path(__file__).resolve().parents[1] / "examples" / "edgeconnect"
+        for kind, name in (("address-groups", "address_groups_mixed.csv"), ("service-groups", "service_groups_mixed.csv"), ("template-acls", "template_acls_mixed.csv")):
+            with self.subTest(kind):
+                shutil.copy(examples / name, name)
+                issues = engine.plan(kind, "plan.json", report_dir="", csv=name).issues
+                keys = [(issue["row"], issue["rule"], issue["column"]) for issue in issues]
+                self.assertEqual(len(keys), len(set(keys)), keys)
+                self.assertEqual([issue["message"] for issue in issues if issue["message"].startswith("ValidationError")], [])
+                self.assertEqual({type(issue["row"]) for issue in issues} - {int, type(None)}, set())
+
     def test_firewall_plan_lists_each_rule_with_field_level_diffs(self):
         result = engine.plan("firewall", "plan.json", report_dir="", csv="firewall_rules_small.csv", inventory="firewall_inventory.json")
         self.assertEqual((result.exit_code, result.status), (0, "PLANNED"))

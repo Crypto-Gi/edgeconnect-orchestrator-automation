@@ -147,7 +147,7 @@ class ServerCase(Offline):
         self.addCleanup(self.server.shutdown)
         self.port = self.server.server_address[1]
         self.host = "127.0.0.1:{}".format(self.port)
-        self.cookie = "edgeconnect_gui_{}={}".format(self.port, self.server.token)
+        self.cookie = "edgeconnect_gui_{}={}".format(self.port, self.server.session)
         self.bodies = []
 
     def request(self, method, path, body=None, host=None, cookie=True, origin=True, content_type="application/json"):
@@ -170,18 +170,30 @@ class ServerCase(Offline):
 
 
 class ServerTests(ServerCase):
-    def test_launch_link_sets_a_strict_http_only_cookie_and_drops_the_token(self):
+    def test_launch_link_works_once_and_sets_a_strict_http_only_cookie_that_is_not_the_token(self):
+        self.assertEqual(self.request("GET", "/?token=wrong", cookie=False)[0].status, 401)
         response, _ = self.request("GET", "/?token=" + self.server.token, cookie=False)
         self.assertEqual((response.status, response.headers["Location"]), (303, "/"))
-        self.assertEqual(response.headers["Set-Cookie"], "edgeconnect_gui_{}={}; HttpOnly; SameSite=Strict; Path=/".format(self.port, self.server.token))
-        self.assertEqual(self.request("GET", "/?token=wrong", cookie=False)[0].status, 401)
-        response, text = self.request("GET", "/")
+        name, _, rest = response.headers["Set-Cookie"].partition("=")
+        session, _, flags = rest.partition(";")
+        self.assertEqual((name, flags.strip()), ("edgeconnect_gui_{}".format(self.port), "HttpOnly; SameSite=Strict; Path=/"))
+        self.assertNotEqual(session, self.server.token)
+        response, text = self.request("GET", "/", cookie="{}={}".format(name, session))
         self.assertEqual((response.status, response.headers["Content-Security-Policy"].split(";")[0]), (200, "default-src 'self'"))
         self.assertIn("<title>EdgeConnect Automation</title>", text)
+        # Another account may have read the link from the browser's command line: it must not get in after the person did.
+        response, text = self.request("GET", "/?token=" + self.server.token, cookie=False)
+        self.assertEqual(response.status, 401)
+        self.assertIn("already used", text)
+        # The same browser opening the link again (the printed link clicked after the automatic open) just gets in.
+        response, _ = self.request("GET", "/?token=" + self.server.token, cookie="{}={}".format(name, session))
+        self.assertEqual((response.status, response.headers["Location"]), (303, "/"))
+        self.assertNotIn("Set-Cookie", response.headers)
+        self.assertEqual(self.request("GET", "/api/tasks", cookie="{}={}".format(name, self.server.token))[0].status, 401)
 
     def test_missing_or_wrong_cookie_is_refused_everywhere(self):
         for path in ("/", "/app.js", "/api/tasks", "/api/orchestrators", "/api/tasks/task-1/events", "/api/tasks/task-1/inventory", "/api/runs", "/api/runs.csv", "/api/runs/run-1", "/api/runs/run-1/rows.csv", "/api/runs/run-1/revert"):
-            for cookie in (False, "edgeconnect_gui_{}=guess".format(self.port), "edgeconnect_gui_1=" + self.server.token):
+            for cookie in (False, "edgeconnect_gui_{}=guess".format(self.port), "edgeconnect_gui_1=" + self.server.session):
                 self.assertEqual(self.request("GET", path, cookie=cookie)[0].status, 401, path)
         self.assertEqual(self.request("POST", "/api/tasks", {"action": "discover"}, cookie=False)[0].status, 401)
 
