@@ -37,8 +37,8 @@ def build(kind: str, orchestrator: str, csv_text: str, rows: Iterable[Mapping[st
         value["reason"] = "This upload replaced or removed entries that already existed. Deleting what it added would not bring those back, so it cannot be undone here."
     elif _changed_settings(kind, plan):
         value["reason"] = _changed_settings(kind, plan)
-    elif kind in _FROM_PLAN and not created and status.upper() != "SUCCESS":
-        # The run summary cannot say which of these were written, so only a complete upload is undone from its plan.
+    elif kind in _FROM_PLAN and status.upper() != "SUCCESS":
+        # Their results do not list each object written, so only a complete upload is undone from its plan.
         value["reason"] = "This upload did not complete, so what it created is not known exactly. Use Remove by CSV with the rows you want deleted."
     else:
         numbers: Dict[Any, Any] = {row["row"]: _PRIORITY.search(str(row.get("item"))) for row in created if isinstance(row.get("row"), int)}

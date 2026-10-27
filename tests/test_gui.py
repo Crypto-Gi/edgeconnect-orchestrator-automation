@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from edgeconnect_automation import fleet, gui_server
+from edgeconnect_automation import fleet, gui_server, gui_tasks
 from edgeconnect_automation.gui_tasks import TaskError, TaskManager
 from tests.test_engine import NEW_GROUP, WritableGateway
 from tests.test_fleet import Client as FleetClient
@@ -106,6 +106,23 @@ class TaskTests(Offline):
         tasks.cancel(second.id)
         self.assertEqual((self.wait(second, "cancelled").state, WritableGateway.groups), ("cancelled", []))
 
+    def test_a_plan_cancelled_while_running_ends_cancelled_and_cannot_be_applied(self):
+        tasks = self.manager()
+        release = threading.Event()
+        real = gui_tasks.engine.plan
+
+        def slow_plan(*args, **kwargs):
+            release.wait(5)
+            return real(*args, **kwargs)
+
+        with patch.object(gui_tasks.engine, "plan", slow_plan):
+            plan = self.wait(tasks.create({"action": "plan", "orchestrator": "lab", "kind": "address-groups", "csv_text": GROUP_CSV}), "running")
+            tasks.cancel(plan.id)
+            release.set()
+            self.assertEqual(self.wait(plan, "cancelled", "planned").state, "cancelled")
+        with self.assertRaisesRegex(TaskError, "plan_task must be a finished"):
+            self.apply(tasks, plan)
+
     def test_reads_run_while_a_change_waits(self):
         tasks = self.manager()
         self.wait(self.apply(tasks, self.planned(tasks)), "awaiting_approval")
@@ -129,6 +146,20 @@ class TaskTests(Offline):
         tasks = self.manager()
         with self.assertRaisesRegex(TaskError, "finished zones plan on the same Orchestrator"):
             tasks.create({"action": "apply", "orchestrator": "lab", "kind": "zones", "plan_task": self.planned(tasks).id})
+
+
+class CleanupTests(Offline):
+    def test_stopping_the_gui_deletes_its_own_temporary_folder_with_the_uploaded_csvs(self):
+        with patch("tempfile.tempdir", str(self.root)):
+            server = gui_server.GuiServer(0, environ=environment())
+        task = self.wait(server.tasks.create({"action": "plan", "orchestrator": "lab", "kind": "address-groups", "csv_text": GROUP_CSV}), "planned", "failed")
+        self.assertTrue((task.folder / "input.csv").is_file())
+        server.server_close()
+        self.assertFalse(server.tasks.folder.exists())
+        # A folder the caller gave is the caller's to keep.
+        given = Path(tempfile.mkdtemp(dir=str(self.root)))
+        gui_server.GuiServer(0, TaskManager(folder=str(given), environ=environment()), environ=environment()).server_close()
+        self.assertTrue(given.is_dir())
 
 
 class ServerCase(Offline):

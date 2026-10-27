@@ -311,6 +311,26 @@ class SummaryTests(unittest.TestCase):
         group = {"template_group": "g", "eligible": True, "associations": ["0.NE"], "deletions": [], "absent": [{"acl": "a"}], "appliance_only_deletions": [{"target": "0.NE", "acl": "a"}], "additions": [], "overwrites": [], "no_ops": []}
         self.assertTrue(any("1 to delete" in line for line in build_summary(_recorder({"kind": "template-acls-delete", "groups": [group]}), SimpleNamespace(command="template-acls", template_acl_command="delete", dry_run=True, csv=None), 0)["counts"]))
 
+    def test_real_application_uploads_say_created_not_would_create(self):
+        # Their apply results carry only a status and the skipped rows, which the summary used to miss.
+        groups = {"kind": "app-groups", "baseline": {}, "candidate": {"g": {}}, "no_ops": [], "skipped_conflicts": []}
+        definitions = {"kind": "app-definitions", "new": [{"row": 2, "name": "a"}], "no_ops": [], "skipped_conflicts": []}
+        for command, plan, result in (("app_group_command", groups, {"status": "success", "skipped_conflicts": []}),
+                                      ("app_definition_command", definitions, {"status": "success", "application_definitions": {"status": "success"}, "appexpress": {"status": "no_op"}, "skipped_conflicts": []})):
+            with self.subTest(plan["kind"]):
+                recorder = RunRecorder([])
+                recorder.capture(plan)
+                recorder.capture(result)
+                args = SimpleNamespace(command=plan["kind"], dry_run=False, csv=None, **{command: "apply"})
+                self.assertEqual(build_summary(recorder, args, 0)["row_outcomes"], {"CREATED": 1})
+
+    def test_group_plans_count_groups_and_name_the_rows_when_a_group_has_several(self):
+        multi = {"kind": "address-groups", "new_rows": [{"Name": "m", "_row": 2}, {"Name": "m", "_row": 3}, {"Name": "one", "_row": 4}], "no_ops": []}
+        single = {"kind": "address-groups", "new_rows": [{"Name": "one", "_row": 2}], "no_ops": []}
+        args = SimpleNamespace(command="address-groups", address_group_command="plan", dry_run=True, csv=None)
+        self.assertIn("to create: 2 (3 rows)", build_summary(_recorder(multi), args, 0)["counts"])
+        self.assertIn("to create: 1", build_summary(_recorder(single), args, 0)["counts"])
+
     def test_template_acl_rows_follow_group_state(self):
         recorder = RunRecorder(["template-acls", "deploy"])
         recorder.capture({"preview": {"kind": "template-acls", "plan": {"groups": [{"template_group": "g1", "eligible": False, "errors": ["row 3 [DEP-03] missing application x"], "additions": [{"row": 2, "acl": "a", "priority": "1000"}, {"row": 3, "acl": "a", "priority": "1010"}], "overwrites": [], "no_ops": []}]}}, "status": "BLOCKED"})
