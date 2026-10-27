@@ -57,6 +57,10 @@ class GuiServer(ThreadingHTTPServer):
         self.url = "http://127.0.0.1:{}/?token={}".format(port, self.token)
         self.cookie = "edgeconnect_gui_{}".format(port)  # cookies ignore the port, so two GUIs on one computer need different names
 
+    def server_close(self) -> None:
+        super().server_close()
+        self.tasks.close()
+
 
 class Handler(BaseHTTPRequestHandler):
     server: GuiServer

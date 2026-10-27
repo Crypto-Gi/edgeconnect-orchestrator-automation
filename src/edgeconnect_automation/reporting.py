@@ -231,7 +231,8 @@ def _result_of(recorder: RunRecorder) -> Mapping[str, Any]:
     for value in reversed(recorder.payloads):
         if isinstance(value, Mapping) and isinstance(value.get("result"), Mapping):
             return value["result"]
-        if isinstance(value, Mapping) and "status" in value and ("pairs" in value or "groups" in value or "created" in value or "deleted" in value):
+        # Application and application-group apply results carry only a status and their skipped rows; plans have no status.
+        if isinstance(value, Mapping) and "status" in value and ("pairs" in value or "groups" in value or "created" in value or "deleted" in value or "skipped_conflicts" in value):
             return value
     return {}
 
@@ -256,7 +257,11 @@ def _counts(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[str]:
         lines.append("to create: {}".format(len(set(plan["candidate"]) - set(plan["baseline"]))))
     for key, label in (("new_rows", "to create"), ("new", "to create"), ("delete", "to delete"), ("no_ops", "already present"), ("absent", "already absent"), ("conflicts", "conflicts"), ("skipped_conflicts", "skipped")):
         value = plan.get(key)
-        if isinstance(value, list) and (value or key in {"new_rows", "new", "delete"}):
+        if isinstance(value, list) and key == "new_rows":
+            # A group with several rules has a row for each; count groups, as the result does, and name the rows too.
+            groups = len({str(row.get("Name")) for row in value if isinstance(row, Mapping)})
+            lines.append("{}: {}".format(label, groups) + (" ({} rows)".format(len(value)) if groups != len(value) else ""))
+        elif isinstance(value, list) and (value or key in {"new_rows", "new", "delete"}):
             lines.append("{}: {}".format(label, len(value)))
     appexpress = plan.get("appexpress")
     if isinstance(appexpress, Mapping) and isinstance(appexpress.get("baseline"), Mapping) and isinstance(appexpress.get("candidate"), Mapping):

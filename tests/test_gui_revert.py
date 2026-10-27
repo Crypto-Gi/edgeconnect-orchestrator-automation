@@ -29,7 +29,7 @@ class BuildTests(unittest.TestCase):
         value = gui_revert.build("service-groups", "lab", text, [row("", "web", "CREATED"), row("", "old", "ALREADY PRESENT")])
         self.assertEqual((value["csv_text"], value["count"]), ("Name,Protocol,IncludedPorts\nweb,TCP,80\nweb,TCP,443\n", 2))
         groups = "Name,Applications,ParentGroups\nfresh,zoom,\n"
-        self.assertEqual(gui_revert.build("app-groups", "lab", groups, [row("", "fresh", "CREATED")])["count"], 1)
+        self.assertEqual(gui_revert.build("app-groups", "lab", groups, [row("", "fresh", "CREATED")], status="SUCCESS")["count"], 1)
 
     def test_uploads_that_cannot_be_undone_say_why(self):
         for kind, rows, reason in [
@@ -46,8 +46,8 @@ class BuildTests(unittest.TestCase):
 class BuildFromRealOutcomesTests(unittest.TestCase):
     """Rows as reporting.row_outcomes really writes them after an apply, not hand-made ones.
 
-    The run summary reads an applications or application-groups apply's result as empty (its result has no created
-    list), so those rows say WOULD CREATE even after a real write; the tests pass {} for them, as the summary does.
+    Reports from before 1.3.0 read an applications or application-groups apply's result as empty, so their rows say
+    WOULD CREATE even after a real write; the tests that pass {} for them cover those older reports.
     """
 
     def build(self, kind, text, plan, result, status="SUCCESS"):
@@ -69,14 +69,19 @@ class BuildFromRealOutcomesTests(unittest.TestCase):
     def test_application_groups_are_undone_by_the_groups_the_plan_added(self):
         text = "Name,Applications,ParentGroups\nfresh,zoom,\nexisting,teams,\n"
         plan = {"kind": "app-groups", "baseline": {"existing": {"apps": ["teams"]}}, "candidate": {"existing": {"apps": ["teams"]}, "fresh": {"apps": ["zoom"]}}}
-        value = self.build("app-groups", text, plan, {})
-        self.assertEqual((value["csv_text"], value["count"]), ("Name,Applications,ParentGroups\nfresh,zoom,\n", 1))
+        for result in ({}, {"status": "success", "skipped_conflicts": []}):
+            with self.subTest(result):
+                value = self.build("app-groups", text, plan, result)
+                self.assertEqual((value["csv_text"], value["count"]), ("Name,Applications,ParentGroups\nfresh,zoom,\n", 1))
 
     def test_an_upload_that_did_not_fully_succeed_is_not_undone_from_the_plan(self):
         plan = {"kind": "app-groups", "baseline": {}, "candidate": {"fresh": {"apps": ["zoom"]}}}
-        value = self.build("app-groups", "Name,Applications,ParentGroups\nfresh,zoom,\n", plan, {}, "PARTIAL")
-        self.assertEqual(value["count"], 0)
-        self.assertIn("Remove by CSV", value["reason"])
+        # Old reports give {}; from 1.3.0 the summary reads the partial result, and its rows then say CREATED.
+        for result in ({}, {"status": "partial", "skipped_conflicts": []}):
+            with self.subTest(result):
+                value = self.build("app-groups", "Name,Applications,ParentGroups\nfresh,zoom,\n", plan, result, "PARTIAL")
+                self.assertEqual(value["count"], 0)
+                self.assertIn("Remove by CSV", value["reason"])
 
     def test_uploads_that_changed_more_than_they_created_cannot_be_undone(self):
         acl = {"template_group": "g", "create": False, "selection_change": False, "template_mode_change": False, "additions": [], "overwrites": [], "no_ops": []}
@@ -152,7 +157,7 @@ class UndoTests(FirewallCase):
         plan = self.wait(tasks.create({"action": "plan", "orchestrator": "lab", "kind": "app-groups", "csv_text": text}), "planned", "failed")
         self.assertEqual(plan.state, "planned", plan.message)
         upload = SimpleNamespace(kind="app-groups", orchestrator="lab", source_csv=plan.folder / "input.csv", source_plan=plan.folder / "plan.json")
-        rows = [row(None, name, "WOULD CREATE") for name in ("fresh-one", "fresh-two")]  # what the run summary says after a real write
+        rows = [row(None, name, "WOULD CREATE") for name in ("fresh-one", "fresh-two")]  # what a pre-1.3.0 run summary says after a real write
         result = engine.Result(0, "SUCCESS", "yes", [], [], [], rows, [], None, summary={"run_id": "run-appgroups"})
         self.assertEqual(tasks._keep_revert(upload, result), "")
         kept = tasks.revert("run-appgroups")

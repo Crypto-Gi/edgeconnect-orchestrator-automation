@@ -602,7 +602,7 @@ function flowStep(flow) {
   }
   if (plan) {
     if (plan.state === "planned") return [3, false];
-    return [2, plan.state === "failed"];
+    return [2, plan.state === "failed" || plan.state === "cancelled"];
   }
   if (!flow.csv) return [0, false];
   return [1, Boolean(validate && validate.state === "failed")];
@@ -707,7 +707,7 @@ function renderFlow() {
     $("flow-fix-text").textContent = !finished ? "Checking every row…"
       : !flow.remove && !info.validate && step === 1 ? flow.file + " is checked while planning. Plan it on " + where + ": that reads the Orchestrator and changes nothing."
       : result && result.issues ? plural(result.issues, "problem") + " to fix in the CSV. Correct them, then load it again." + (step > 1 || flow.remove ? " Nothing was written." : "")
-      : task.state === "failed" ? task.message
+      : task.state === "failed" || task.state === "cancelled" ? task.message
       : flow.remove ? "None of the " + info.things + " in " + flow.file + " exist on " + where + ", so there is nothing to delete."
       : "Every row is valid. Next, plan it against " + where + ": that reads the Orchestrator and changes nothing.";
     notes($("flow-fix-warnings"), result ? result.warnings : []);

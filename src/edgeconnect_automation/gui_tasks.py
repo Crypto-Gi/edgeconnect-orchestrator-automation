@@ -6,7 +6,8 @@ start to finish, so a second change on that Orchestrator waits as queued:
   queued -> running (preview) -> awaiting_approval -> applying -> done | failed
                     \\-> failed      \\-> rejected (wrong answer) | expired (no answer in time) | cancelled
 
-A plan ends planned (or failed); discover and validate end done (or failed). Only tasks not yet applying can be cancelled.
+A plan ends planned (or failed); discover and validate end done (or failed); any of them ends cancelled if cancelled while it ran.
+Only tasks not yet applying can be cancelled.
 
 An apply that wrote keeps, next to its run in the run log, the delete CSV of exactly what it created (gui_revert);
 a delete task given `revert: <run_id>` deletes that, through the same preview and gates as any delete.
@@ -14,6 +15,7 @@ a delete task given `revert: <run_id>` deletes that, through the same preview an
 import dataclasses
 import itertools
 import json
+import shutil
 import tempfile
 import threading
 import time
@@ -104,6 +106,7 @@ class Task:
 class TaskManager:
     def __init__(self, folder: Optional[str] = None, report_dir: Optional[str] = None, environ: Optional[Mapping[str, str]] = None, approval_seconds: float = APPROVAL_SECONDS) -> None:
         self.folder = Path(folder or tempfile.mkdtemp(prefix="edgeconnect-gui-"))
+        self._own_folder = folder is None  # only a folder made here is deleted by close()
         self.report_dir = report_dir
         self.run_folder = _report_dir(SimpleNamespace(report_dir=report_dir))  # the run log, where Revert's CSVs are kept
         self.environ = environ
@@ -177,6 +180,11 @@ class TaskManager:
             task.answers, task.typed_orchestrator, task.understood = answers, orchestrator, understood is True
             task.changed.notify_all()
         return task
+
+    def close(self) -> None:
+        """Delete the temporary folder of uploaded CSVs and plans when the GUI stops; the run log is kept."""
+        if self._own_folder:
+            shutil.rmtree(self.folder, ignore_errors=True)
 
     def cancel(self, task_id: str) -> Task:
         task = self.get(task_id)
@@ -328,7 +336,10 @@ class TaskManager:
 
     def _finish(self, task: Task, call: Callable[[], engine.Result], success: str) -> None:
         result = self._call(task, call)
-        if result is not None:
+        if result is not None and task.cancelled:
+            # A read cannot be stopped midway; one cancelled while it ran is not offered as finished (so a plan cannot be applied).
+            task.set("cancelled", "cancelled; nothing was written", result)
+        elif result is not None:
             task.set(success if result.exit_code == 0 else "failed", _first_issue(result) or result.status, result)
 
     @staticmethod
