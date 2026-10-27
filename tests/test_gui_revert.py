@@ -1,8 +1,9 @@
 import json
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from edgeconnect_automation import gui_revert
+from edgeconnect_automation import engine, gui_revert, reporting
 from edgeconnect_automation.gui_tasks import TaskError
 from tests.test_engine import NEW_GROUP
 from tests.test_gui import GROUP_CSV, ServerCase
@@ -40,6 +41,57 @@ class BuildTests(unittest.TestCase):
                 value = gui_revert.build(kind, "lab", FIREWALL, rows)
                 self.assertEqual((value["csv_text"], value["count"]), ("", 0))
                 self.assertIn(reason, value["reason"])
+
+
+class BuildFromRealOutcomesTests(unittest.TestCase):
+    """Rows as reporting.row_outcomes really writes them after an apply, not hand-made ones.
+
+    The run summary reads an applications or application-groups apply's result as empty (its result has no created
+    list), so those rows say WOULD CREATE even after a real write; the tests pass {} for them, as the summary does.
+    """
+
+    def build(self, kind, text, plan, result, status="SUCCESS"):
+        return gui_revert.build(kind, "lab", text, reporting.row_outcomes(plan, result), plan, status)
+
+    def test_a_group_with_several_rules_keeps_every_row_of_that_group(self):
+        text = "Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment\nmulti,10.0.0.0/24,,,first\nold,10.9.0.0/24,,,\nmulti,10.0.1.0/24,,,second\n"
+        plan = {"kind": "address-groups", "new_rows": [{"Name": "multi", "_row": 2}, {"Name": "multi", "_row": 4}], "no_ops": ["old"]}
+        value = self.build("address-groups", text, plan, {"status": "success", "created": ["multi"]})
+        self.assertEqual((value["csv_text"], value["count"]), ("Name,IncludedIPs,ExcludedIPs,IncludedGroups,Comment\nmulti,10.0.0.0/24,,,first\nmulti,10.0.1.0/24,,,second\n", 2))
+
+    def test_applications_are_undone_by_the_rows_the_plan_created_even_when_two_share_a_name(self):
+        text = "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\nDNS,app,,OFF\nTCP_PORT,there,22,OFF\n"
+        plan = {"kind": "app-definitions", "new": [{"row": 2, "name": "app"}, {"row": 3, "name": "app"}], "no_ops": ["there"],
+                "appexpress": {"baseline": {}, "candidate": {}, "monitor": [], "off": [], "no_ops": [], "changed": False}}
+        value = self.build("app-definitions", text, plan, {})
+        self.assertEqual((value["csv_text"], value["count"], value["reason"]), ("DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\nDNS,app,,OFF\n", 2, ""))
+
+    def test_application_groups_are_undone_by_the_groups_the_plan_added(self):
+        text = "Name,Applications,ParentGroups\nfresh,zoom,\nexisting,teams,\n"
+        plan = {"kind": "app-groups", "baseline": {"existing": {"apps": ["teams"]}}, "candidate": {"existing": {"apps": ["teams"]}, "fresh": {"apps": ["zoom"]}}}
+        value = self.build("app-groups", text, plan, {})
+        self.assertEqual((value["csv_text"], value["count"]), ("Name,Applications,ParentGroups\nfresh,zoom,\n", 1))
+
+    def test_an_upload_that_did_not_fully_succeed_is_not_undone_from_the_plan(self):
+        plan = {"kind": "app-groups", "baseline": {}, "candidate": {"fresh": {"apps": ["zoom"]}}}
+        value = self.build("app-groups", "Name,Applications,ParentGroups\nfresh,zoom,\n", plan, {}, "PARTIAL")
+        self.assertEqual(value["count"], 0)
+        self.assertIn("Remove by CSV", value["reason"])
+
+    def test_uploads_that_changed_more_than_they_created_cannot_be_undone(self):
+        acl = {"template_group": "g", "create": False, "selection_change": False, "template_mode_change": False, "additions": [], "overwrites": [], "no_ops": []}
+        for change in ("create", "selection_change", "template_mode_change"):
+            with self.subTest(change):
+                value = self.build("template-acls", "TemplateGroup,ACLName,Priority\ng,a,10\n", {"kind": "template-acls", "groups": [dict(acl, **{change: True})]}, {})
+                self.assertEqual(value["count"], 0)
+                self.assertIn("cannot be undone", value["reason"])
+        express = {"baseline": {"old": {"name": "Old"}}, "candidate": {}, "monitor": [], "off": [], "no_ops": [], "changed": True}
+        for change in ({"off": ["Old"]}, {"monitor": ["Old"]}):
+            with self.subTest(change):
+                plan = {"kind": "app-definitions", "new": [{"row": 2, "name": "app"}], "appexpress": dict(express, **change)}
+                value = self.build("app-definitions", "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\n", plan, {})
+                self.assertEqual(value["count"], 0)
+                self.assertIn("AppExpress", value["reason"])
 
 
 class UndoTests(FirewallCase):
@@ -88,6 +140,20 @@ class UndoTests(FirewallCase):
         with self.assertRaisesRegex(TaskError, "Zones cannot be deleted"):
             tasks.create({"action": "delete", "orchestrator": "lab", "kind": "zones", "revert": "run-zones"})
         self.assertEqual(FirewallGateway.groups, [NEW_GROUP])
+
+    def test_an_application_group_upload_is_kept_from_its_plan_even_though_its_rows_say_would_create(self):
+        tasks = self.manager(report_dir=str(self.root / "reports"))
+        text = Path("application_groups_valid.csv").read_text(encoding="utf-8")
+        plan = self.wait(tasks.create({"action": "plan", "orchestrator": "lab", "kind": "app-groups", "csv_text": text}), "planned", "failed")
+        self.assertEqual(plan.state, "planned", plan.message)
+        upload = SimpleNamespace(kind="app-groups", orchestrator="lab", source_csv=plan.folder / "input.csv", source_plan=plan.folder / "plan.json")
+        rows = [row(None, name, "WOULD CREATE") for name in ("fresh-one", "fresh-two")]  # what the run summary says after a real write
+        result = engine.Result(0, "SUCCESS", "yes", [], [], [], rows, [], None, summary={"run_id": "run-appgroups"})
+        self.assertEqual(tasks._keep_revert(upload, result), "")
+        kept = tasks.revert("run-appgroups")
+        added = set(json.loads((plan.folder / "plan.json").read_text())["candidate"]) - set(json.loads((plan.folder / "plan.json").read_text())["baseline"])
+        self.assertEqual((kept["count"], kept["reason"]), (len(added), ""))
+        self.assertTrue(added)
 
     def test_nothing_is_kept_without_a_run_log(self):
         tasks = self.manager(report_dir="")

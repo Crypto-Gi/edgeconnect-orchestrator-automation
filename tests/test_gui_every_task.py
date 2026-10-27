@@ -3,6 +3,7 @@ from pathlib import Path
 
 from edgeconnect_automation.approval import DELETE_ACKNOWLEDGMENT
 from edgeconnect_automation.cli import main
+from edgeconnect_automation.gui_tasks import TaskError
 from tests.test_engine import WritableGateway
 from tests.test_gui import Offline
 
@@ -69,6 +70,14 @@ class EveryTaskTests(Offline):
         tasks.approve(task.id, ["APPLY"], "lab")
         self.assertEqual(self.wait(task, "done", "failed").state, "done")
 
+
+    def test_a_command_line_the_cli_refuses_ends_the_task_instead_of_leaving_it_running(self):
+        tasks = self.manager()
+        task = self.wait(tasks.create({"action": "plan", "orchestrator": "lab", "kind": "zones", "names": ["-x"]}), "planned", "failed")
+        self.assertEqual(task.state, "failed")
+        self.assertIn("rejected", task.message)
+        with self.assertRaisesRegex(TaskError, "Zones cannot be deleted"):
+            tasks.create({"action": "delete", "orchestrator": "lab", "kind": "zones", "csv_text": "Name\nx\n"})
 
 if __name__ == "__main__":
     import unittest

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased (`gui` branch)
+
+- GUI: the launch link works once. It gives the browser a separate session cookie, so a link read by another account on the computer is useless after you open it. To use another browser, restart the GUI.
+- GUI Undo: groups with several rules are undone whole (they were refused before), and uploads of applications and application groups can now be undone. Undo is not offered when an upload also changed something a delete cannot restore: a template group it created, its Access Lists template or merge mode, or AppExpress entries that already existed.
+- GUI: each problem in a CSV is listed once (some were listed twice), and a task whose command line is refused ends as failed instead of staying "running".
+- Every command reads the Orchestrator's serial number for the plan's identity. If that read fails for any reason, the command now goes on and compares the address only; before, an error other than 403 or 404 stopped the command.
+
 ## 1.3.0rc1 — 2026-10-26 (pre-release, `gui` branch)
 
 - `edgeconnect-auto gui` starts a local web GUI for bulk CSV uploads, on 127.0.0.1 only. It runs the same commands as the CLI, so the checks and results are the same; nothing in the existing commands changed. A CSV with problems is listed row by row with the fix for each. A write needs the same typed confirmations as the terminal plus the Orchestrator nickname, and is off for an Orchestrator until `.env` has `<nickname>_gui_writes=on`. The GUI shows every Orchestrator's status, the run log, the inventory, a guided upload for each object type, Remove by CSV, and "Undo this upload" for uploads made in the GUI. It runs on macOS, Linux and Windows through WSL.

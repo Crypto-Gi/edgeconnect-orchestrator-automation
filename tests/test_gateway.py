@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from edgeconnect_automation.errors import ValidationError
+from edgeconnect_automation.errors import AuthenticationError, PermissionDeniedError, ServerError, TransportError, ValidationError
 from edgeconnect_automation.gateway import OrchestratorGateway
 
 
@@ -48,6 +48,14 @@ class FakeClient:
 
 
 class GatewayContractTests(unittest.TestCase):
+    def test_an_unreadable_serial_number_never_stops_a_command(self):
+        # The serial is extra identity for plans; commands that worked before it was read must keep working.
+        for error in (PermissionDeniedError("no", 403), AuthenticationError("no", 401), ServerError("busy", 500), TransportError("timed out")):
+            with self.subTest(type(error).__name__):
+                client = FakeClient()
+                client.get = lambda path, query=None, expected_status=(200,), error=error: (_ for _ in ()).throw(error)
+                self.assertEqual(OrchestratorGateway(client).get_server_id(), "")
+
     def test_policy_compile_alarms_filter_by_source_priority_and_target(self):
         client = FakeClient()
         client.config.alarm_wait = 0

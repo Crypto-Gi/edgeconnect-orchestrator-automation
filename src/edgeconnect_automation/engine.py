@@ -158,7 +158,7 @@ def summarize(path: str, last: int = 1) -> List[Dict[str, Any]]:
     return summaries_from_file(path, last)
 
 
-_ISSUE = re.compile(r"^row (?P<row>\d+) \[(?P<rule>[A-Z]+-\d+)\] (?:(?P<column>[\w ]+?)(?:=(?P<value>'.*?'|\".*?\"))?: )?(?P<message>.*?)(?:; fix: (?P<fix>.*?))?(?: \(blocks (?P<blocks>.*)\))?$")
+_ISSUE = re.compile(r"^(?:\w+Error: )?(?:row (?P<row>\d+) )?\[(?P<rule>[A-Z]+-\d+)\] (?:(?P<column>[\w ]+?)(?:=(?P<value>'.*?'|\".*?\"))?: )?(?P<message>.*?)(?:; fix: (?P<fix>.*?))?(?: \(blocks (?P<blocks>.*)\))?$")
 
 
 def _issues(error: Any, outputs: Sequence[Any], summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -166,7 +166,8 @@ def _issues(error: Any, outputs: Sequence[Any], summary: Mapping[str, Any]) -> L
     found: Dict[str, Dict[str, Any]] = {}
 
     def add(item: Mapping[str, Any]) -> None:
-        issue = {"row": item.get("row"), "column": item.get("field") or item.get("column") or "", "rule": item.get("rule"), "value": item.get("value", ""), "message": item.get("message", ""), "fix": item.get("fix", ""), "blocks": item.get("blocks", "")}
+        row = item.get("row")
+        issue = {"row": int(row) if isinstance(row, str) and row.isdigit() else row, "column": item.get("field") or item.get("column") or "", "rule": item.get("rule"), "value": item.get("value", ""), "message": item.get("message", ""), "fix": item.get("fix", ""), "blocks": item.get("blocks", "")}
         found.setdefault(fingerprint(issue), issue)
 
     for item in getattr(error, "issues", None) or []:
@@ -182,9 +183,10 @@ def _issues(error: Any, outputs: Sequence[Any], summary: Mapping[str, Any]) -> L
             match = _ISSUE.match(line.strip())
             if match:
                 parsed = match.groupdict()
-                if (int(parsed["row"]), parsed["rule"]) in structured:
+                row = int(parsed["row"]) if parsed["row"] else None
+                if (row, parsed["rule"]) in structured:
                     continue
-                add({"row": int(parsed["row"]), "rule": parsed["rule"], "field": parsed["column"] or "", "value": (parsed["value"] or "")[1:-1], "message": parsed["message"], "fix": parsed["fix"] or "", "blocks": parsed["blocks"] or ""})
+                add({"row": row, "rule": parsed["rule"], "field": parsed["column"] or "", "value": (parsed["value"] or "")[1:-1], "message": parsed["message"], "fix": parsed["fix"] or "", "blocks": parsed["blocks"] or ""})
             elif line.strip():
                 add({"message": line.strip()})
     return list(found.values())

@@ -1,7 +1,8 @@
 """The local GUI server: standard-library HTTP on 127.0.0.1 only, for one person at this computer.
 
-Who may call it: whoever opened the launch URL printed in the terminal. Its token becomes an HttpOnly, SameSite=Strict
-cookie that every page, API call and progress stream needs. Requests naming any other Host (DNS rebinding) and
+Who may call it: whoever opened the launch URL printed in the terminal. The link works once (other accounts on the
+computer can read it from the browser's command line) and gives an HttpOnly, SameSite=Strict session cookie, a different
+secret, that every page, API call and progress stream needs. Requests naming any other Host (DNS rebinding) and
 state-changing requests from any other Origin are refused, and no CORS headers are ever sent. API keys stay in this
 process: no response carries them.
 """
@@ -13,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,6 +46,9 @@ class GuiServer(ThreadingHTTPServer):
     def __init__(self, port: int = 0, tasks: Optional[TaskManager] = None, environ: Optional[Mapping[str, str]] = None) -> None:
         super().__init__(("127.0.0.1", port), Handler)
         self.token = secrets.token_urlsafe(32)
+        self.session = secrets.token_urlsafe(32)
+        self.token_used = False
+        self.login_lock = threading.Lock()
         self.environ = environ
         self.tasks = tasks or TaskManager(environ=environ)
         self.runlog = gui_tables.RunLog(report_dir(SimpleNamespace(report_dir=self.tasks.report_dir)))  # where the GUI's own runs are logged
@@ -95,16 +100,20 @@ class Handler(BaseHTTPRequestHandler):
     def _require_cookie(self) -> None:
         for item in self.headers.get("Cookie", "").split(";"):
             name, _, value = item.strip().partition("=")
-            if name == self.server.cookie and hmac.compare_digest(value.encode(), self.server.token.encode()):
+            if name == self.server.cookie and hmac.compare_digest(value.encode(), self.server.session.encode()):
                 return
         raise TaskError("open the GUI with the link printed in the terminal", 401)
 
     def _login(self, token: str) -> None:
         if not hmac.compare_digest(token.encode(), self.server.token.encode()):
             raise TaskError("this link is not valid for this GUI; use the link printed in the terminal", 401)
+        with self.server.login_lock:
+            used, self.server.token_used = self.server.token_used, True
+        if used:
+            raise TaskError("this link was already used, and it works only once; to open the GUI in another browser, stop it with Ctrl+C and start it again", 401)
         self.send_response(303)
         self._security_headers()
-        self.send_header("Set-Cookie", "{}={}; HttpOnly; SameSite=Strict; Path=/".format(self.server.cookie, self.server.token))
+        self.send_header("Set-Cookie", "{}={}; HttpOnly; SameSite=Strict; Path=/".format(self.server.cookie, self.server.session))
         self.send_header("Location", "/")  # drops the token from the address bar
         self.send_header("Content-Length", "0")
         self.end_headers()
@@ -266,7 +275,7 @@ def open_browser(url: str) -> None:
 
 def serve(port: int = 0, browser: bool = True) -> int:
     server = GuiServer(port)
-    print("edgeconnect-auto GUI. Open this link in your browser (it is your sign-in; do not share it):\n\n  {}\n\nPress Ctrl+C to stop.".format(server.url), flush=True)
+    print("edgeconnect-auto GUI. Open this link in your browser (it is your sign-in, works once, and must not be shared):\n\n  {}\n\nPress Ctrl+C to stop.".format(server.url), flush=True)
     if browser:
         open_browser(server.url)
     try:

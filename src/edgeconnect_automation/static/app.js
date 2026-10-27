@@ -136,7 +136,7 @@ function requestSwitch(name) {
   const open = openTasks(state.current).length;
   if (!csvs && !open) return switchTo(name);
   const parts = [];
-  if (csvs) parts.push(csvs + " CSV" + (csvs > 1 ? "s" : "") + " with your edits");
+  if (csvs) parts.push(csvs === 1 ? "the loaded CSV" : csvs + " loaded CSVs");
   if (open) parts.push(open + " open task" + (open > 1 ? "s, which will be cancelled" : ", which will be cancelled"));
   $("switch-text").textContent = "Switching to " + nameOf(state.fleet.find((orch) => orch.name === name)) + " starts fresh. You would lose " + parts.join(" and ") + ". Plans and previews are never carried to another Orchestrator.";
   $("switch-download").hidden = !csvs;

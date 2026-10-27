@@ -54,6 +54,7 @@ class Task:
         self.typed_orchestrator = ""
         self.understood = False
         self.source_csv: Optional[Path] = None
+        self.source_plan: Optional[Path] = None
         self.deadline: Optional[float] = None
         self.cancelled = False
         self._tables: Dict[str, List[Dict[str, Any]]] = {}
@@ -121,6 +122,8 @@ class TaskManager:
         kind = request.get("kind") or ""
         if action in {"plan", "apply", "delete"} and kind not in engine.KINDS:
             raise TaskError("unknown kind {!r}; use one of {}".format(kind, ", ".join(engine.KINDS)))
+        if action == "delete" and kind == "zones":
+            raise TaskError("Zones cannot be deleted by this tool.")
         with self._lock:
             task_id = "task-{}".format(next(self._ids))
         folder = self.folder / task_id
@@ -231,7 +234,7 @@ class TaskManager:
             if (source.action, source.state, source.kind, source.orchestrator) != ("plan", "planned", task.kind, task.orchestrator):
                 raise TaskError("plan_task must be a finished {} plan on the same Orchestrator".format(task.kind))
             plan = str(source.folder / "plan.json")
-            task.source_csv = source.folder / "input.csv"
+            task.source_csv, task.source_plan = source.folder / "input.csv", source.folder / "plan.json"
             return self._change(task, lambda approval, dry_run: engine.apply(task.kind, plan, approval, dry_run, **common))
         csv = self._revert_csv(task, request["revert"]) if "revert" in request else self._csv(task, request)
         return self._change(task, lambda approval, dry_run: engine.delete(task.kind, csv, approval, dry_run, **common))
@@ -257,8 +260,9 @@ class TaskManager:
             return ""
         try:
             text = task.source_csv.read_text(encoding="utf-8") if task.source_csv and task.source_csv.is_file() else ""
-            gui_revert.save(self.run_folder, run_id, gui_revert.build(task.kind, task.orchestrator, text, result.rows))
-        except OSError as error:
+            plan = json.loads(task.source_plan.read_text(encoding="utf-8")) if task.source_plan and task.source_plan.is_file() else {}
+            gui_revert.save(self.run_folder, run_id, gui_revert.build(task.kind, task.orchestrator, text, result.rows, plan if isinstance(plan, dict) else {}, result.status))
+        except (OSError, ValueError) as error:
             return "; could not keep what Undo needs: {}".format(error)
         return ""
 
@@ -333,6 +337,9 @@ class TaskManager:
             return call()
         except Exception as error:  # the browser must hear about every failure; the run log holds the detail
             task.set("failed", "{}: {}".format(type(error).__name__, error))
+            return None
+        except SystemExit:  # argparse refused the command line (a value starting with "-", say); it never reaches the run log
+            task.set("failed", "the command line for this task was rejected; check the names and values you entered")
             return None
 
 
