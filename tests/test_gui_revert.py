@@ -86,13 +86,17 @@ class BuildFromRealOutcomesTests(unittest.TestCase):
                 self.assertEqual(value["count"], 0)
                 self.assertIn("cannot be undone", value["reason"])
         express = {"baseline": {"old": {"name": "Old"}}, "candidate": {}, "monitor": [], "off": [], "no_ops": [], "changed": True}
-        # An entry already on monitor is a no-op for the upload, but the Undo delete would still remove it.
-        for change in ({"off": ["Old"]}, {"monitor": ["Old"]}, {"no_ops": ["Old"]}):
+        # A new definition whose AppExpress entry already existed on monitor is a no-op for the upload, but Undo would delete that entry.
+        for change, name in (({"off": ["Old"]}, "app"), ({"monitor": ["Old"]}, "app"), ({"no_ops": ["Old"]}, "old")):
             with self.subTest(change):
-                plan = {"kind": "app-definitions", "new": [{"row": 2, "name": "app"}], "appexpress": dict(express, **change)}
-                value = self.build("app-definitions", "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\n", plan, {})
+                plan = {"kind": "app-definitions", "new": [{"row": 2, "name": name}], "appexpress": dict(express, **change)}
+                value = self.build("app-definitions", "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,{},8443,MONITOR\n".format(name), plan, {})
                 self.assertEqual(value["count"], 0)
                 self.assertIn("AppExpress", value["reason"])
+        # An existing definition re-uploaded alongside the new one is left alone by Undo, so its unchanged AppExpress entry does not block it.
+        plan = {"kind": "app-definitions", "new": [{"row": 2, "name": "app"}], "appexpress": dict(express, no_ops=["Old"])}
+        value = self.build("app-definitions", "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\nTCP_PORT,Old,22,MONITOR\n", plan, {})
+        self.assertEqual((value["count"], value["reason"]), (1, ""))
 
 
 class UndoTests(FirewallCase):
