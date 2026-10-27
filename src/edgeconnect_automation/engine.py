@@ -188,7 +188,9 @@ def _issues(error: Any, outputs: Sequence[Any], summary: Mapping[str, Any]) -> L
                     continue
                 add({"row": row, "rule": parsed["rule"], "field": parsed["column"] or "", "value": (parsed["value"] or "")[1:-1], "message": parsed["message"], "fix": parsed["fix"] or "", "blocks": parsed["blocks"] or ""})
             elif line.strip():
-                add({"message": line.strip()})
+                # Lines without a rule ID, such as "row 3 name: reason" for application groups, may still name their row.
+                rowed = re.match(r"^row (\d+) (.+)$", line.strip())
+                add({"row": int(rowed.group(1)), "message": rowed.group(2)} if rowed else {"message": line.strip()})
     return list(found.values())
 
 
