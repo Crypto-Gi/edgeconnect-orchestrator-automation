@@ -185,6 +185,10 @@ class ServerTests(ServerCase):
         response, text = self.request("GET", "/?token=" + self.server.token, cookie=False)
         self.assertEqual(response.status, 401)
         self.assertIn("already used", text)
+        # The same browser opening the link again (the printed link clicked after the automatic open) just gets in.
+        response, _ = self.request("GET", "/?token=" + self.server.token, cookie="{}={}".format(name, session))
+        self.assertEqual((response.status, response.headers["Location"]), (303, "/"))
+        self.assertNotIn("Set-Cookie", response.headers)
         self.assertEqual(self.request("GET", "/api/tasks", cookie="{}={}".format(name, self.server.token))[0].status, 401)
 
     def test_missing_or_wrong_cookie_is_refused_everywhere(self):

@@ -97,11 +97,16 @@ class Handler(BaseHTTPRequestHandler):
         if method != "GET" and self.headers.get("Origin") != "http://" + host:
             raise TaskError("cross-origin request refused", 403)
 
-    def _require_cookie(self) -> None:
+    def _has_cookie(self) -> bool:
         for item in self.headers.get("Cookie", "").split(";"):
             name, _, value = item.strip().partition("=")
             if name == self.server.cookie and hmac.compare_digest(value.encode(), self.server.session.encode()):
-                return
+                return True
+        return False
+
+    def _require_cookie(self) -> None:
+        if self._has_cookie():
+            return
         raise TaskError("open the GUI with the link printed in the terminal", 401)
 
     def _login(self, token: str) -> None:
@@ -109,11 +114,17 @@ class Handler(BaseHTTPRequestHandler):
             raise TaskError("this link is not valid for this GUI; use the link printed in the terminal", 401)
         with self.server.login_lock:
             used, self.server.token_used = self.server.token_used, True
+        if used and self._has_cookie():
+            return self._redirect_home()  # the same browser opening the link again
         if used:
             raise TaskError("this link was already used, and it works only once; to open the GUI in another browser, stop it with Ctrl+C and start it again", 401)
+        self._redirect_home("{}={}; HttpOnly; SameSite=Strict; Path=/".format(self.server.cookie, self.server.session))
+
+    def _redirect_home(self, cookie: str = "") -> None:
         self.send_response(303)
         self._security_headers()
-        self.send_header("Set-Cookie", "{}={}; HttpOnly; SameSite=Strict; Path=/".format(self.server.cookie, self.server.session))
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.send_header("Location", "/")  # drops the token from the address bar
         self.send_header("Content-Length", "0")
         self.end_headers()

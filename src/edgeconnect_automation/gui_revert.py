@@ -67,7 +67,8 @@ def _changed_settings(kind: str, plan: Mapping[str, Any]) -> str:
     express = plan.get("appexpress") if kind == "app-definitions" else None
     if isinstance(express, Mapping):
         before = {str(entry.get("name", key)).lower() for key, entry in (express.get("baseline") or {}).items() if isinstance(entry, Mapping)}
-        if express.get("off") or any(str(name).lower() in before for name in express.get("monitor") or []):
+        # An existing entry already on monitor is a no-op here, but the Undo delete would remove it too.
+        if express.get("off") or any(str(name).lower() in before for name in [*(express.get("monitor") or []), *(express.get("no_ops") or [])]):
             return "This upload also changed AppExpress entries that already existed. Deleting what it created would not bring those back, so it cannot be undone here."
     return ""
 

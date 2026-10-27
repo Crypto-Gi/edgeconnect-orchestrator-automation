@@ -44,7 +44,7 @@ class OrchestratorGateway:
         """
         try:
             info = self._shape(self.client.get("/gmsserver/info"), dict, "Orchestrator server info")
-        except ApiError:
+        except (ApiError, ValidationError):
             return ""
         serial = str(info.get("serialNumber") or "")
         return serial if re.sub(r"[^0-9A-Za-z]", "", serial).strip("0") else ""

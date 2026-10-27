@@ -50,7 +50,7 @@ class FakeClient:
 class GatewayContractTests(unittest.TestCase):
     def test_an_unreadable_serial_number_never_stops_a_command(self):
         # The serial is extra identity for plans; commands that worked before it was read must keep working.
-        for error in (PermissionDeniedError("no", 403), AuthenticationError("no", 401), ServerError("busy", 500), TransportError("timed out")):
+        for error in (ValidationError("bad request"), PermissionDeniedError("no", 403), AuthenticationError("no", 401), ServerError("busy", 500), TransportError("timed out")):
             with self.subTest(type(error).__name__):
                 client = FakeClient()
                 client.get = lambda path, query=None, expected_status=(200,), error=error: (_ for _ in ()).throw(error)

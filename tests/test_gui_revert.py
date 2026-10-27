@@ -86,7 +86,8 @@ class BuildFromRealOutcomesTests(unittest.TestCase):
                 self.assertEqual(value["count"], 0)
                 self.assertIn("cannot be undone", value["reason"])
         express = {"baseline": {"old": {"name": "Old"}}, "candidate": {}, "monitor": [], "off": [], "no_ops": [], "changed": True}
-        for change in ({"off": ["Old"]}, {"monitor": ["Old"]}):
+        # An entry already on monitor is a no-op for the upload, but the Undo delete would still remove it.
+        for change in ({"off": ["Old"]}, {"monitor": ["Old"]}, {"no_ops": ["Old"]}):
             with self.subTest(change):
                 plan = {"kind": "app-definitions", "new": [{"row": 2, "name": "app"}], "appexpress": dict(express, **change)}
                 value = self.build("app-definitions", "DefinitionType,Name,Port,AppExpressMode\nTCP_PORT,app,8443,OFF\n", plan, {})
