@@ -733,7 +733,7 @@ function renderFlow() {
     if (flowPlanTask !== task.id) { flowPlanTask = task.id; flowChanges.reset(); $("flow-understood").checked = false; }
     flowChanges.load();
     $("flow-confirm").hidden = !flow.remove;
-    $("flow-understood-text").textContent = "I understand that " + (result.deletes === 1 ? "this object" : "these " + plural(result.deletes, "object")) + " will be deleted from " + where + " and are not restored automatically.";
+    $("flow-understood-text").textContent = "I understand that " + (result.deletes === 1 ? "this object" : "these " + plural(result.deletes, "object")) + " will be deleted from " + where + " and " + (result.deletes === 1 ? "is" : "are") + " not restored automatically.";
     $("flow-delete").disabled = !$("flow-understood").checked;
     const canWrite = Boolean(orch && orch.writes && result.changes);
     $("flow-approve").hidden = flow.remove || !canWrite;
