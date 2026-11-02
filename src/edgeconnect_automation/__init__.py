@@ -17,4 +17,4 @@ __all__ = [
     "parse_firewall_text",
 ]
 
-__version__ = "1.3.0rc1"
+__version__ = "1.3.0"

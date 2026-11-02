@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased (`gui` branch)
+## 1.3.0 — 2026-11-02
+
+The web GUI (`edgeconnect-auto gui`, first shipped as the 1.3.0rc1 pre-release) is now on `main`, together with the `setup.sh` of 1.2.11. Terminal users coming from 1.2.11 see these changes; prompts, typed approvals, validation and what is written to Orchestrator are unchanged:
+
+- Address-group and service-group plans count groups: `to create: 25 (27 rows)` where 1.2.11 said `to create: 27`.
+- Saved inventory and plan files record the Orchestrator's release and serial number next to its name and address. A plan saved by 1.3.0 is refused when the same address now answers with a different serial number (a rebuilt or replaced Orchestrator); plans saved by earlier versions are compared by address only, as before.
+- Every command that contacts Orchestrator also reads `GET /gmsserver/info` for that serial number. If the read fails, the command goes on.
+- Report files and `reports/*.jsonl` records have a `source` field: `cli` for the command line, `gui` for the GUI.
+- `--rows-csv` files start a cell with `'` when it begins with `=`, `+`, `-`, `@`, a tab or a carriage return, so a spreadsheet does not run it as a formula.
+- The run summary says CREATED after a real `app-definitions apply` or `app-groups apply` (it said WOULD CREATE).
+
+Changes since 1.3.0rc1:
 
 - GUI: the launch link works once. It gives the browser a separate session cookie, so a link read by another account on the computer is useless after you open it. Opening it again in the same browser just shows the GUI. To use another browser, restart the GUI.
 - GUI Undo: groups with several rules are undone whole (they were refused before), and uploads of applications and application groups can now be undone. Undo is not offered when an upload also changed something a delete cannot restore: a template group it created, its Access Lists template or merge mode, or AppExpress entries that already existed (including one already on monitor for a new application).
