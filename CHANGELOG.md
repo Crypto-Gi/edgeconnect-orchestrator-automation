@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.0 — 2026-11-02
+
+The web GUI (`edgeconnect-auto gui`, first shipped as the 1.3.0rc1 pre-release) is now on `main`, together with the `setup.sh` of 1.2.11. Terminal users coming from 1.2.11 see these changes; prompts, typed approvals, validation and what is written to Orchestrator are unchanged:
+
+- Address-group and service-group plans count groups: `to create: 25 (27 rows)` where 1.2.11 said `to create: 27`.
+- Saved inventory and plan files record the Orchestrator's release and serial number next to its name and address. A plan saved by 1.3.0 is refused when the same address now answers with a different serial number (a rebuilt or replaced Orchestrator); plans saved by earlier versions are compared by address only, as before.
+- Every command that contacts Orchestrator also reads `GET /gmsserver/info` for that serial number. If the read fails, the command goes on.
+- Report files and `reports/*.jsonl` records have a `source` field: `cli` for the command line, `gui` for the GUI.
+- `--rows-csv` files start a cell with `'` when it begins with `=`, `+`, `-`, `@`, a tab or a carriage return, so a spreadsheet does not run it as a formula.
+- The run summary says CREATED after a real `app-definitions apply` or `app-groups apply` (it said WOULD CREATE).
+
+Changes since 1.3.0rc1:
+
+- GUI: the launch link works once. It gives the browser a separate session cookie, so a link read by another account on the computer is useless after you open it. Opening it again in the same browser just shows the GUI. To use another browser, restart the GUI.
+- GUI Undo: groups with several rules are undone whole (they were refused before), and uploads of applications and application groups can now be undone. Undo is not offered when an upload also changed something a delete cannot restore: a template group it created, its Access Lists template or merge mode, or AppExpress entries that already existed (including one already on monitor for a new application).
+- GUI: each problem in a CSV is listed once (some were listed twice), application-group problems show their row in the Row column, and a task whose command line is refused ends as failed instead of staying "running".
+- The run summary (and `report summarize`, `--rows-csv` and the GUI) says CREATED after a real `app-definitions apply` or `app-groups apply`; it said WOULD CREATE, because their results were not recognised as results.
+- Address-group and service-group plans count groups, as the result does, and add the row count when a group has several rules: `to create: 25 (27 rows)` where it said `to create: 27`.
+- GUI Undo counts what it deletes as the delete preview does: "Deletes the address groups this upload created (25, from 27 CSV rows)" where it said "the 27 rows of address groups".
+- GUI: a plan cancelled while it runs ends as cancelled (it ended as planned and could be applied), and the GUI deletes its temporary folder of uploaded CSVs and plans when it stops.
+- Every command reads the Orchestrator's serial number for the plan's identity. If that read fails for any reason, the command now goes on and compares the address only; before, any error other than 403 or 404 (such as 400, 401, a 5xx or a timeout) stopped the command.
+
+## 1.3.0rc1 — 2026-10-26 (pre-release, `gui` branch)
+
+- `edgeconnect-auto gui` starts a local web GUI for bulk CSV uploads, on 127.0.0.1 only. It runs the same commands as the CLI, so the checks and results are the same; nothing in the existing commands changed. A CSV with problems is listed row by row with the fix for each. A write needs the same typed confirmations as the terminal plus the Orchestrator nickname, and is off for an Orchestrator until `.env` has `<nickname>_gui_writes=on`. The GUI shows every Orchestrator's status, the run log, the inventory, a guided upload for each object type, Remove by CSV, and "Undo this upload" for uploads made in the GUI. It runs on macOS, Linux and Windows through WSL.
+- `edgeconnect-auto gui` accepts `--dotenv` when it names the `.env` of the folder it starts in, so the launcher `setup.sh` installs works from the install folder.
 ## 1.2.11 — 2026-10-23
 
 - `orchestrator_tls_sha256` now pins the `orchestrator` choice (the single-Orchestrator lines) when `orch_<N>` lines also exist. Previously the pin was dropped as soon as any nickname was configured. It is still never used for a nickname, because a pin belongs to one host.

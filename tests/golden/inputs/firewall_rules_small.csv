@@ -1,0 +1,3 @@
+rule_key,rule_name,description,enabled,priority,source_segment,destination_segment,source_zone,destination_zone,source_address,source_address_group,destination_address,destination_address_group,either_address,either_address_group,application,application_group,protocol,source_port,destination_port,either_port,source_service_group,destination_service_group,either_service_group,action,logging,logging_level,broad_match_ack
+new-rule,new name,new rule,true,20010,Default,Default,INSIDE,OUTSIDE,10.0.0.0/24,,,,,,BuiltinApp,BuiltinGroup,tcp,,443,,,,,allow,true,2,false
+second-rule,second,second rule,false,20020,Default,Default,INSIDE,OUTSIDE,10.0.1.0/24,,,,,,BuiltinApp,BuiltinGroup,tcp,,443,,,,,allow,true,2,false

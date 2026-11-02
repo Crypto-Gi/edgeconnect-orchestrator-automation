@@ -4,20 +4,21 @@ import copy
 import csv
 import json
 import re
-import secrets
 import sys
 import time
 import traceback
 from urllib.parse import urlsplit
-from dataclasses import asdict
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
+from .approval import DELETE_ACKNOWLEDGMENT, Gate, ask_in_terminal, delete_gates, template_acl_gates, write_gates
 from .client import ApiClient
 from .config import load_config
 from .errors import ApprovalError, ConfigurationError, DriftError, EdgeConnectError, ResponseFormatError, ValidationError
 from .firewall import FirewallExecutor, _ensure_candidate_shape, build_firewall_plan, canonical_rule, normalize_rule, options_error, parse_firewall_csv, parse_firewall_document, rule_payload, write_resolved_csv
-from .gateway import OrchestratorGateway
+from .gateway import OrchestratorGateway, require_supported_release
 from .models import FirewallPlan, FirewallRule, Inventory, PairPlan
 from .reporting import RunRecorder, finish, preview_text, render, summaries_from_file, write_rows_csv
 from .util import fingerprint, normalize_acl_entries, redact, safe_report, semantic_equal, split_values
@@ -161,7 +162,24 @@ def build_parser() -> argparse.ArgumentParser:
     summarize.add_argument("--rows-csv", help="also write the per-row outcome table to this CSV file")
     summarize.set_defaults(handler=_report_summarize, no_run_log=True)
 
+    gui = subparsers.add_parser("gui", help="local web GUI on 127.0.0.1, for this computer only")
+    gui.add_argument("--port", type=int, default=0, help="port to listen on (default: any free port)")
+    gui.add_argument("--no-browser", action="store_true", help="only print the link; do not open a browser")
+    gui.set_defaults(handler=_gui, no_run_log=True)
+
     return parser
+
+
+def _gui(args: argparse.Namespace) -> int:
+    if args.orchestrator:
+        raise ConfigurationError("the GUI lets you choose the Orchestrator; run it without --orchestrator")
+    # shortcut: the GUI reads ./.env only; setup.sh's launcher always passes --dotenv <install folder>/.env, which is that
+    # file when started there. Pass the path through to the GUI if someone needs another folder.
+    if args.dotenv and not (Path(".env").is_file() and Path(args.dotenv).resolve() == Path(".env").resolve()):
+        raise ConfigurationError("the GUI reads .env in the folder it starts in; start it from {}".format(Path(args.dotenv).resolve().parent))
+    from .gui_server import serve
+
+    return serve(args.port, browser=not args.no_browser)
 
 
 def _report_summarize(args: argparse.Namespace) -> int:
@@ -202,29 +220,60 @@ def _add_delete_args(parser: Any) -> None:
     parser.add_argument("--dry-run", action="store_true")
 
 
+def _terminal_approver(gates: Sequence[Gate], subject: Any, no_terminal: str) -> None:
+    ask_in_terminal(gates, no_terminal)
+
+
+@dataclass
+class RunContext:
+    """One command run: its recorder, the Orchestrator it targets, that Orchestrator's gateway once connected, and who approves writes.
+
+    approver(gates, subject, no_terminal) raises ApprovalError to refuse the write of subject (the exact preview or deletion table).
+    approval_request holds the gates and the subject's fingerprint of the last approval this run reached, dry runs included.
+    """
+
+    recorder: Optional[RunRecorder] = None
+    target: str = ""
+    target_name: str = ""
+    target_url: str = ""
+    target_release: str = ""
+    target_id: str = ""
+    gateway: Optional[OrchestratorGateway] = None
+    approver: Callable[[Sequence[Gate], Any, str], None] = _terminal_approver
+    approval_request: Optional[Dict[str, Any]] = None
+    source: str = "cli"
+
+
+# Each main() call sets its own RunContext, so runs in different threads (or contexts) never see each other's state.
+_CONTEXT: ContextVar[Optional[RunContext]] = ContextVar("edgeconnect_run_context", default=None)
+
+
+def _context() -> RunContext:
+    """The current run's context; code called outside main() gets one for this thread, as the old module globals behaved."""
+    context = _CONTEXT.get()
+    if context is None:
+        context = RunContext()
+        _CONTEXT.set(context)
+    return context
+
+
 def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
-    global _TARGET, _TARGET_NAME, _TARGET_URL
-    cached = getattr(args, "_gateway_cache", None)
-    if cached is not None:
-        return cached
+    context = _context()
+    if context.gateway is not None:
+        return context.gateway
     config = load_config(args.dotenv, allow_http=args.allow_http, orchestrator=args.orchestrator)
     parts = urlsplit(config.base_url)
     url = "{}://{}".format(parts.scheme, parts.netloc)
-    _TARGET = "{} ({})".format(config.name, url) if config.name else url
-    _TARGET_NAME, _TARGET_URL = config.name, url
-    if _RUN is not None:
-        _RUN.orchestrator_target, _RUN.orchestrator_name, _RUN.orchestrator_url = _TARGET, config.name, url
+    context.target = "{} ({})".format(config.name, url) if config.name else url
+    context.target_name, context.target_url = config.name, url
+    recorder = context.recorder
+    if recorder is not None:
+        recorder.orchestrator_target, recorder.orchestrator_name, recorder.orchestrator_url = context.target, config.name, url
     gateway = OrchestratorGateway(ApiClient(config, verbosity=args.verbose))
-    if _RUN is not None:
-        _RUN.client = gateway.client
-    release = str(gateway.get_version().get("release", ""))
-    try:
-        parts = tuple(int(part) for part in release.split(".")[:2])
-    except ValueError as error:
-        raise ValidationError("unable to parse Orchestrator release {}".format(release)) from error
-    if len(parts) < 2 or parts < (9, 3):
-        raise ValidationError("Orchestrator 9.3 or later is required; found {}".format(release or "unknown"))
-    recorder = _RUN
+    if recorder is not None:
+        recorder.client = gateway.client
+    release = require_supported_release(gateway.get_version())
+    context.target_release, context.target_id = release, gateway.get_server_id()
     if recorder is not None:
         recorder.orchestrator_release = release
         list_appliances = gateway.get_appliances
@@ -235,19 +284,14 @@ def _gateway(args: argparse.Namespace) -> OrchestratorGateway:
             return items
 
         gateway.get_appliances = get_appliances  # type: ignore[method-assign]
-    args._gateway_cache = gateway
+    context.gateway = gateway
     return gateway
-
-
-_RUN: Optional[RunRecorder] = None
-_TARGET = ""
-_TARGET_NAME = ""
-_TARGET_URL = ""
 
 
 def _stamp(value: Dict[str, Any], source: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Record which Orchestrator an inventory or plan file belongs to (inherited from its inventory when offline)."""
-    stamp = {"name": _TARGET_NAME, "url": _TARGET_URL} if _TARGET_URL else (source or {}).get("orchestrator")
+    context = _context()
+    stamp = {"name": context.target_name, "url": context.target_url, "release": context.target_release, "id": context.target_id} if context.target_url else (source or {}).get("orchestrator")
     if stamp:
         value["orchestrator"] = stamp
     return value
@@ -259,30 +303,38 @@ def _require_plan_orchestrator(args: argparse.Namespace, value: Mapping[str, Any
     if not isinstance(stamp, Mapping) or not stamp.get("url"):
         return
     _gateway(args)
-    if _TARGET_URL and _TARGET_URL != stamp["url"]:
+    target_url = _context().target_url
+    if target_url and target_url != stamp["url"]:
         name = stamp.get("name") or ""
         label = "{} ({})".format(name, stamp["url"]) if name else stamp["url"]
         hint = " with --orchestrator {}".format(name) if name else ""
         raise ValidationError("this {} is for Orchestrator {}; rerun{} to use it".format(what, label, hint))
+    target_id = _context().target_id
+    if stamp.get("id") and target_id and target_id != stamp["id"]:
+        # Same address, different Orchestrator (rebuilt, restored elsewhere, or a DNS change): the plan's baseline is not this one.
+        raise ValidationError("this {} was made on the Orchestrator with serial number {}, but {} now answers with serial number {}; make a new {} against it".format(what, stamp["id"], stamp["url"], target_id, what))
 
 
 def _print_target() -> None:
-    if _TARGET:
-        print("Target Orchestrator: {}".format(_TARGET))
+    target = _context().target
+    if target:
+        print("Target Orchestrator: {}".format(target))
 _BULKY_KEYS = ("preview", "plan", "baseline", "candidate")
 
 
 def _print(value: Any) -> None:
-    if _RUN is not None:
-        _RUN.capture(value)
-        if not _RUN.verbose and isinstance(value, Mapping) and any(key in value for key in _BULKY_KEYS):
+    recorder = _context().recorder
+    if recorder is not None:
+        recorder.capture(value)
+        if not recorder.verbose and isinstance(value, Mapping) and any(key in value for key in _BULKY_KEYS):
             return
     print(json.dumps(redact(value), indent=2, sort_keys=True, ensure_ascii=False))
 
 
 def _save(path: str, value: Any) -> None:
-    if _RUN is not None:
-        _RUN.saved_report(path, value)
+    recorder = _context().recorder
+    if recorder is not None:
+        recorder.saved_report(path, value)
     safe_report(path, value)
 
 
@@ -298,47 +350,12 @@ def _load_json(path: str) -> Any:
 
 def _approve(preview: Any, dry_run: bool, zone_names: Sequence[str] = ()) -> bool:
     _show_preview({"preview": preview, "impact": "configuration write", "validation": "fresh readback and normalized comparison", "recovery": "workflow-specific preservation or rollback"}, dry_run)
-    if dry_run:
-        return False
-    if not sys.stdin.isatty():
-        raise ApprovalError("non-interactive writes are refused")
-    for name in zone_names:
-        expected = "CREATE {}".format(name)
-        if input("Type {} to confirm this zone: ".format(expected)) != expected:
-            raise ApprovalError("zone confirmation refused")
-    _print_target()
-    if input("Type APPLY to execute the exact preview: ") != "APPLY":
-        raise ApprovalError("write approval refused")
-    return True
-
-
-DELETE_ACKNOWLEDGMENT = "I ACCEPT RESPONSIBILITY FOR THIS ABYSS ACTION"
+    return _request_approval(write_gates(zone_names, _context().target), preview, dry_run)
 
 
 def _approve_template_acls(preview: Mapping[str, Any], dry_run: bool) -> bool:
     _show_preview({"preview": preview, "impact": "template-group Access Lists write", "validation": "fresh central and associated-appliance readback", "recovery": "no automatic rollback; exact recovery requires separate review"}, dry_run)
-    if dry_run:
-        return False
-    if not sys.stdin.isatty():
-        raise ApprovalError("non-interactive writes are refused")
-    for group in preview["plan"]["groups"]:
-        if not group["eligible"]:
-            continue
-        name = group["template_group"]
-        if group["create"] and input("Type the exact template group name {} to authorize creation: ".format(name)) != name:
-            raise ApprovalError("template group creation confirmation refused")
-        if not group["create"] and group["selection_change"]:
-            expected = "SELECT ACLS {}".format(name)
-            if input("Type {} to select Access Lists: ".format(expected)) != expected:
-                raise ApprovalError("Access Lists selection confirmation refused")
-        if group["template_mode_change"]:
-            expected = "MERGE ACLS {}".format(name)
-            if input("Type {} to change appliance template mode: ".format(expected)) != expected:
-                raise ApprovalError("template merge-mode confirmation refused")
-    _print_target()
-    if input("Type APPLY to execute the exact preview: ") != "APPLY":
-        raise ApprovalError("write approval refused")
-    return True
+    return _request_approval(template_acl_gates(preview, _context().target), preview, dry_run)
 
 
 def _deletion_table(rows: Sequence[Tuple[str, str, str]]) -> str:
@@ -359,20 +376,18 @@ def _approve_delete(rows: Sequence[Tuple[str, str, str]], dry_run: bool) -> bool
     print("\nWARNING 1 OF 3 — COMPLETE DELETION TABLE ({} resources)\n".format(len(rows)))
     print(_deletion_table(rows))
     _print_target()
-    if dry_run or not rows:
+    if not rows:
         return False
-    if not sys.stdin.isatty():
-        raise ApprovalError("non-interactive deletion is refused")
-    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    code = "DELETE-{}".format("".join(secrets.choice(alphabet) for _ in range(8)))
-    print("\nWARNING 2 OF 3 — Type this system-generated code exactly:\n\n{}\n".format(code))
-    if input("Deletion code: ") != code:
-        raise ApprovalError("deletion confirmation code refused")
-    print("\nWARNING 3 OF 3 — FINAL DESTRUCTIVE ACTION WARNING")
-    print("The complete table above will be deleted. Dependencies may stop working, rollback is not automatic, and you are responsible for this abyss action.")
-    print("\nTo answer 'Are you absolutely sure?' type exactly:\n\n{}\n".format(DELETE_ACKNOWLEDGMENT))
-    if input("Final acknowledgment: ") != DELETE_ACKNOWLEDGMENT:
-        raise ApprovalError("final deletion acknowledgment refused")
+    return _request_approval(delete_gates(), [list(row) for row in rows], dry_run, "non-interactive deletion is refused")
+
+
+def _request_approval(gates: Sequence[Gate], subject: Any, dry_run: bool, no_terminal: str = "non-interactive writes are refused") -> bool:
+    """Record what approving this write takes; then, unless it is a dry run, ask the run's approver (it raises to refuse)."""
+    context = _context()
+    context.approval_request = {"gates": list(gates), "fingerprint": fingerprint(subject), "subject": subject}
+    if dry_run:
+        return False
+    context.approver(gates, subject, no_terminal)
     return True
 
 
@@ -1554,45 +1569,52 @@ def _validate_report(value: Mapping[str, Any], kind: str) -> None:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    global _RUN, _TARGET, _TARGET_NAME, _TARGET_URL
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    _TARGET = _TARGET_NAME = _TARGET_URL = ""
-    recorder = _RUN = RunRecorder(sys.argv[1:] if argv is None else argv)
+    return execute(sys.argv[1:] if argv is None else argv)[0]
+
+
+def execute(argv: Sequence[str], context: Optional[RunContext] = None) -> Tuple[int, Optional[Dict[str, Any]], RunContext]:
+    """Run one command in this process with its own context; return the exit code, the run summary (None without a run log) and the context."""
+    args = build_parser().parse_args(argv)
+    context = context or RunContext()
+    recorder = context.recorder = RunRecorder(argv)
+    recorder.source = context.source
+    token = _CONTEXT.set(context)
     recorder.verbose = args.verbose
     code = 1
+    summary: Optional[Dict[str, Any]] = None
     try:
-        code = int(args.handler(args))
-        return code
+        code = _handle(args, recorder)
+    finally:
+        _CONTEXT.reset(token)
+        if not getattr(args, "no_run_log", False):
+            summary = finish(recorder, args, code)
+    return code, summary, context
+
+
+def _handle(args: argparse.Namespace, recorder: RunRecorder) -> int:
+    try:
+        return int(args.handler(args))
     except (ApprovalError, EOFError) as error:
         recorder.error = error
         print(str(error) or "input closed before approval", file=sys.stderr)
-        code = 5 if recorder.writes_sent() else 3
-        return code
+        return 5 if recorder.writes_sent() else 3
     except EdgeConnectError as error:
         recorder.error = error
         print(str(redact(str(error))), file=sys.stderr)
         # A drift, validation or approval stop after a write request is a partial run, never "nothing was written".
-        code = 5 if recorder.writes_sent() and error.exit_code in {2, 3, 4} else error.exit_code
-        return code
+        return 5 if recorder.writes_sent() and error.exit_code in {2, 3, 4} else error.exit_code
     except (OSError, ValueError, TypeError, KeyError, AttributeError, json.JSONDecodeError, csv.Error) as error:
         recorder.error = error
         if args.verbose >= 2:
             traceback.print_exc()
         print("error: {}: {}".format(type(error).__name__, redact(str(error))), file=sys.stderr)
-        code = 1
-        return code
+        return 1
     except KeyboardInterrupt as error:
         recorder.error = error
-        code = 130
-        return code
+        return 130
     except Exception as error:
         recorder.error = error
         raise
-    finally:
-        _RUN = None
-        if not getattr(args, "no_run_log", False):
-            finish(recorder, args, code)
 
 
 if __name__ == "__main__":

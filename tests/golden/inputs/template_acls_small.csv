@@ -1,0 +1,2 @@
+TemplateGroup,ACLName,ACLUpdateMode,TemplateApplyMode,Priority,Permit,Application,ApplicationGroup,SourceIP,DestinationIP,EitherIP,SourceAddressGroup,DestinationAddressGroup,EitherAddressGroup,SourceSegment,DestinationSegment,EitherSegment,SourcePort,DestinationPort,EitherPort,SourceServiceGroup,DestinationServiceGroup,EitherServiceGroup,SourceDomain,DestinationDomain,EitherDomain,Protocol,Comment,BroadMatchAck
+new-group,new-acl,MERGE,MERGE,1000,TRUE,,,,,,,,,,,,,443,,,,,,,,tcp,web,FALSE

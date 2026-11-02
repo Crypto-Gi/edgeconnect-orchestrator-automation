@@ -1,6 +1,7 @@
 """End-of-run summaries and the automatic, append-only report log for every command."""
 import datetime
 import hashlib
+import io
 import json
 import csv
 import os
@@ -66,6 +67,8 @@ class RunRecorder:
         self.appliances: Dict[str, str] = {}
         self.error: Optional[BaseException] = None
         self.tool_version = __version__
+        self.source = "cli"
+        self.approval: Optional[Dict[str, Any]] = None
         self.client: Any = None
 
     def writes_sent(self) -> int:
@@ -228,7 +231,8 @@ def _result_of(recorder: RunRecorder) -> Mapping[str, Any]:
     for value in reversed(recorder.payloads):
         if isinstance(value, Mapping) and isinstance(value.get("result"), Mapping):
             return value["result"]
-        if isinstance(value, Mapping) and "status" in value and ("pairs" in value or "groups" in value or "created" in value or "deleted" in value):
+        # Application and application-group apply results carry only a status and their skipped rows; plans have no status.
+        if isinstance(value, Mapping) and "status" in value and ("pairs" in value or "groups" in value or "created" in value or "deleted" in value or "skipped_conflicts" in value):
             return value
     return {}
 
@@ -253,7 +257,11 @@ def _counts(plan: Mapping[str, Any], result: Mapping[str, Any]) -> List[str]:
         lines.append("to create: {}".format(len(set(plan["candidate"]) - set(plan["baseline"]))))
     for key, label in (("new_rows", "to create"), ("new", "to create"), ("delete", "to delete"), ("no_ops", "already present"), ("absent", "already absent"), ("conflicts", "conflicts"), ("skipped_conflicts", "skipped")):
         value = plan.get(key)
-        if isinstance(value, list) and (value or key in {"new_rows", "new", "delete"}):
+        if isinstance(value, list) and key == "new_rows":
+            # A group with several rules has a row for each; count groups, as the result does, and name the rows too.
+            groups = len({str(row.get("Name")) for row in value if isinstance(row, Mapping)})
+            lines.append("{}: {}".format(label, groups) + (" ({} rows)".format(len(value)) if groups != len(value) else ""))
+        elif isinstance(value, list) and (value or key in {"new_rows", "new", "delete"}):
             lines.append("{}: {}".format(label, len(value)))
     appexpress = plan.get("appexpress")
     if isinstance(appexpress, Mapping) and isinstance(appexpress.get("baseline"), Mapping) and isinstance(appexpress.get("candidate"), Mapping):
@@ -600,13 +608,28 @@ def rows_table(rows: Sequence[Mapping[str, Any]], limit: Optional[int] = None) -
     return lines
 
 
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+
+
+def spreadsheet_safe(value: Any) -> Any:
+    """Text a spreadsheet would run as a formula (it starts with = + - @, a tab or a carriage return) gets a leading '."""
+    return "'" + value if isinstance(value, str) and value.startswith(_FORMULA_START) else value
+
+
+def csv_text(rows: Sequence[Mapping[str, Any]], fields: Sequence[str]) -> str:
+    """Rows as CSV for people to open; names and reasons come from CSVs and Orchestrator, so no cell can run as a formula."""
+    handle = io.StringIO(newline="")
+    writer = csv.DictWriter(handle, fields, extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows({key: spreadsheet_safe(value) for key, value in row.items()} for row in rows)
+    return handle.getvalue()
+
+
 def write_rows_csv(path: str, rows: Sequence[Mapping[str, Any]]) -> None:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, ROW_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+        handle.write(csv_text(rows, ROW_FIELDS))
 
 
 def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str, Any]:
@@ -642,7 +665,7 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         elif not rows and csv_text:
             rows = _unattempted_csv_rows(csv_text, lines[0])
             counts.append("command stopped before processing any row; {} row(s) not attempted".format(len(rows)))
-    return {
+    summary = {
         "run_id": recorder.run_id,
         "timestamp": recorder.started.isoformat(timespec="seconds"),
         "duration_seconds": round((datetime.datetime.now().astimezone() - recorder.started).total_seconds(), 1),
@@ -653,6 +676,7 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         "orchestrator_url": recorder.orchestrator_url or "not contacted",
         "workflow": " ".join(part for part in (workflow_name(args), action_name(args)) if part),
         "command": "edgeconnect-auto " + " ".join(recorder.argv),
+        "source": recorder.source,
         "dry_run": bool(getattr(args, "dry_run", False)),
         "csv": csv_info,
         "status": status,
@@ -668,6 +692,9 @@ def build_summary(recorder: RunRecorder, args: Any, exit_code: int) -> Dict[str,
         "run_reference": result.get("run_reference", ""),
         "next_step": _next_step(status, result),
     }
+    if recorder.approval is not None:
+        summary["approval"] = recorder.approval
+    return summary
 
 
 def _named(recorder: RunRecorder, lines: Sequence[str]) -> List[str]:
@@ -715,6 +742,9 @@ def render(summary: Mapping[str, Any], title: str = "RUN SUMMARY", row_limit: Op
         "Changes made : {}".format(summary["changes_written"]),
         "Exit code    : {} = {}".format(summary["exit_code"], summary["exit_meaning"]),
     ]
+    approval = summary.get("approval")
+    if approval:
+        lines.append("Approved by  : {} at {} in the GUI, typing {}".format(approval.get("by"), approval.get("time"), ", ".join(repr(text) for text in [approval.get("typed_orchestrator")] + list(approval.get("typed") or []) if text)))
     if summary.get("run_reference"):
         lines.append("Run ref      : {} (Orchestrator audit log comments start with it, followed by -<segment map>)".format(summary["run_reference"]))
     lines += _section("What was planned or done", summary.get("counts", []))
@@ -764,13 +794,13 @@ def _summary_of(value: Any, path: str) -> Dict[str, Any]:
     raw = str(result.get("status") or (value.get("status") if isinstance(value, Mapping) else "") or "").upper()
     args = SimpleNamespace(command=re.sub(r"-delete$", "", kind) or "report", dry_run=raw.startswith("DRY_RUN"), report=None, csv=None, output=None, report_dir="")
     summary = build_summary(recorder, args, _LEGACY_EXIT.get(raw, 0 if raw else 1))
-    summary.update(command="not recorded in this report", duration_seconds=None, orchestrator_release=summary["orchestrator_release"].replace("not contacted", "not recorded"), orchestrator=summary["orchestrator"].replace("not contacted", "not recorded"), orchestrator_url=summary["orchestrator_url"].replace("not contacted", "not recorded"), exit_meaning=summary["exit_meaning"] + " (derived from the report status)")
+    summary.update(command="not recorded in this report", source="not recorded", duration_seconds=None, orchestrator_release=summary["orchestrator_release"].replace("not contacted", "not recorded"), orchestrator=summary["orchestrator"].replace("not contacted", "not recorded"), orchestrator_url=summary["orchestrator_url"].replace("not contacted", "not recorded"), exit_meaning=summary["exit_meaning"] + " (derived from the report status)")
     return summary
 
 
 def _headline(summary: Mapping[str, Any]) -> Dict[str, Any]:
     """The same top-level fields, with the same status words, in every report file and log record."""
-    return {key: summary.get(key, "not recorded") for key in ("status", "exit_code", "changes_written", "timestamp", "run_id", "workflow", "orchestrator", "orchestrator_url")}
+    return {key: summary.get(key, "not recorded") for key in ("status", "exit_code", "changes_written", "timestamp", "run_id", "workflow", "orchestrator", "orchestrator_url", "source")}
 
 
 def _append(path: Path, text: str) -> None:

@@ -12,7 +12,7 @@ RUN SUMMARY
 ==============================================================================
 Workflow     : firewall deploy
 Run          : run-bd501d73af8d  at 2026-09-30T14:54:37-05:00  (3.3s)
-Versions     : tool 1.2.11, Orchestrator 9.7.1.42046
+Versions     : tool 1.3.0, Orchestrator 9.7.1.42046
 Orchestrator : lab (https://<ORCHESTRATOR_FQDN>)
 CSV          : rules.csv (73 data rows, sha256 005f008e35f2...)
 RESULT       : BLOCKED
@@ -76,7 +76,7 @@ A firewall error in one row blocks every row of the same segment pair, and a CSV
 
 ### Status fields in report files
 
-Every `--report` file and every report-log record starts with the same fields and words, whatever the workflow: `status` (the `RESULT` values above), `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (the nickname, or `unnamed` for the single-Orchestrator lines) and `orchestrator_url` (for example `https://<ORCHESTRATOR_FQDN>`). Commands that never contact Orchestrator, such as `validate`, record `not contacted`. Scripts should read these. To list every run against one Orchestrator: `grep '"orchestrator": "prod"' reports/firewall.jsonl`. The workflow-specific results underneath are unchanged (for example firewall `result.status: SUCCESS` or template ACL `result.status: success`); a different older top-level status is kept as `detail_status`.
+Every `--report` file and every report-log record starts with the same fields and words, whatever the workflow: `status` (the `RESULT` values above), `exit_code`, `changes_written`, `timestamp`, `run_id`, `workflow`, `orchestrator` (the nickname, or `unnamed` for the single-Orchestrator lines) `orchestrator_url` (for example `https://<ORCHESTRATOR_FQDN>`) and `source` (`cli` for the command line, `gui` for the GUI; `not recorded` in logs written before it existed). Commands that never contact Orchestrator, such as `validate`, record `not contacted`. Scripts should read these. To list every run against one Orchestrator: `grep '"orchestrator": "lab"' reports/firewall.jsonl`. The workflow-specific results underneath are unchanged (for example firewall `result.status: SUCCESS` or template ACL `result.status: success`); a different older top-level status is kept as `detail_status`.
 
 ### Summarize a saved report
 
@@ -86,7 +86,7 @@ edgeconnect-auto report summarize reports/firewall.jsonl --last 3
 edgeconnect-auto report summarize old-report.json --rows-csv rows.csv
 ```
 
-This prints the RUN SUMMARY and the full row table from a saved `--report` file, a plan file, or the last runs of a `reports/<workflow>.jsonl` log. It also works on reports written by versions before this feature (the tool version then shows as unknown). `--rows-csv` exports the row table for Excel. It reads files only: it does not contact Orchestrator and does not add to the report log.
+This prints the RUN SUMMARY and the full row table from a saved `--report` file, a plan file, or the last runs of a `reports/<workflow>.jsonl` log. It also works on reports written by versions before this feature (the tool version then shows as unknown). `--rows-csv` exports the row table for Excel. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a name or reason copied from a CSV or from Orchestrator can never run as a spreadsheet formula; the GUI's CSV exports do the same. It reads files only: it does not contact Orchestrator and does not add to the report log.
 
 ### Automatic report log
 
@@ -141,6 +141,10 @@ Exit 3, nothing written. A write or deletion needs a person at a terminal to typ
 ### `this plan is for Orchestrator ...`
 
 A plan or inventory file made on another Orchestrator. Rerun with the `--orchestrator` it names, or build a new plan against this one.
+
+### `this plan was made on the Orchestrator with serial number ...`
+
+Exit 2, nothing written. The address is the same, but a different Orchestrator answers there now (rebuilt, restored onto another server, or the name moved), so the plan's baseline is not this Orchestrator's. Build a new plan against it.
 
 ### `--inventory expects the offline inventory JSON used by the contract tests`
 

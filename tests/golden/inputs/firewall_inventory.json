@@ -1,0 +1,38 @@
+{
+  "application_groups": [
+    "test-51-All_Apps",
+    "BuiltinGroup"
+  ],
+  "applications": [
+    "test-51-domain",
+    "BuiltinApp"
+  ],
+  "policies": {
+    "Default|Default": {
+      "data": {
+        "map1": {}
+      },
+      "options": {
+        "merge": false,
+        "templateApply": false
+      },
+      "settings": {}
+    }
+  },
+  "segmentation_enabled": true,
+  "segments": {
+    "Default": 0
+  },
+  "statuses": {
+    "all": "complete"
+  },
+  "target_states": {
+    "0.NE": "reachable"
+  },
+  "zones": {
+    "Default|DESTINATION_ZONE": 2,
+    "Default|INSIDE": 3,
+    "Default|OUTSIDE": 4,
+    "Default|SOURCE_ZONE": 1
+  }
+}

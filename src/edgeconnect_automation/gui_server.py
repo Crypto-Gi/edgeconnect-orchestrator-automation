@@ -1,0 +1,302 @@
+"""The local GUI server: standard-library HTTP on 127.0.0.1 only, for one person at this computer.
+
+Who may call it: whoever opened the launch URL printed in the terminal. The link works once (other accounts on the
+computer can read it from the browser's command line) and gives an HttpOnly, SameSite=Strict session cookie, a different
+secret, that every page, API call and progress stream needs. Requests naming any other Host (DNS rebinding) and
+state-changing requests from any other Origin are refused, and no CORS headers are ever sent. API keys stay in this
+process: no response carries them.
+"""
+import dataclasses
+import hmac
+import json
+import platform
+import secrets
+import shutil
+import subprocess
+import sys
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Dict, Mapping, Optional, Tuple
+from urllib.parse import parse_qs, urlsplit
+
+from . import gui_tables
+from .errors import ConfigurationError
+from .fleet import check_all
+from .gui_tasks import FINAL, TaskError, TaskManager, dumps
+from .reporting import ROW_FIELDS, report_dir
+
+STATIC = Path(__file__).with_name("static")
+MAX_BODY = 5 * 1024 * 1024
+_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8"}
+_HEADERS = {
+    "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+}
+
+
+class GuiServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, port: int = 0, tasks: Optional[TaskManager] = None, environ: Optional[Mapping[str, str]] = None) -> None:
+        super().__init__(("127.0.0.1", port), Handler)
+        self.token = secrets.token_urlsafe(32)
+        self.session = secrets.token_urlsafe(32)
+        self.token_used = False
+        self.login_lock = threading.Lock()
+        self.environ = environ
+        self.tasks = tasks or TaskManager(environ=environ)
+        self.runlog = gui_tables.RunLog(report_dir(SimpleNamespace(report_dir=self.tasks.report_dir)))  # where the GUI's own runs are logged
+        port = self.server_address[1]
+        self.hosts = {"127.0.0.1:{}".format(port), "localhost:{}".format(port), "[::1]:{}".format(port)}
+        self.url = "http://127.0.0.1:{}/?token={}".format(port, self.token)
+        self.cookie = "edgeconnect_gui_{}".format(port)  # cookies ignore the port, so two GUIs on one computer need different names
+
+    def server_close(self) -> None:
+        super().server_close()
+        self.tasks.close()
+
+
+class Handler(BaseHTTPRequestHandler):
+    server: GuiServer
+    server_version = "edgeconnect-gui"
+    sys_version = ""
+
+    def log_message(self, format: str, *args: Any) -> None:  # the launch token is in a URL; keep request lines out of the terminal
+        pass
+
+    def do_GET(self) -> None:
+        self._route("GET")
+
+    def do_POST(self) -> None:
+        self._route("POST")
+
+    def _route(self, method: str) -> None:
+        try:
+            self._guard(method)
+            parts = urlsplit(self.path)
+            path = parts.path
+            if method == "GET" and path == "/" and "token" in parse_qs(parts.query):
+                return self._login(parse_qs(parts.query)["token"][0])
+            self._require_cookie()
+            if method == "GET" and path.startswith("/api/"):
+                return self._get_api(path, {key: values[-1] for key, values in parse_qs(parts.query).items()})
+            if method == "POST" and path.startswith("/api/"):
+                return self._post_api(path)
+            if method == "GET":
+                return self._static(path)
+            raise TaskError("not found", 404)
+        except TaskError as error:
+            self._json(error.status, {"error": str(error)})
+
+    def _guard(self, method: str) -> None:
+        host = self.headers.get("Host", "")
+        if host not in self.server.hosts:
+            raise TaskError("this server only answers to 127.0.0.1, localhost or [::1] on its own port", 421)
+        if method != "GET" and self.headers.get("Origin") != "http://" + host:
+            raise TaskError("cross-origin request refused", 403)
+
+    def _has_cookie(self) -> bool:
+        for item in self.headers.get("Cookie", "").split(";"):
+            name, _, value = item.strip().partition("=")
+            if name == self.server.cookie and hmac.compare_digest(value.encode(), self.server.session.encode()):
+                return True
+        return False
+
+    def _require_cookie(self) -> None:
+        if self._has_cookie():
+            return
+        raise TaskError("open the GUI with the link printed in the terminal", 401)
+
+    def _login(self, token: str) -> None:
+        if not hmac.compare_digest(token.encode(), self.server.token.encode()):
+            raise TaskError("this link is not valid for this GUI; use the link printed in the terminal", 401)
+        with self.server.login_lock:
+            used, self.server.token_used = self.server.token_used, True
+        if used and self._has_cookie():
+            return self._redirect_home()  # the same browser opening the link again
+        if used:
+            raise TaskError("this link was already used, and it works only once; to open the GUI in another browser, stop it with Ctrl+C and start it again", 401)
+        self._redirect_home("{}={}; HttpOnly; SameSite=Strict; Path=/".format(self.server.cookie, self.server.session))
+
+    def _redirect_home(self, cookie: str = "") -> None:
+        self.send_response(303)
+        self._security_headers()
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
+        self.send_header("Location", "/")  # drops the token from the address bar
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _get_api(self, path: str, query: Dict[str, str]) -> None:
+        tasks = self.server.tasks
+        if path == "/api/orchestrators":
+            try:
+                statuses = check_all(environ=self.server.environ)
+            except ConfigurationError as error:
+                raise TaskError(str(error)) from None
+            return self._json(200, {"orchestrators": [dataclasses.asdict(status) for status in statuses]})
+        if path == "/api/tasks":
+            return self._json(200, {"tasks": [task.view() for task in tasks.list()]})
+        if path.startswith("/api/runs"):
+            return self._runs(path, query)
+        task_id, action = _task_path(path)
+        if action == "":
+            return self._json(200, tasks.get(task_id).view())
+        if action == "events":
+            return self._events(task_id)
+        if action == "inventory":
+            return self._json(200, gui_tables.inventory_page(tasks.discovery(task_id), query))
+        if action in ("issues", "changes", "rows"):
+            return self._json(200, tasks.table(task_id, action, query))
+        raise TaskError("not found", 404)
+
+    def _runs(self, path: str, query: Dict[str, str]) -> None:
+        """/api/runs[.csv] lists runs; /api/runs/<run_id>[/rows.csv|/revert] is one run, its per-row table, or what undoing it would delete."""
+        log = self.server.runlog
+        if path in ("/api/runs", "/api/runs.csv"):
+            runs, unreadable = log.runs()
+            if path.endswith(".csv"):
+                rows = gui_tables.select(runs, query, gui_tables.RUN_FILTERS, "timestamp", True)[0]
+                return self._download("runs.csv", gui_tables.to_csv(rows, gui_tables.RUN_FIELDS + ("exit_code",)))
+            folder = str(log.directory) if log.directory is not None else None
+            return self._json(200, dict(gui_tables.page(runs, query, gui_tables.RUN_FILTERS, "timestamp", True), folder=folder, unreadable=unreadable))
+        parts = path.split("/")
+        if len(parts) not in (4, 5) or parts[2] != "runs" or not parts[3] or (len(parts) == 5 and parts[4] not in ("rows.csv", "revert")):
+            raise TaskError("not found", 404)
+        summary = log.find(parts[3])
+        if summary is None:
+            raise TaskError("no run {} in the run log".format(parts[3]), 404)
+        if len(parts) == 5 and parts[4] == "revert":
+            return self._json(200, _revert_view(summary, self.server.tasks.revert(parts[3])))
+        if len(parts) == 5:
+            rows = gui_tables.select(summary["_outcomes"], query, ("outcome",))[0]
+            return self._download("{}-rows.csv".format(parts[3]), gui_tables.to_csv(rows, ROW_FIELDS))
+        return self._json(200, gui_tables.run_detail(summary, query))
+
+    def _post_api(self, path: str) -> None:
+        if self.headers.get_content_type() != "application/json":
+            raise TaskError("send JSON (Content-Type: application/json)", 415)
+        body = self._body()
+        tasks = self.server.tasks
+        if path == "/api/tasks":
+            return self._json(201, tasks.create(body).view())
+        task_id, action = _task_path(path)
+        if action == "approve":
+            return self._json(202, tasks.approve(task_id, body.get("answers"), body.get("orchestrator", ""), body.get("understood", False)).view())
+        if action == "cancel":
+            return self._json(202, tasks.cancel(task_id).view())
+        raise TaskError("not found", 404)
+
+    def _body(self) -> Mapping[str, Any]:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= MAX_BODY:
+            raise TaskError("request body too large or without a length", 413)
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise TaskError("request body is not valid JSON") from None
+        if not isinstance(body, dict):
+            raise TaskError("request body must be a JSON object")
+        return body
+
+    def _events(self, task_id: str) -> None:
+        """Server-sent events: every state change of the task, then the stream closes when the task is finished."""
+        task = self.server.tasks.get(task_id)
+        self.send_response(200)
+        self._security_headers()
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        sent = 0
+        while True:
+            with task.changed:
+                if sent == len(task.events) and task.state not in FINAL:
+                    task.changed.wait(15)
+                events, finished = task.events[sent:], task.state in FINAL
+            try:
+                for event in events:
+                    self.wfile.write(b"data: " + dumps(dict(event, task=task.view())) + b"\n\n")
+                if not events:
+                    self.wfile.write(b": keep-alive\n\n")
+                self.wfile.flush()
+            except OSError:
+                return  # the browser went away
+            sent += len(events)
+            if finished and sent == len(task.events):
+                return
+
+    def _static(self, path: str) -> None:
+        name = "index.html" if path == "/" else path.lstrip("/")
+        files = {item.name: item for item in STATIC.iterdir() if item.is_file()}
+        if name not in files:
+            raise TaskError("not found", 404)
+        self._send(200, files[name].read_bytes(), _TYPES.get(files[name].suffix, "application/octet-stream"))
+
+    def _json(self, status: int, value: Any) -> None:
+        self._send(status, dumps(value), "application/json")
+
+    def _download(self, name: str, body: bytes) -> None:
+        self._send(200, body, "text/csv; charset=utf-8", {"Content-Disposition": 'attachment; filename="{}"'.format(name)})
+
+    def _send(self, status: int, body: bytes, content_type: str, headers: Optional[Mapping[str, str]] = None) -> None:
+        self.send_response(status)
+        self._security_headers()
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _security_headers(self) -> None:
+        for name, value in _HEADERS.items():
+            self.send_header(name, value)
+
+
+def _revert_view(summary: Dict[str, Any], kept: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Whether this run can be undone from the GUI; an empty reason means the run is not an upload, so nothing is shown."""
+    if kept is not None:
+        return dict(kept, available=bool(kept.get("csv_text")))
+    wrote = str(summary.get("workflow", "")).rsplit(" ", 1)[-1] in ("apply", "deploy", "create") and summary.get("changes_written") != "no"
+    reason = "Undo is kept only for uploads made in this GUI. To undo this one, load the rows it created in Remove by CSV." if wrote else ""
+    return {"available": False, "reason": reason}
+
+
+def _task_path(path: str) -> Tuple[str, str]:
+    """/api/tasks/<id>[/<action>] -> (id, action)."""
+    parts = path.split("/")
+    if len(parts) not in (4, 5) or parts[:3] != ["", "api", "tasks"] or not parts[3]:
+        raise TaskError("not found", 404)
+    return parts[3], parts[4] if len(parts) == 5 else ""
+
+
+def open_browser(url: str) -> None:
+    """On WSL, open the Windows browser (wslview, else explorer.exe); elsewhere the system browser. Failures are ignored: the URL is printed."""
+    if "microsoft" in platform.release().lower():  # WSL 1 and 2 kernels both name Microsoft
+        command = shutil.which("wslview") or shutil.which("explorer.exe")
+        if command:
+            subprocess.Popen([command, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    webbrowser.open(url)
+
+
+def serve(port: int = 0, browser: bool = True) -> int:
+    server = GuiServer(port)
+    print("edgeconnect-auto GUI. Open this link in your browser (it is your sign-in, works once, and must not be shared):\n\n  {}\n\nPress Ctrl+C to stop.".format(server.url), flush=True)
+    if browser:
+        open_browser(server.url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("GUI stopped.", file=sys.stderr)
+    finally:
+        server.server_close()
+    return 0

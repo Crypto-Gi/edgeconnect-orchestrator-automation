@@ -5,8 +5,20 @@ import time
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
 from .client import ApiClient
-from .errors import ResponseFormatError, ValidationError
+from .errors import ApiError, ResponseFormatError, ValidationError
 from .util import normalize_acl_entries, semantic_equal
+
+
+def require_supported_release(version: Mapping[str, Any]) -> str:
+    """The release from a /gmsserver/briefInfo answer; ValidationError unless it is 9.3 or later."""
+    release = str(version.get("release", ""))
+    try:
+        parts = tuple(int(part) for part in release.split(".")[:2])
+    except ValueError as error:
+        raise ValidationError("unable to parse Orchestrator release {}".format(release)) from error
+    if len(parts) < 2 or parts < (9, 3):
+        raise ValidationError("Orchestrator 9.3 or later is required; found {}".format(release or "unknown"))
+    return release
 
 
 class OrchestratorGateway:
@@ -22,6 +34,20 @@ class OrchestratorGateway:
 
     def get_version(self) -> Mapping[str, Any]:
         return self._shape(self.client.get("/gmsserver/briefInfo"), dict, "Orchestrator version")
+
+    def get_server_id(self) -> str:
+        """The Orchestrator's serial number from /gmsserver/info, which stays the same when its address changes.
+
+        "" when it cannot be read for any reason (commands that worked before it was read must keep working; plans then
+        compare the address only) or it is a placeholder: cloud-hosted Orchestrators (9.6.4, 9.7.1, 10.0) all report
+        00-00-00-00-00-00, which would make every one of them look like the same Orchestrator.
+        """
+        try:
+            info = self._shape(self.client.get("/gmsserver/info"), dict, "Orchestrator server info")
+        except (ApiError, ValidationError):
+            return ""
+        serial = str(info.get("serialNumber") or "")
+        return serial if re.sub(r"[^0-9A-Za-z]", "", serial).strip("0") else ""
 
     def discover(self) -> Dict[str, Any]:
         return {
