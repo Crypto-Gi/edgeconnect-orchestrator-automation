@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `setup.sh` (the same file in all three repositories): a re-run puts every clone on `main`. A clean clone on another branch, such as `gui`, is switched to `main` (the branch is kept) and pulled fast-forward. A clone with uncommitted changes, or detached on a commit `main` does not have, is left alone with a message; a diverged `main` stops the run and is not reset.
+
 ## 1.3.0 — 2026-11-02
 
 The web GUI (`edgeconnect-auto gui`, first shipped as the 1.3.0rc1 pre-release) is now on `main`, together with the `setup.sh` of 1.2.11. Terminal users coming from 1.2.11 see these changes; prompts, typed approvals, validation and what is written to Orchestrator are unchanged:
