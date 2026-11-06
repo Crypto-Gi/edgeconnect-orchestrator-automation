@@ -42,7 +42,7 @@ orchestrator_api_key=<ORCHESTRATOR_API_KEY>
 
 When `--dotenv` is omitted, the CLI loads only `./.env` from the current working directory. It never searches parent or home directories. Process environment variables override values from the file. Use `--dotenv /absolute/path/to/other.env` to select a different file.
 
-After `setup.sh`, the `edgeconnect-auto` command in `~/.local/bin` is a wrapper that always passes `--dotenv <install folder>/.env`, so it reads that shared file from any folder; CSVs and `reports/` still use the current folder. That `.env` starts with one Orchestrator under the nickname `lab` (`orch_1=lab`, `lab_base_url`, `lab_api_key`). It also holds keys for `edgeconnect-preconfig` (`EC_VALIDATORS`) and the MCP server (such as `<nickname>_mcp_get_only`); this CLI ignores them.
+After `install.sh`, the `edgeconnect-auto` command in `~/.local/bin` is a wrapper that always passes `--dotenv <install folder>/.env`, so it reads that shared file from any folder; CSVs and `reports/` still use the current folder. That `.env` starts with one Orchestrator under the nickname `lab` (`orch_1=lab`, `lab_base_url`, `lab_api_key`). It also holds keys for `edgeconnect-preconfig` (`EC_VALIDATORS`) and the MCP server (such as `<nickname>_mcp_get_only`); this CLI ignores them.
 
 ### Several Orchestrators in one `.env`
 

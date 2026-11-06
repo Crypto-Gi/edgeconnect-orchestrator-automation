@@ -123,7 +123,7 @@ They may still contain sensitive network configuration. Store and transfer them 
 
 ### Configuration is missing
 
-`Orchestrator base URL and API key are required; provide them in ./.env, process environment variables, or --dotenv <path>` (exit 2). Run from the directory containing `.env`, provide process environment variables, or select another file explicitly. The `edgeconnect-auto` command that `setup.sh` installs always reads `<install folder>/.env`.
+`Orchestrator base URL and API key are required; provide them in ./.env, process environment variables, or --dotenv <path>` (exit 2). Run from the directory containing `.env`, provide process environment variables, or select another file explicitly. The `edgeconnect-auto` command that `install.sh` installs always reads `<install folder>/.env`.
 
 ```bash
 edgeconnect-auto discovery
