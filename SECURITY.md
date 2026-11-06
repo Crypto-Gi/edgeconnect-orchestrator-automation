@@ -21,7 +21,7 @@
 
 ## Reporting a vulnerability
 
-Report security issues privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**, or go directly to <https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation/security/advisories/new>. Do not open a public issue, and do not include customer configuration, logs, credentials, topology, or API responses in any report.
+Report security issues privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**, or go directly to <https://github.com/mirwasay/edgeconnect-orchestrator-automation/security/advisories/new>. Do not open a public issue, and do not include customer configuration, logs, credentials, topology, or API responses in any report.
 
 ## License
 

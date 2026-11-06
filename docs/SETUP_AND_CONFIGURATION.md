@@ -19,7 +19,7 @@ No third-party runtime Python packages are required.
 ### macOS or Linux
 
 ```bash
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
+git clone https://github.com/mirwasay/edgeconnect-orchestrator-automation.git edgeconnect-automation
 cd edgeconnect-automation
 
 python3 -m venv .venv
@@ -97,7 +97,7 @@ A firewall plan built offline from `--inventory` inherits that inventory's Orche
 ### Windows PowerShell
 
 ```powershell
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
+git clone https://github.com/mirwasay/edgeconnect-orchestrator-automation.git edgeconnect-automation
 Set-Location edgeconnect-automation
 
 py -3.11 -m venv .venv

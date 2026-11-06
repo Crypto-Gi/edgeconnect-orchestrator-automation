@@ -16,7 +16,7 @@ The runtime has no third-party Python dependencies.
 ## Install from Git
 
 ```bash
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
+git clone https://github.com/mirwasay/edgeconnect-orchestrator-automation.git edgeconnect-automation
 cd edgeconnect-automation
 python3 -m venv .venv
 source .venv/bin/activate

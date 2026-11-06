@@ -66,34 +66,34 @@ Next step    : Fix every blocking issue listed above, then rerun the same comman
 **Install this CLI** and its agent skill (macOS and Linux; needs git, Python 3.9 or later and, for the skills, Node.js 18 or later):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/mirwasay/edgeconnect-orchestrator-automation/main/install.sh)
 ```
 
 **Install all three** instead (this CLI, the `edgeconnect-preconfig` command, the MCP server and their skills): `install-all.sh` asks which repositories to install. The same file is in all three repositories, and `install.sh` is `install-all.sh` with this repository already picked.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/install-all.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/mirwasay/edgeconnect-orchestrator-automation/main/install-all.sh)
 ```
 
 Three repositories that work together:
 
 | Repository | What it does | Agent skill |
 |---|---|---|
-| [edgeconnect-orchestrator-automation](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation) (this repository) | `edgeconnect-auto` CLI: deploys and removes firewall policies, zones, address, service and application groups, application definitions and template-group ACLs from reviewed CSVs, with a dry run, a typed `APPLY` and readback verification. | `managing-edgeconnect-firewall-and-objects` |
-| [edgeconnect-preconfig](https://github.com/Crypto-Gi/edgeconnect-preconfig) | `edgeconnect-preconfig` CLI (`list`, `build`, `variables`, `compare`, `validate`, `upload --approve`): turns an existing appliance into a Jinja2 + CSV preconfiguration template, then renders, validates and uploads one preconfig per site. | `building-edgeconnect-preconfig-templates` |
-| [edgeconnect-mcp](https://github.com/Crypto-Gi/edgeconnect-mcp) | MCP server that lets Claude or any MCP client read, and with your approval change, an Orchestrator through its REST API, plus the `edgeconnect-mcp report` command for reports. | `edgeconnect-guide`, `edgeconnect-report` |
+| [edgeconnect-orchestrator-automation](https://github.com/mirwasay/edgeconnect-orchestrator-automation) (this repository) | `edgeconnect-auto` CLI: deploys and removes firewall policies, zones, address, service and application groups, application definitions and template-group ACLs from reviewed CSVs, with a dry run, a typed `APPLY` and readback verification. | `managing-edgeconnect-firewall-and-objects` |
+| [edgeconnect-preconfig](https://github.com/mirwasay/edgeconnect-preconfig) | `edgeconnect-preconfig` CLI (`list`, `build`, `variables`, `compare`, `validate`, `upload --approve`): turns an existing appliance into a Jinja2 + CSV preconfiguration template, then renders, validates and uploads one preconfig per site. | `building-edgeconnect-preconfig-templates` |
+| [edgeconnect-mcp](https://github.com/mirwasay/edgeconnect-mcp) | MCP server that lets Claude or any MCP client read, and with your approval change, an Orchestrator through its REST API, plus the `edgeconnect-mcp report` command for reports. | `edgeconnect-guide`, `edgeconnect-report` |
 
 Run either script again to update; the old `setup.sh` still works and runs `install-all.sh`. `install-all.sh` asks a few questions, then does everything else:
 
 1. **Which repositories**: a table of the three, with what each does and the skill it installs; type numbers separated by commas (for example `1,3`) or `all` (the default).
-2. **The MCP server** (only if you pick 3): run it locally (stdio) for your agents, or in Docker over HTTPS, which you install by hand with the [MCP install guide](https://github.com/Crypto-Gi/edgeconnect-mcp/blob/main/docs/install.md), or not at all.
+2. **The MCP server** (only if you pick 3): run it locally (stdio) for your agents, or in Docker over HTTPS, which you install by hand with the [MCP install guide](https://github.com/mirwasay/edgeconnect-mcp/blob/main/docs/install.md), or not at all.
 3. **Which agents**, once, from a table of 20 (Claude Code, Codex, Cursor, GitHub Copilot, Gemini CLI, OpenCode, Kilo Code, Kiro CLI, Zed, Windsurf, Cline, Goose, Antigravity, Devin, Roo Code, Continue, Amp, Claude Desktop, and any agent that reads `.agents/skills`). Every picked skill is installed for them, also when it was already installed, and the local MCP server is added to them: through [`add-mcp`](https://www.npmjs.com/package/add-mcp) (without auto-approving tool calls), through `devin mcp add` for Devin, or as a printed config to paste for agents neither covers. Before adding the server it asks to continue, because an existing server named `edgeconnect` in those agents is replaced; with `--yes` it adds the server only when you also pass `--mcp stdio`. It prints each agent's MCP settings file as it goes.
 4. **The install folder** (default: the folder you run it from, or `~/edgeconnect` from your home folder).
 5. **Where the skills and the MCP server go**, one answer for both: only that folder (the default) or your user account (`~`). Agents that keep MCP servers only for the whole user account (Windsurf, Cline, Goose, Antigravity, Claude Desktop) are asked about one by one when you chose the folder: yes adds the server user-wide for that agent, no skips it. With `--yes` they are skipped, and the last screen lists the command to add each one.
 
 Everything lands in the one folder, from `main`: the repositories, for 1 and 2 a Python environment and the `edgeconnect-auto` (1) and `edgeconnect-preconfig` (2) commands in `~/.local/bin`, for a local MCP server its launcher `<folder>/bin/edgeconnect-mcp`, and one shared `.env`. The `edgeconnect-auto` command it installs passes `--dotenv <folder>/.env`, so it reads that file from any folder. The last screen shows how to fill in `.env` for what you picked: the Orchestrator lines, the API key, a self-signed certificate, `EC_VALIDATORS` for preconfig and MCP writes. It also writes `AGENTS.md` (which tool an agent should use for which task, and what this folder has installed) and a `CLAUDE.md` that points to it, so start your agent there; an `AGENTS.md` that the installer wrote and you never edited is kept up to date on every run, and one you have edited is never overwritten (the new text goes to `AGENTS.md.new`). Run it again to update: a re-run puts every clone on `main`. Options for answering without prompts: `--repos 1,3` (or `all`), `--mcp stdio|docker|no`, `--agents 1,2,15` (numbers or names such as `claude-code,codex`), `--dir PATH`, `--skills folder|home`, `--yes`.
 
-Picking 3 installs the MCP skills, `edgeconnect-guide` and `edgeconnect-report`, and, if you choose local, the stdio MCP server for your agents and its `report` command; a Docker server is installed by hand, as the [edgeconnect-mcp README](https://github.com/Crypto-Gi/edgeconnect-mcp#install) covers.
+Picking 3 installs the MCP skills, `edgeconnect-guide` and `edgeconnect-report`, and, if you choose local, the stdio MCP server for your agents and its `report` command; a Docker server is installed by hand, as the [edgeconnect-mcp README](https://github.com/mirwasay/edgeconnect-mcp#install) covers.
 
 ## Quick start
 
@@ -102,7 +102,7 @@ Picking 3 installs the MCP skills, `edgeconnect-guide` and `edgeconnect-report`,
 **This CLI only:**
 
 ```bash
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git edgeconnect-automation
+git clone https://github.com/mirwasay/edgeconnect-orchestrator-automation.git edgeconnect-automation
 cd edgeconnect-automation
 python3 -m venv .venv && source .venv/bin/activate && python -m pip install -e .
 cp .env.example .env && chmod 600 .env     # then set orchestrator_base_url and orchestrator_api_key
@@ -135,7 +135,7 @@ Writes are off until you add `<nickname>_gui_writes=on` to `.env` for an Orchest
 Install it from a clone of this repository, since the skill uses the clone's templates and docs:
 
 ```bash
-npx skills add https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation
+npx skills add https://github.com/mirwasay/edgeconnect-orchestrator-automation
 # or, for Claude Code only:
 cp -R skills/managing-edgeconnect-firewall-and-objects ~/.claude/skills/
 ```
@@ -257,7 +257,7 @@ edgeconnect-automation/
 
 ## Support
 
-- Use [GitHub Issues](https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation/issues) for reproducible bugs, documentation problems, and feature requests.
+- Use [GitHub Issues](https://github.com/mirwasay/edgeconnect-orchestrator-automation/issues) for reproducible bugs, documentation problems, and feature requests.
 - Include the command, sanitized output, Orchestrator release, and relevant non-secret CSV rows.
 - Never post API keys, `.env`, authorization headers, customer configuration, production reports, or private topology.
 - Follow [SECURITY.md](SECURITY.md) for private vulnerability reporting.

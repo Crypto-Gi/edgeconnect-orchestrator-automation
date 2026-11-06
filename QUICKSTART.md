@@ -5,13 +5,13 @@
 To install this CLI and its agent skill in one step (macOS and Linux), run `install.sh`. It asks which agents get the skill, the install folder (default: the folder you run it from) and where the skill goes, and creates one shared `.env` in the install folder:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/mirwasay/edgeconnect-orchestrator-automation/main/install.sh)
 ```
 
 To install any of the three EdgeConnect repositories (this CLI, the `edgeconnect-preconfig` command, the edgeconnect-mcp server and its skills), run `install-all.sh`; it also asks which repositories to install:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/install-all.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/mirwasay/edgeconnect-orchestrator-automation/main/install-all.sh)
 ```
 
 Run either again to update.
@@ -19,7 +19,7 @@ Run either again to update.
 Or clone this CLI without the installer:
 
 ```bash
-git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git
+git clone https://github.com/mirwasay/edgeconnect-orchestrator-automation.git
 cd edgeconnect-orchestrator-automation
 python3 -m venv .venv
 source .venv/bin/activate
