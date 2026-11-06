@@ -2,13 +2,21 @@
 
 ## 1. Install
 
-To install the toolkit in one step (macOS and Linux), run the setup script. It asks which repositories to install (this CLI, the `edgeconnect-preconfig` command, the edgeconnect-mcp server and its skills), which agents get the skills, the install folder (default: the folder you run it from) and where the skills go. It creates one shared `.env` in the install folder:
+To install this CLI and its agent skill in one step (macOS and Linux), run `install.sh`. It asks which agents get the skill, the install folder (default: the folder you run it from) and where the skill goes, and creates one shared `.env` in the install folder:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/setup.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/install.sh)
 ```
 
-Or install this CLI only:
+To install any of the three EdgeConnect repositories (this CLI, the `edgeconnect-preconfig` command, the edgeconnect-mcp server and its skills), run `install-all.sh`; it also asks which repositories to install:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/Crypto-Gi/edgeconnect-orchestrator-automation/main/install-all.sh)
+```
+
+Run either again to update.
+
+Or clone this CLI without the installer:
 
 ```bash
 git clone https://github.com/Crypto-Gi/edgeconnect-orchestrator-automation.git
@@ -27,7 +35,7 @@ Windows PowerShell activation:
 
 ## 2. Configure
 
-**After `setup.sh`:** edit `<install folder>/.env`. It already holds one Orchestrator under the nickname `lab`:
+**After `install.sh`:** edit `<install folder>/.env`. It already holds one Orchestrator under the nickname `lab`:
 
 ```dotenv
 orch_1=lab
@@ -35,7 +43,7 @@ lab_base_url=https://<ORCHESTRATOR_FQDN_OR_IP>
 lab_api_key=<API_KEY>
 ```
 
-The `edgeconnect-auto` command that `setup.sh` installs always passes `--dotenv <install folder>/.env`, so it works from any folder. The same file also holds settings for `edgeconnect-preconfig` and the MCP server; this CLI ignores them.
+The `edgeconnect-auto` command that `install.sh` installs always passes `--dotenv <install folder>/.env`, so it works from any folder. The same file also holds settings for `edgeconnect-preconfig` and the MCP server; this CLI ignores them.
 
 **After a clone install:**
 

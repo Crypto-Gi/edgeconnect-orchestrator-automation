@@ -6,7 +6,7 @@ First-use procedure, every workflow with its template and commands, CSV-driven d
 
 ### 1. Run the test suite
 
-From a clone install (a `setup.sh` install can skip this step):
+From a clone install (an `install.sh` install can skip this step):
 
 ```bash
 python -m unittest discover -v

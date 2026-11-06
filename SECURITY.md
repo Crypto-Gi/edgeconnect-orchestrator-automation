@@ -3,7 +3,7 @@
 ## Secrets
 
 - Never commit `.env`, API keys, passwords, cookies, CSRF tokens, or authorization headers.
-- The CLI automatically reads only `./.env` from the current working directory; it never searches parents or the home directory. Verify your current directory before running a command. The `edgeconnect-auto` wrapper that `setup.sh` installs always passes `--dotenv <install folder>/.env` instead.
+- The CLI automatically reads only `./.env` from the current working directory; it never searches parents or the home directory. Verify your current directory before running a command. The `edgeconnect-auto` wrapper that `install.sh` installs always passes `--dotenv <install folder>/.env` instead.
 - Use an expiring least-privilege Orchestrator API key restricted by source IP where practical.
 - Keep TLS certificate and hostname verification enabled. Use a private CA bundle when required, or pin one self-signed certificate with `<nickname>_tls_sha256` (`orchestrator_tls_sha256` for the Orchestrator set by the single-Orchestrator `orchestrator_*` lines).
 - The client refuses HTTP redirects so the API key is only ever sent to the configured base URL. If Orchestrator sits behind a redirecting front end, configure the address that answers directly.
