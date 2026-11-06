@@ -173,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _gui(args: argparse.Namespace) -> int:
     if args.orchestrator:
         raise ConfigurationError("the GUI lets you choose the Orchestrator; run it without --orchestrator")
-    # shortcut: the GUI reads ./.env only; setup.sh's launcher always passes --dotenv <install folder>/.env, which is that
+    # shortcut: the GUI reads ./.env only; install-all.sh's launcher always passes --dotenv <install folder>/.env, which is that
     # file when started there. Pass the path through to the GUI if someone needs another folder.
     if args.dotenv and not (Path(".env").is_file() and Path(args.dotenv).resolve() == Path(".env").resolve()):
         raise ConfigurationError("the GUI reads .env in the folder it starts in; start it from {}".format(Path(args.dotenv).resolve().parent))
