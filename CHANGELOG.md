@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 — 2026-11-06
 
 - `install.sh` installs this repository only; `setup.sh` is now `install-all.sh`. `install.sh` runs `install-all.sh` with this repository picked (`--repos 1`) and passes every other option through; it refuses `--repos`. `install-all.sh` is the old `setup.sh`, renamed, the same in all three repositories; it behaves as before and still recognises the commands and the `AGENTS.md` it wrote under its old name. `setup.sh` stays as a forwarder to `install-all.sh`, so old links and re-runs keep working. Both work from a clone and through `bash <(curl ...)`.
 - `setup.sh` (the same file in all three repositories): a re-run puts every clone on `main`. A clean clone on another branch, such as `gui`, is switched to `main` (the branch is kept) and pulled fast-forward. A clone with uncommitted changes, or detached on a commit `main` does not have, is left alone with a message; a diverged `main` stops the run and is not reset.
