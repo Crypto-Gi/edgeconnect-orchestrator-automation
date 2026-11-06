@@ -10,7 +10,7 @@ from edgeconnect_automation.cli import main
 
 
 class GuiCommandTests(unittest.TestCase):
-    """setup.sh's edgeconnect-auto launcher always passes --dotenv <install folder>/.env."""
+    """install-all.sh's edgeconnect-auto launcher always passes --dotenv <install folder>/.env."""
 
     def run_gui(self, *argv):
         stderr = io.StringIO()
