@@ -20,3 +20,6 @@ htmlcov/
 .devin/
 .agents/
 
+# Preconfig toolkit outputs, when it runs inside this checkout
+preconfig-output/
+preconfig-work/
